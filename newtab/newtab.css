@@ -465,6 +465,9 @@ body.theme-chrome #shortcuts { grid-template-columns: repeat(auto-fill, 100px); 
 body.theme-chrome #shelves { width: min(760px, 94vw); }
 .shelf-row { gap: 12px; }
 
+/* hide the page scrollbar (still scrolls with wheel/touch/keys) */
+html, body { scrollbar-width: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
 /* ---------- dashboard cards (Chrome+) ---------- */
 #dash { display: none; }
 body.theme-chrome #dash:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; width: min(780px, 94vw); margin-top: 30px; text-align: left; }
@@ -478,7 +481,7 @@ body.theme-chrome #dash:not([hidden]) { display: grid; grid-template-columns: re
 .ring { --p: 0; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: conic-gradient(var(--c-primary) calc(var(--p) * 360deg), color-mix(in srgb, var(--c-text) 10%, transparent) 0); }
 .ring b { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--c-surface); font-size: 11px; color: var(--c-text); }
-.todo, .tt { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 200px; overflow-y: auto; scrollbar-width: thin; }
+.todo, .tt { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 200px; overflow-y: auto; scrollbar-width: none; }
 .todo li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; color: var(--c-text); }
 .todo li:hover, .tt li:hover { background: color-mix(in srgb, var(--c-text) 6%, transparent); }
 .todo .ck { width: 20px; height: 20px; flex: none; border-radius: 7px; border: 2px solid color-mix(in srgb, var(--c-text) 35%, transparent); background: none; cursor: pointer; padding: 0; }

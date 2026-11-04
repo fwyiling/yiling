@@ -480,6 +480,14 @@ function openSidebarFor(which, windowId) {
   const open = windowId != null ? chrome.sidePanel.open({ windowId }) : Promise.reject(new Error('no window'));
   return open.catch(() => chrome.tabs.create({ url: chrome.runtime.getURL('sidebar/sidebar.html') }));
 }
+// [ hotkey: jump to the Syndicates home page (reuse one that's already open in this window)
+async function openHome(from) {
+  const home = chrome.runtime.getURL('newtab/newtab.html');
+  const tabs = await chrome.tabs.query({ windowId: from?.windowId ?? chrome.windows.WINDOW_ID_CURRENT });
+  const open = tabs.find((t) => t.id !== from?.id && ((t.url || t.pendingUrl || '').startsWith(home) || /^chrome:\/\/newtab\/?$/.test(t.url || '')));
+  if (open) return chrome.tabs.update(open.id, { active: true });
+  return chrome.tabs.create({ url: home + '?home', windowId: from?.windowId, index: from ? from.index + 1 : undefined });
+}
 // right-click → open a link (or the current page) in the sidebar
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -495,6 +503,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  if (cmd === 'open-home') openHome(tab);
 });
 async function sidebarAllow(url) {
   // keep logins working inside the panel even with third-party cookies blocked
@@ -638,7 +647,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'sidebar-allow': () => sidebarAllow(msg.url),
     'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
     'float-app': () => chrome.windows.create({ url: msg.url, type: 'popup', width: msg.width || 480, height: msg.height || 760, focused: true }),
-    'hotkey': () => openSidebarFor(msg.which, sender.tab?.windowId),
+    'hotkey': () => (msg.which === 'home' ? openHome(sender.tab) : openSidebarFor(msg.which, sender.tab?.windowId)),
     'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
     'popup-blocked': () => bump('popupStats'),
     'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },

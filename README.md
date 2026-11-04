@@ -11,7 +11,9 @@ ad and tracker blocking, YouTube extras, manga/novel downloads, sidebar apps, an
 | Key | What it does |
 | --- | --- |
 | `]` (when you're not typing) | Open sidebar apps – change it in popup → Style |
+| `[` (when you're not typing) | Go to the Syndicates home page (to-dos, timetable, quote) |
 | `Alt+Shift+S` | Open sidebar apps (change at `chrome://extensions/shortcuts`) |
+| `Alt+Shift+H` | Go to the Syndicates home page – also works on Chrome's own pages |
 | `/` on the new tab page | Focus the search box |
 | Right-click a link → **Open link in sidebar** | Peek at a link next to the page you're on |
 | YouTube: scroll on the speed button | Fine-tune playback speed |

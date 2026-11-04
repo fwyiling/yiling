@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Syndicates Client",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -228,6 +228,12 @@
         "default": "Alt+Shift+S"
       },
       "description": "Open the Syndicates sidebar"
+    },
+    "open-home": {
+      "suggested_key": {
+        "default": "Alt+Shift+H"
+      },
+      "description": "Go to the Syndicates home page"
     }
   }
 }
