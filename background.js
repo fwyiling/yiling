@@ -261,6 +261,36 @@ async function allowOnce(host) {
   });
 }
 
+// ---- YouTube extras: SponsorBlock segments + Return YouTube Dislike counts ----
+const ytCache = new Map();
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function ytData(videoId) {
+  if (!/^[\w-]{11}$/.test(videoId)) throw new Error('bad video id');
+  if (ytCache.has(videoId)) return ytCache.get(videoId);
+  const out = { segments: [], dislikes: null };
+  await Promise.all([
+    (async () => { // privacy-preserving lookup: only the first 4 chars of the hash are sent
+      const prefix = (await sha256Hex(videoId)).slice(0, 4);
+      const cats = encodeURIComponent(JSON.stringify(['sponsor', 'selfpromo', 'interaction']));
+      const r = await fetch(`https://sponsor.ajay.app/api/skipSegments/${prefix}?categories=${cats}`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return;
+      const hit = (await r.json()).find((x) => x.videoID === videoId);
+      out.segments = (hit?.segments || []).filter((s) => !s.actionType || s.actionType === 'skip')
+        .map((s) => ({ start: s.segment[0], end: s.segment[1], cat: s.category })).sort((a, b) => a.start - b.start);
+    })().catch(() => {}),
+    (async () => {
+      const r = await fetch(`https://returnyoutubedislikeapi.com/votes?videoId=${videoId}`, { signal: AbortSignal.timeout(8000) });
+      if (r.ok) out.dislikes = (await r.json()).dislikes ?? null;
+    })().catch(() => {}),
+  ]);
+  ytCache.set(videoId, out);
+  if (ytCache.size > 300) ytCache.delete(ytCache.keys().next().value);
+  return out;
+}
+
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -300,6 +330,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
     'allow-once': () => allowOnce(msg.host),
+    'yt-data': () => ytData(msg.videoId),
     'md-diagnose': async () => mangaDexDiagnose((await chrome.tabs.get(tabId)).url, tabId),
     'download': () => startJob(buildJob(msg.page, msg.kind, msg.preset)),
     'set-paused': () => toggleListEntry('allowlist', msg.host, msg.paused),

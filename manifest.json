@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Client",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -83,7 +83,8 @@
         "*://*.youtube.com/*"
       ],
       "js": [
-        "content/youtube.js"
+        "content/youtube.js",
+        "content/yt-features.js"
       ],
       "css": [
         "content/youtube.css",

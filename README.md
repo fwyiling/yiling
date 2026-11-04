@@ -12,6 +12,9 @@ GX-style customization, and a manga/novel downloader.
 - **YouTube:** ads are removed from YouTube's player data before the player reads them (the uBlock Origin Lite approach),
   so the video itself is never interrupted; YouTube's playback endpoints are never blocked. Plus hide Shorts, default speed,
   volume boost up to 300%.
+- **YouTube, built in:** speed / screenshot / Shield buttons in YouTube's own control bar and a native-style menu
+  (skip ads, SponsorBlock, dislikes, loop, end cards, Shorts, volume boost, preferred quality).
+  SponsorBlock auto-skips sponsor reads with segments drawn on the progress bar; Return YouTube Dislike shows dislikes.
 - **Privacy:** block third-party cookies, delete tracker cookies, trim referrers, stop WebRTC IP leaks, confirm risky downloads.
 - **Downloader – chapter or whole series:**
   - **MangaDex** uses the official API: pick English / 中文 (简体) / 中文 (繁體) / any language, the whole series or a range,
@@ -35,8 +38,7 @@ Extensions can't restyle Chrome's own bars, so matching **themes** are in `theme
 Load one the same way: `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red`.
 Make your own colours by editing `tools/make-themes.py` and running `python3 tools/make-themes.py`.
 
-To hide Chrome's own "Customise Chrome" button and footer on the new tab page: click it and switch off **Show footer**
-(recent Chrome versions).
+To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the new tab page: **right-click the bar → Hide footer**.
 
 ## Console messages
 `net::ERR_BLOCKED_BY_CLIENT` lines in DevTools are Shield Client blocking ads/trackers – expected with any blocker.
@@ -59,6 +61,9 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [Comics-Manga-Downloader-Extension](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension) (MIT) – image
   validation and retry/backoff approach in `downloader/downloader.js`.
 - Design reference for MV3 blocking and YouTube ad removal: uBlock Origin Lite / uAssets (approach only; own code).
+- [YouTube-Enhancer/extension](https://github.com/YouTube-Enhancer/extension) (MIT) – approach for native-looking player buttons/menus.
+- [SponsorBlock](https://sponsor.ajay.app) – segment data (CC BY-NC-SA 4.0), privacy-preserving hash lookup.
+- [Return YouTube Dislike](https://returnyoutubedislike.com) – dislike counts API.
 - [Yui007/mangadex-extension](https://github.com/Yui007/mangadex-extension) (MIT) – reference for MangaDex API usage.
 - [mue](https://github.com/mue/mue) (BSD-3) – structure of the home page widgets/settings.
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.

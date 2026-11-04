@@ -3,6 +3,24 @@
 // YouTube's player data *before* the player reads them, so no ad is ever scheduled.
 // Nothing is blocked mid-playback, so the video itself is never interrupted.
 (() => {
+  // ---- preferred quality (player API lives in the page context) ----
+  const ORDER = ['tiny', 'small', 'medium', 'large', 'hd720', 'hd1080', 'hd1440', 'hd2160', 'hd2880', 'highres'];
+  function applyQuality() {
+    let q = 'auto';
+    try { q = localStorage.getItem('__shieldYtQuality') || 'auto'; } catch {}
+    if (q === 'auto') return;
+    const p = document.getElementById('movie_player');
+    if (!p || typeof p.getAvailableQualityLevels !== 'function') return;
+    const levels = p.getAvailableQualityLevels().filter((l) => l !== 'auto');
+    if (!levels.length) return;
+    const target = q === 'highres' ? levels[0] : (levels.find((l) => ORDER.indexOf(l) <= ORDER.indexOf(q)) || levels[levels.length - 1]);
+    try { p.setPlaybackQualityRange(target, target); } catch {}
+  }
+  const soon = () => [300, 1500, 4000].forEach((ms) => setTimeout(applyQuality, ms));
+  window.addEventListener('message', (e) => { if (e.source === window && e.data?.source === 'shield-client' && e.data.type === 'quality') soon(); });
+  document.addEventListener('yt-navigate-finish', soon);
+  document.addEventListener('yt-player-updated', soon);
+
   let on = true;
   try { on = localStorage.getItem('__shieldYtAds') !== '0'; } catch {}
   if (!on) return;

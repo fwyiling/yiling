@@ -69,9 +69,22 @@
       <div class="card">
         <label class="row"><div><b>Skip video ads</b><small>Jumps past ads automatically and mutes them.</small></div>
           <span class="switch"><input type="checkbox" data-key="ytAds"><span></span></span></label>
+        <label class="row"><div><b>Skip sponsors</b><small>SponsorBlock: skips sponsor reads, self-promos and "subscribe" reminders.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytSponsor"><span></span></span></label>
+        <label class="row"><div><b>Show dislikes</b><small>Brings back the dislike count (Return YouTube Dislike).</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytDislikes"><span></span></span></label>
         <label class="row"><div><b>Hide Shorts</b><small>Removes Shorts from home, search and the sidebar.</small></div>
           <span class="switch"><input type="checkbox" data-key="ytHideShorts"><span></span></span></label>
+        <label class="row"><div><b>Hide end-screen cards</b><small>No more video tiles covering the last seconds.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytEndCards"><span></span></span></label>
+        <label class="row"><div><b>Player buttons</b><small>Speed, screenshot and a Shield menu in YouTube's control bar.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytButtons"><span></span></span></label>
       </div>
+      <h2>Preferred quality</h2>
+      <select class="field" data-key="ytQuality">
+        <option value="auto">Auto (YouTube decides)</option><option value="hd720">720p</option><option value="hd1080">1080p</option>
+        <option value="hd1440">1440p</option><option value="hd2160">4K</option><option value="highres">Best available</option>
+      </select>
       <h2>Playback speed</h2>
       <div class="seg" data-seg="ytSpeed">
         <button value="1">1×</button><button value="1.25">1.25×</button><button value="1.5">1.5×</button><button value="1.75">1.75×</button><button value="2">2×</button>
