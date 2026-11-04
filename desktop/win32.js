@@ -93,7 +93,7 @@ function findLayer() {
   const tryFind = () => {
     const defView = u.FindWindowExW(progman, 0, 'SHELLDLL_DefView', null);
     const worker = u.FindWindowExW(progman, 0, 'WorkerW', null);
-    if (!isNull(defView) && !isNull(worker)) return { raised: true, parent: progman, after: defView };
+    if (!isNull(defView) && !isNull(worker)) return { raised: true, parent: progman, after: defView, worker };
     let classic = null;
     const cb = u.koffi.register((hwnd) => {
       const view = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null);
@@ -109,29 +109,37 @@ function findLayer() {
   return layer;
 }
 
+const WS_EX_NOREDIRECTIONBITMAP = 0x00200000;
+// How the window joins the raised (24H2+) desktop. 'auto' is what the app uses; the others exist so the
+// Windows test run can compare them on a real machine.
+const RAISED_STRATEGIES = ['progman-layered', 'worker-child', 'progman-plain', 'progman-layered-redirected'];
+
 /** Make an Electron window part of the desktop background. rect is in physical screen pixels. */
-function attachToDesktop(win, rect) {
+function attachToDesktop(win, rect, strategy = 'auto') {
   if (!load()) return { ok: false, reason: 'not Windows' };
   const layer = findLayer();
   if (!layer) return { ok: false, reason: 'desktop layer not found' };
   const hwnd = hwndOf(win);
+  const how = !layer.raised ? 'classic' : strategy === 'auto' ? 'progman-layered' : strategy;
   let style = Number(u.GetWindowLongPtrW(hwnd, GWL_STYLE));
   style &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINMAXBOX | WS_MAXIMIZE);
   style |= WS_CHILD;
   u.SetWindowLongPtrW(hwnd, GWL_STYLE, style >>> 0); // keep it an unsigned 32-bit style value
-  if (layer.raised) { // Progman has no redirection surface: only layered children show up
-    const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED;
-    u.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+  if (how === 'progman-layered' || how === 'progman-layered-redirected') { // Progman has no redirection surface: only layered children show up
+    let ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED;
+    if (how === 'progman-layered-redirected') ex &= ~WS_EX_NOREDIRECTIONBITMAP; // Chromium sets this; layered windows need a redirection bitmap
+    u.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex >>> 0);
     u.SetLayeredWindowAttributes(hwnd, 0, 255, 0x2);
   }
-  u.SetParent(hwnd, layer.parent);
+  const parent = how === 'classic' ? layer.parent : how === 'worker-child' ? layer.worker : layer.parent;
+  u.SetParent(hwnd, parent);
   // child windows are positioned relative to the parent, which covers the whole virtual screen
   const vx = u.GetSystemMetrics(76), vy = u.GetSystemMetrics(77); // SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN
   const x = rect.x - vx, y = rect.y - vy;
-  if (layer.raised) u.SetWindowPos(hwnd, layer.after, x, y, rect.width, rect.height, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  if (how.startsWith('progman')) u.SetWindowPos(hwnd, layer.after, x, y, rect.width, rect.height, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
   else u.SetWindowPos(hwnd, 0, x, y, rect.width, rect.height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-  if (!same(u.GetParent(hwnd), layer.parent)) return { ok: false, reason: 'Explorer refused the window' };
-  return { ok: true, raised: layer.raised };
+  if (!same(u.GetParent(hwnd), parent)) return { ok: false, reason: 'Explorer refused the window', how };
+  return { ok: true, raised: layer.raised, how };
 }
 
 /** True when the foreground window covers a whole monitor (a game or full-screen video). */
@@ -245,6 +253,7 @@ function focusWindow(hwnd) {
 
 module.exports = {
   isWin,
+  RAISED_STRATEGIES,
   status: () => ({ ready: !!load(), error: setupError?.message || '' }),
   attachToDesktop: safe('attachToDesktop', attachToDesktop, (e) => ({ ok: false, reason: e.message })),
   fullscreenAppRunning: safe('fullscreenAppRunning', fullscreenAppRunning, false),
