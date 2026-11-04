@@ -93,6 +93,7 @@ paintSite();
 const { malwareDomains = [] } = await chrome.storage.local.get('malwareDomains');
 if (malwareDomains.length) $('mal').textContent = `Stops ${malwareDomains.length.toLocaleString()} known malware & scam domains.`;
 
+$('reskinChrome').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('setup/theme.html') });
 $('customizeHome').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('newtab/newtab.html#customize') });
 
 // ---- custom CSS ----

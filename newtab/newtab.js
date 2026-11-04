@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
-  theme: 'cyber', scanlines: true, glitch: true, hud: true,
+  theme: 'cyber', scanlines: true, glitch: true, hud: true, animate: true,
   bgType: 'cyber', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
   showGreeting: true, name: '', greetingText: '',
   showClock: true, clock24: false, clockSeconds: false, clockSize: 96, clockWeight: 300, showDate: true,
@@ -120,6 +120,7 @@ function applyLook() {
   b.toggle('scanlines', s.theme === 'cyber' && s.scanlines);
   b.toggle('glitch', s.glitch);
   b.toggle('hud', s.hud);
+  b.toggle('still', !s.animate);
   $('btnZen').classList.toggle('on', s.zen);
 }
 
@@ -138,7 +139,7 @@ async function applyBackground() {
   if (s.bgType === 'cyber') {
     bg.style.background = '#05010a';
     const c = document.createElement('div'); c.className = 'cyber-bg';
-    c.innerHTML = '<div class="stars"></div><div class="sun"></div><div class="horizon"></div><div class="floor"></div>';
+    c.innerHTML = '<div class="stars"></div><div class="sun"></div><div class="horizon"></div><div class="floor"><i></i></div>';
     bg.append(c);
   } else if (s.bgType === 'anime') {
     // SFW anime wallpapers from wallhaven.cc (public API, no account)
@@ -203,6 +204,10 @@ function renderSearch() {
   $('engineBtn').textContent = name;
   $('q').placeholder = s.searchPlaceholder || `Search ${name} or type a link`;
 }
+// pause the background animation while typing, so keystrokes are never delayed
+$('q').addEventListener('focus', () => document.body.classList.add('typing'));
+$('q').addEventListener('blur', () => document.body.classList.remove('typing'));
+
 $('search').onsubmit = (e) => {
   e.preventDefault();
   const q = $('q').value.trim();
@@ -370,6 +375,8 @@ const SECTIONS = [
     { type: 'toggle', key: 'hud', label: 'HUD frame', desc: 'Corner brackets around the clock', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'glitch', label: 'Glitch effect', desc: 'Clock glitches every few seconds', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'scanlines', label: 'Scanlines', desc: 'Retro screen lines + vignette', when: () => s.theme === 'cyber' },
+    { type: 'custom', render: (w) => { const b = document.createElement('div'); b.className = 'btns'; const x = Object.assign(document.createElement('button'), { textContent: 'Reskin Chrome top bar & footer →' }); x.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('setup/theme.html') }); b.append(x); w.append(b); } },
+    { type: 'toggle', key: 'animate', label: 'Animations', desc: 'Moving grid, twinkling stars, glitch. Turn off on slower PCs' },
   ] },
   { em: '🖼️', title: 'Background', items: [
     { type: 'seg', key: 'bgType', label: 'Type', options: [['cyber', 'Synthwave'], ['anime', 'Anime'], ['bing', 'Bing daily'], ['photo', 'Photos'], ['gradient', 'Gradient'], ['color', 'Color'], ['url', 'Link'], ['upload', 'Upload']] },

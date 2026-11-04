@@ -280,3 +280,33 @@ body.theme-cyber .tile.add { font-size: 30px; font-weight: 300; }
 body.theme-cyber #greeting, body.theme-cyber #date { text-shadow: 0 0 2px #000, 0 0 10px #000, 0 0 18px #000a; }
 /* sun sits on the horizon, synthwave style */
 .cyber-bg .sun { top: auto; bottom: 50%; width: 30vmin; height: 30vmin; margin-bottom: -6vmin; opacity: .9; }
+
+/* ---------- performance: keep every animation on the GPU compositor ----------
+   The old floor animated background-position under a drop-shadow filter, which
+   repainted the full screen every frame and delayed typing. */
+.cyber-bg .floor { background: none !important; animation: none !important; filter: none !important; overflow: hidden; }
+.cyber-bg .floor > i {
+  position: absolute; left: 0; right: 0; top: -64px; bottom: 0; display: block;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 90%, #fff) 2px, transparent 2px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 90%, #fff) 2px, transparent 2px);
+  background-size: 64px 64px;
+  will-change: transform;
+  animation: floorRun 1.6s linear infinite;
+}
+@keyframes floorRun { from { transform: translateY(0); } to { transform: translateY(64px); } }
+.cyber-bg .stars { will-change: opacity; }
+.cyber-bg .horizon { box-shadow: 0 0 18px 4px var(--accent); }
+/* cyber panels are already ~75% opaque – a live blur over a moving background is pure cost */
+body.theme-cyber .glass { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: linear-gradient(135deg, rgba(10, 10, 20, .86), rgba(22, 8, 32, .78)); }
+/* scanlines without a full-screen blend mode */
+body.scanlines::after { mix-blend-mode: normal; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .5)); will-change: transform; }
+/* stop animating while the tab is hidden or the user is typing in the search box */
+body.typing .cyber-bg .floor > i, body.typing .cyber-bg .stars { animation-play-state: paused; }
+body.still .cyber-bg .floor > i, body.still .cyber-bg .stars, body.still.glitch #time::before, body.still.glitch #time::after { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .cyber-bg .floor > i { animation: none; } }
+/* each moving/heavy part on its own GPU layer, so typing only repaints the search box */
+#bg { will-change: transform; contain: strict; }
+#center { will-change: transform; }
+#search { will-change: transform; contain: layout paint; }
+body.scanlines::after { will-change: transform; contain: strict; }
