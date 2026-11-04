@@ -68,3 +68,12 @@ html.sc-skin, html.sc-skin body {
   --uv-styles-color-text-primary: var(--sc-link) !important;
   --t342c96645d13ae13: var(--sc-a) !important;
 }
+
+/* Google homepage (new tabs open here): calmer, without the corner and footer clutter */
+html.sc-ghome.sc-skin [role="contentinfo"], html.sc-ghome.sc-skin .o3j99.c93Gbe, html.sc-ghome.sc-skin #gb a[href*="about.google"],
+html.sc-ghome.sc-skin #gb a[href*="store.google"], html.sc-ghome.sc-skin .uU7dJb { display: none !important; }
+html.sc-ghome.sc-skin body { background: radial-gradient(900px 520px at 50% -12%, color-mix(in srgb, var(--sc-glow) 26%, transparent), transparent 70%), var(--sc-base) !important; }
+/* paint the whole window, even below short pages (no strip at the bottom) */
+html.sc-skin { background: var(--sc-base) !important; min-height: 100%; }
+html.sc-skin body { min-height: 100vh; }
+html.sc-ghome.sc-skin body { background-attachment: fixed !important; }

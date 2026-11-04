@@ -246,7 +246,7 @@ $('start').onclick = async () => {
   $('cancel').onclick = () => { cancelled = true; $('now').textContent = 'Cancelling…'; };
 
   const base = `Syndicates Client/${seriesName}`;
-  const width = Math.max(3, String(picked.length).length);
+  const width = Math.max(3, String(chapters.length).length);
   const li = picked.map((c) => {
     const el = document.createElement('li');
     el.innerHTML = '<span></span><i>waiting</i>';
@@ -269,7 +269,7 @@ $('start').onclick = async () => {
     try {
       const page = c.index === job.currentIndex && job.current && enough(job.current) ? job.current : await loadChapter(c.url, c);
       if (!enough(page)) throw new Error(isImages ? 'no pages found' : 'no text found');
-      const name = `${pad(k + 1, width)} - ${safe(c.label, `Chapter ${c.num || k + 1}`)}`;
+      const name = `${pad(c.index + 1, width)} - ${safe(c.label, `Chapter ${c.num || c.index + 1}`)}`;
 
       if (isImages) {
         await setReferer(c.url);
@@ -291,7 +291,7 @@ $('start').onclick = async () => {
           const dir = `chapters/${name}`;
           const ids = new Array(files.length);
           await pool(files, 3, async (f, i) => { ids[i] = await saveFile(`${base}/${dir}/${f.name}`, new Blob([f.data])); });
-          readerChapters.push({ label: c.label || `Chapter ${c.num}`, pages: files.map((f, i) => ({ rel: `${dir}/${f.name}`, abs: savedPaths.get(ids[i]) || '' })) });
+          readerChapters.push({ num: c.num, label: c.label || `Chapter ${c.num}`, pages: files.map((f, i) => ({ rel: `${dir}/${f.name}`, abs: savedPaths.get(ids[i]) || '' })) });
         }
         pagesDone += files.length;
         el.lastChild.textContent = files.length < page.images.length ? `✓ ${files.length}/${page.images.length} pages` : `✓ ${files.length} pages`;
@@ -325,7 +325,14 @@ $('start').onclick = async () => {
         return p.abs ? [rel, fileUrl(p.abs)] : [p.rel, ''];
       });
     }
-    mainFile = await saveFile(`${base}/Read ${seriesName}.html`, new Blob([buildMangaReader(job.series, readerChapters, accent)], { type: 'text/html' }), true);
+    // keep every chapter downloaded so far in the reader (library "new chapters" runs add to it)
+    const idxKey = `readerIndex_${job.mangaId || seriesName}`;
+    const { [idxKey]: before = [] } = await chrome.storage.local.get(idxKey);
+    const byLabel = new Map(before.map((c) => [c.label, c]));
+    for (const c of readerChapters) byLabel.set(c.label, c);
+    const all = [...byLabel.values()].sort((a, b) => (a.num ?? 0) - (b.num ?? 0));
+    await chrome.storage.local.set({ [idxKey]: all });
+    mainFile = await saveFile(`${base}/Read ${seriesName}.html`, new Blob([buildMangaReader(job.series, all, accent)], { type: 'text/html' }), true);
   }
   if (!isImages && textChapters.length) {
     const book = seriesName;
@@ -349,4 +356,30 @@ $('start').onclick = async () => {
   $('show').hidden = !lastId;
   $('show').onclick = () => chrome.downloads.show(mainFile || lastId);
   chrome.storage.session.remove(`job_${jobId}`);
+  if (job.libraryId) {
+    const doneNums = picked.filter((c) => !failed.includes(c.label || `Chapter ${c.num}`)).map((c) => c.num || 0);
+    const { mdLibrary = [] } = await chrome.storage.local.get('mdLibrary');
+    const e = mdLibrary.find((x) => x.id === job.libraryId);
+    if (e) { e.lastNum = Math.max(e.lastNum || 0, ...doneNums, 0); e.lastRun = Date.now(); e.total = chapters.length; await chrome.storage.local.set({ mdLibrary }); }
+    await chrome.storage.local.set({ libraryRunDone: { id: job.libraryId, ok, failed: failed.length, t: Date.now() } });
+    if (job.auto) setTimeout(() => window.close(), 1500);
+  }
 };
+
+// library batch mode: pick format + chapters and start without asking
+if (job.auto) {
+  const f = document.querySelector(`input[name=fmt][value="${job.format || 'reader'}"]`); if (f) f.checked = true;
+  if (isMD && job.dataSaver) { $('saver').checked = true; dataSaver = true; }
+  let from = 0;
+  if (job.preset === 'new') from = chapters.findIndex((c) => (c.num || 0) > (job.sinceNum || 0));
+  if (!chapters.length || from < 0) {
+    $('setup').hidden = true; $('done').hidden = false;
+    $('doneTitle').textContent = 'No new chapters'; $('doneSub').textContent = job.series;
+    $('open').hidden = true; $('show').hidden = true;
+    await chrome.storage.local.set({ libraryRunDone: { id: job.libraryId, ok: 0, failed: 0, t: Date.now() } });
+    setTimeout(() => window.close(), 1200);
+  } else {
+    $('from').value = from; $('to').value = chapters.length - 1;
+    $('start').click();
+  }
+}

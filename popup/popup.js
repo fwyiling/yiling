@@ -108,6 +108,15 @@ chrome.storage.local.get(['popupStats', 'cookieStats', 'cleanStats', 'learned'])
   $('stTrack').textContent = n(v.learned?.blocked?.length); $('stClean').textContent = n(v.cleanStats);
 });
 // sidebar
+// what a new tab opens (read by newtab/redirect.js before the page renders)
+{
+  const cur = (() => { try { return localStorage.getItem('scStartPage') || 'google'; } catch { return 'google'; } })();
+  document.querySelectorAll('#startSeg button').forEach((b) => {
+    b.classList.toggle('on', b.value === cur);
+    b.onclick = () => { try { localStorage.setItem('scStartPage', b.value); } catch {} document.querySelectorAll('#startSeg button').forEach((x) => x.classList.toggle('on', x === b)); };
+  });
+}
+$('openLibrary').onclick = () => { chrome.tabs.create({ url: chrome.runtime.getURL('library/library.html') }); window.close(); };
 $('openSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id }); window.close(); };
 // learned trackers
 send({ type: 'learn-stats' }).then((r) => { if (r?.ok && r.result.blocked) $('learnInfo').textContent = `Blocks companies that follow you across 3+ sites – ${r.result.blocked} learned so far.`; });
@@ -219,6 +228,22 @@ async function scan() {
     $('dlButtons').append(b);
   };
   if (n > 1) add(`Download whole series (${n} chapters)`, 'all');
+  if (md) {
+    const b = document.createElement('button');
+    b.className = 'btn ghost';
+    const { mdLibrary = [] } = await chrome.storage.local.get('mdLibrary');
+    const inList = mdLibrary.some((x) => x.id === page.mangaId);
+    b.textContent = inList ? '✓ In your download list – open library' : '♥ Add to download list';
+    b.onclick = async () => {
+      const { mdLibrary: lib = [] } = await chrome.storage.local.get('mdLibrary');
+      if (!lib.some((x) => x.id === page.mangaId)) {
+        lib.push({ id: page.mangaId, series: page.series, lang: page.lang, langs: page.langs || [page.lang], cover: '', url: `https://mangadex.org/title/${page.mangaId}`, lastNum: 0, addedAt: Date.now() });
+        await chrome.storage.local.set({ mdLibrary: lib });
+        b.textContent = '✓ Added – open library';
+      } else chrome.tabs.create({ url: chrome.runtime.getURL('library/library.html') });
+    };
+    $('dlButtons').append(b);
+  }
   if (!md || page.currentIndex >= 0) add('Download this chapter', 'current', n > 1);
   if (!n && md) $('foundSub').textContent += ' – try another language on the next screen';
   if (!n && md) add('Choose language & chapters', 'all');

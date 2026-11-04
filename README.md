@@ -38,7 +38,14 @@ ad and tracker blocking, YouTube extras, manga/novel downloads, sidebar apps, an
   - **Easy to read:** manga → a folder with a `Read <series>.html` you double-click (chapter menu, ← → keys, remembers your place) or `.cbz` per chapter; novels → one `.html` book, `.epub` or `.txt`. Saved in `Downloads/Syndicates Client/<series>/`.
 - **Auto-load next chapter:** on manga & novel sites the next chapter appears as you scroll (falls back to a big "Next chapter" button on JavaScript-only readers).
 
+## Manga library (mass downloads)
+Popup → **Manga library**: search MangaDex with covers, **+ List** or **Download** straight away, paste title/chapter links or a
+whole MangaDex list to import it. **Download new chapters** checks every series and grabs only what's new; **Download everything**
+gets all chapters. Each series keeps one reader that grows as new chapters arrive. On a MangaDex page: popup → Save → **Add to download list**.
+
 ## Look & feel
+- **New tabs open google.com**, customised: your theme colours, greeting + clock, your shortcuts under the search box, no footer or
+  corner clutter. Prefer the old page? Popup → Style → *New tab opens* → **Syndicates page**.
 - **Home page (new tab):** **Chrome+** (default – Chrome's own layout in tones of your Chrome colour, so it blends in), **Cyber/gamer** (neon HUD, synthwave) or **Clean glass**. Backgrounds (theme colour, synthwave, anime wallpapers, Bing daily, photos, gradients, upload…), clock & greeting, search engine picker, editable shortcuts, weather, quote, notes, to-do, fonts – all under **Customize**.
 - **Google & YouTube skins** follow the home-page theme (calm Chrome+ tones by default, neon in Cyber mode).
 - **Dark mode on every site** – Dark Reader engine (images keep their colours), with "No dark mode here" in the dock.

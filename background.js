@@ -232,6 +232,8 @@ mangaDexHeaderRules();
 
 // ---- lifecycle ----
 chrome.runtime.onInstalled.addListener(async () => {
+  // after an update, point the side panel at the fresh files (an open panel must be reopened once)
+  chrome.sidePanel?.setOptions?.({ path: 'sidebar/sidebar.html', enabled: true }).catch(() => {});
   const cur = await chrome.storage.sync.get(null);
   await chrome.storage.sync.set({ ...DEFAULTS, ...cur });
   chrome.alarms.create('malware-update', { periodInMinutes: 60 * 12 });
