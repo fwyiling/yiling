@@ -6,6 +6,7 @@ const { pathToFileURL } = require('url');
 const { Store } = require('./settings-store');
 const system = require('./system');
 const win32 = require('./win32');
+const media = require('./media');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
@@ -220,7 +221,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, dock: !!dockWin, log: recentLog.slice(-20),
+    paused, dock: !!dockWin, media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -268,6 +269,8 @@ function wireIpc() {
     if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
     try { return shell.readShortcutLink(p).target || p; } catch { return p; }
   });
+  ipcMain.handle('media:get', () => media.get());
+  ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   ipcMain.handle('settings:open', () => { toggleHome(false); openSettings(); });
 }
 function isKnownApp(p) {
@@ -305,6 +308,8 @@ app.whenReady().then(() => {
     desktopCapturer.getSources({ types: ['screen'] }).then((src) => cb({ video: src[0], audio: 'loopback' })).catch(() => cb({}));
   });
   wireIpc();
+  media.onChange((st) => broadcast('media', st));
+  media.start();
   buildWallpapers();
   screen.on('display-added', displaysChanged);
   screen.on('display-removed', displaysChanged);
@@ -326,6 +331,7 @@ app.whenReady().then(() => {
 app.on('second-instance', () => openSettings());
 app.on('before-quit', () => {
   app.isQuitting = true;
+  media.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
   if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar

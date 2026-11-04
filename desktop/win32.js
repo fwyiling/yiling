@@ -52,6 +52,7 @@ function bind() {
     ShowWindow: user32.func('bool __stdcall ShowWindow(intptr_t hwnd, int cmd)'),
     SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(intptr_t hwnd)'),
     SwitchToThisWindow: user32.func('void __stdcall SwitchToThisWindow(intptr_t hwnd, bool altTab)'),
+    keybd_event: user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr_t extra)'),
     shell32: koffi.load('shell32.dll'),
     kernel32: koffi.load('kernel32.dll'),
     dwmapi: koffi.load('dwmapi.dll'),
@@ -144,6 +145,13 @@ function attachToDesktop(win, rect, strategy = 'auto') {
   if (extra === 'bottom' && layer.worker) u.SetWindowPos(layer.worker, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   if (!same(u.GetParent(hwnd), parent)) return { ok: false, reason: 'Explorer refused the window', how: full };
   return { ok: true, raised: layer.raised, how: full };
+}
+
+/** Press and release a media key (play/pause 0xB3, next 0xB0, previous 0xB1). */
+function mediaKey(vk) {
+  if (!load()) return;
+  u.keybd_event(vk, 0, 0x1, 0); // KEYEVENTF_EXTENDEDKEY
+  u.keybd_event(vk, 0, 0x1 | 0x2, 0); // + KEYEVENTF_KEYUP
 }
 
 /** Progman's child windows, top to bottom, for diagnostics (which one covers the wallpaper?). */
@@ -285,4 +293,5 @@ module.exports = {
   listWindows: safe('listWindows', listWindows, []),
   focusWindow: safe('focusWindow', focusWindow),
   desktopTree: safe('desktopTree', desktopTree, []),
+  mediaKey: safe('mediaKey', mediaKey),
 };

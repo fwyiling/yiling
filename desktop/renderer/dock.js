@@ -77,9 +77,23 @@ function tick() {
   $('date').textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// now playing
+let np = { on: false };
+function renderMedia() {
+  $('np').hidden = !s.dock.media || !np.on;
+  if ($('np').hidden) return;
+  $('npTitle').textContent = np.title || 'Unknown title';
+  $('npArtist').textContent = np.artist || '';
+  $('np').classList.toggle('playing', !!np.playing);
+  $('np').querySelector('.art').style.backgroundImage = /^data:image\//.test(np.art || '') ? `url("${np.art}")` : '';
+}
+$('np').querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => sd.mediaControl(b.dataset.m); });
+sd.onMedia((m) => { np = m; renderMedia(); });
+sd.media().then((m) => { np = m; renderMedia(); }).catch(() => {});
+
 $('home').onclick = () => sd.toggleHome(true);
 tip($('home'), `Home · ${s.home.hotkey}`);
-sd.onSettings((n) => { s = n; applyLook(); render(); });
+sd.onSettings((n) => { s = n; applyLook(); render(); renderMedia(); });
 sd.onWindows((list) => { wins = list; render(); });
 applyLook(); tick(); setInterval(tick, 1000);
 wins = await sd.windows().catch(() => []);

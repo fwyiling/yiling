@@ -14,6 +14,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const layer = el('div', 'wp-widgets');
   root.append(canvas, media, dim, layer);
   let scene = null, s = settings, mediaKey = '';
+  // the preview in Customize shows a sample so the widget can be placed while nothing plays
+  let nowPlaying = preview ? { on: true, title: 'Song title', artist: 'Artist', playing: true, art: '' } : { on: false };
   const widgets = {};
 
   // ---------- background ----------
@@ -51,13 +53,14 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     stats: () => el('div', 'w-stats', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
     weather: () => el('div', 'w-weather', '<b class="t">–</b><span class="d">Set a city in Customize</span>'),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
+    media: () => el('div', 'w-media', '<div class="art"></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
   function placeWidgets() {
     for (const [k, cfg] of Object.entries(s.widgets)) {
       if (!MAKERS[k]) continue;
       if (!widgets[k]) { widgets[k] = MAKERS[k](); widgets[k].dataset.w = k; layer.append(widgets[k]); }
       const e = widgets[k];
-      e.hidden = !cfg.on;
+      e.hidden = !cfg.on || (k === 'media' && !nowPlaying.on);
       e.style.left = `${cfg.x * 100}%`; e.style.top = `${cfg.y * 100}%`;
       e.style.setProperty('--scale', cfg.scale || 1);
       if (k === 'clock') e.dataset.style = cfg.style || 'big';
@@ -102,11 +105,24 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     catch (e) { w.querySelector('.d').textContent = e.message || 'Weather unavailable'; }
   }
 
+  function renderMedia() {
+    const m = widgets.media;
+    if (!m) return;
+    m.hidden = !s.widgets.media?.on || !nowPlaying.on;
+    m.querySelector('b').textContent = nowPlaying.title || 'Unknown title';
+    m.querySelector('span').textContent = nowPlaying.artist || '';
+    m.classList.toggle('playing', !!nowPlaying.playing);
+    const art = m.querySelector('.art');
+    art.style.backgroundImage = /^data:image\//.test(nowPlaying.art || '') ? `url("${nowPlaying.art}")` : '';
+    art.classList.toggle('none', !nowPlaying.art);
+  }
+  if (!preview && sd?.onMedia) { sd.onMedia((m) => { nowPlaying = m; renderMedia(); }); sd.media().then((m) => { nowPlaying = m; renderMedia(); }).catch(() => {}); }
+
   function update(next) {
     const cityChanged = next.widgets.weather?.city !== s.widgets.weather?.city;
     s = next;
     root.style.setProperty('--a', s.accent);
-    applyBackground(); placeWidgets(); refreshStats();
+    applyBackground(); placeWidgets(); renderMedia(); refreshStats();
     if (cityChanged || !widgets.weather?.dataset.loaded) { if (widgets.weather) widgets.weather.dataset.loaded = '1'; refreshWeather(); }
   }
   update(settings);

@@ -34,3 +34,15 @@
 .w-quote { margin: 0; text-align: center; white-space: normal; width: 60cqw; }
 .w-quote blockquote { margin: 0; font-size: 2.3cqmin; font-style: italic; font-weight: 400; }
 .w-quote figcaption { margin-top: .6em; font-size: 1.4cqmin; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+.w-media { display: flex; align-items: center; gap: 1.4cqmin; padding: 1.1cqmin 1.8cqmin 1.1cqmin 1.1cqmin; border-radius: 2.2cqmin;
+  background: rgba(20, 25, 32, .5); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, .08); max-width: 34cqw; }
+.w-media .art { width: 6.4cqmin; height: 6.4cqmin; border-radius: 1.3cqmin; background: center / cover no-repeat, color-mix(in srgb, var(--a) 55%, #1a2029); flex: none; }
+.w-media .art.none { background-image: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .5) 0 8%, transparent 9%), radial-gradient(circle at 50% 50%, transparent 0 30%, rgba(255, 255, 255, .18) 31% 33%, transparent 34%) !important; }
+.w-media .txt { display: grid; gap: .25em; width: max-content; max-width: 24cqw; text-shadow: none; }
+.w-media b, .w-media span { overflow: hidden; text-overflow: ellipsis; }
+.w-media b { font-size: 2cqmin; font-weight: 600; } .w-media span { font-size: 1.6cqmin; opacity: .7; }
+.w-media .eq { display: flex; align-items: flex-end; gap: .3cqmin; height: 2.2cqmin; margin-left: .4cqmin; }
+.w-media .eq s { width: .45cqmin; height: 30%; background: var(--a); border-radius: 1px; }
+.w-media.playing .eq s { animation: eq 1s ease-in-out infinite; } .w-media.playing .eq s:nth-child(2) { animation-delay: -.35s; } .w-media.playing .eq s:nth-child(3) { animation-delay: -.7s; }
+.paused .w-media .eq s { animation-play-state: paused; }
+@keyframes eq { 0%, 100% { height: 25%; } 50% { height: 100%; } }

@@ -22,11 +22,12 @@ const DEFAULTS = {
     stats:    { on: true,  x: 0.08, y: 0.86, scale: 1 },
     weather:  { on: false, x: 0.92, y: 0.1,  scale: 1, city: '' },
     quote:    { on: true,  x: 0.5,  y: 0.9,  scale: 1 },
+    media:    { on: true,  x: 0.86, y: 0.86, scale: 1 },   // now playing (only shows while something plays)
   },
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '' },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
-  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, opacity: 0.85, reserve: true, prevAutoHide: null },
+  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.85, reserve: true, prevAutoHide: null },
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
 

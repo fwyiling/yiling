@@ -127,6 +127,19 @@ async function weather() {
 }
 setInterval(sys, 2500);
 
+// ---------- now playing ----------
+function renderMedia(m) {
+  $('npCard').hidden = !m?.on;
+  if (!m?.on) return;
+  $('npTitle').textContent = m.title || 'Unknown title';
+  $('npArtist').textContent = m.artist || m.app.replace(/\.exe$/i, '').split(/[!\\]/).pop() || '';
+  $('npCard').classList.toggle('playing', !!m.playing);
+  $('npCard').querySelector('.art').style.backgroundImage = /^data:image\//.test(m.art || '') ? `url("${m.art}")` : '';
+}
+$('npCard').querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => sd.mediaControl(b.dataset.m); });
+sd.onMedia(renderMedia);
+sd.media().then(renderMedia).catch(() => {});
+
 // ---------- open / close ----------
 const close = () => sd.toggleHome(false);
 $('backdrop').onclick = close;
