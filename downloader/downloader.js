@@ -5,7 +5,17 @@ import { mangaDexChapters, mangaDexPages, mangaDexImageViaTab, useMangaDexTab, L
 
 const $ = (id) => document.getElementById(id);
 const jobId = new URLSearchParams(location.search).get('job');
-const safe = (s) => String(s).replace(/[\\/:*?"<>|~\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 80) || 'Untitled';
+// Chrome's downloads API only accepts plain, portable file names: no non-ASCII characters
+// (not even "–" or curly quotes), no trailing dots, no reserved Windows names. Titles inside
+// the reader keep their real text – only the names on disk are simplified.
+const safe = (s, fallback = 'Untitled') => {
+  let t = String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2010-\u2015\u2212]/g, '-').replace(/[\u2018\u2019\u201a\u2032]/g, "'").replace(/[\u201c\u201d\u201e\u2033]/g, '').replace(/\u2026/g, '...')
+    .replace(/[^\x20-\x7e]/g, '')
+    .replace(/[\\/:*?"<>|~]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[.\s-]+|[.\s]+$/g, '').slice(0, 80).replace(/[.\s-]+$/, '');
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(t)) t = '_' + t;
+  return t || fallback;
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad = (n, w) => String(n).padStart(w, '0');
 
@@ -26,7 +36,8 @@ if (!isMD) {
 let chapters = job.chapters || [];
 $('series').textContent = job.series;
 $('kicker').textContent = isMD ? 'Download from MangaDex' : isImages ? 'Download manga / comic' : 'Download novel';
-$('folder').textContent = safe(job.series);
+const seriesName = safe(job.series, job.mangaId ? `MangaDex ${String(job.mangaId).slice(0, 8)}` : `Series ${new Date().toISOString().slice(0, 10)}`);
+$('folder').textContent = seriesName;
 document.title = `Download · ${job.series}`;
 
 // ================= STEP 1: setup =================
@@ -201,7 +212,13 @@ chrome.downloads.onChanged.addListener((d) => {
 async function saveFile(filename, blob, keepInList = false) {
   const url = URL.createObjectURL(blob);
   try {
-    const id = await chrome.downloads.download({ url, filename, conflictAction: 'overwrite', saveAs: false });
+    let id;
+    try { id = await chrome.downloads.download({ url, filename, conflictAction: 'overwrite', saveAs: false }); }
+    catch (e) {
+      if (!/invalid filename/i.test(e.message)) throw e;
+      const plain = filename.split('/').map((part, i, all) => i === all.length - 1 ? part : part.replace(/[^A-Za-z0-9 _.-]/g, '').trim().replace(/[.\s]+$/, '') || `part${i}`).join('/');
+      id = await chrome.downloads.download({ url, filename: plain, conflictAction: 'overwrite', saveAs: false });
+    }
     const state = await new Promise((r) => waiters.set(id, r));
     if (state !== 'complete') throw new Error('save failed');
     if (keepInList) lastId = id; else chrome.downloads.erase({ id });
@@ -224,7 +241,7 @@ $('start').onclick = async () => {
   $('setup').hidden = true; $('run').hidden = false;
   $('cancel').onclick = () => { cancelled = true; $('now').textContent = 'Cancelling…'; };
 
-  const base = `Syndicates Client/${safe(job.series)}`;
+  const base = `Syndicates Client/${seriesName}`;
   const width = Math.max(3, String(picked.length).length);
   const li = picked.map((c) => {
     const el = document.createElement('li');
@@ -248,7 +265,7 @@ $('start').onclick = async () => {
     try {
       const page = c.index === job.currentIndex && job.current && enough(job.current) ? job.current : await loadChapter(c.url, c);
       if (!enough(page)) throw new Error(isImages ? 'no pages found' : 'no text found');
-      const name = `${pad(k + 1, width)} - ${safe(c.label || 'Chapter ' + c.num)}`;
+      const name = `${pad(k + 1, width)} - ${safe(c.label, `Chapter ${c.num || k + 1}`)}`;
 
       if (isImages) {
         await setReferer(c.url);
@@ -290,10 +307,10 @@ $('start').onclick = async () => {
   // write the reader / book
   let mainFile = null;
   if (isImages && fmt === 'reader' && readerChapters.length) {
-    mainFile = await saveFile(`${base}/Read ${safe(job.series)}.html`, new Blob([buildMangaReader(job.series, readerChapters, accent)], { type: 'text/html' }), true);
+    mainFile = await saveFile(`${base}/Read ${seriesName}.html`, new Blob([buildMangaReader(job.series, readerChapters, accent)], { type: 'text/html' }), true);
   }
   if (!isImages && textChapters.length) {
-    const book = safe(job.series);
+    const book = seriesName;
     if (fmt === 'html') mainFile = await saveFile(`${base}/${book}.html`, new Blob([buildNovelReader(job.series, textChapters, accent)], { type: 'text/html' }), true);
     if (fmt === 'epub') mainFile = await saveFile(`${base}/${book}.epub`, makeEpubBook(job.series, textChapters), true);
     if (fmt === 'txt') mainFile = await saveFile(`${base}/${book}.txt`, new Blob([textChapters.map((c) => `${c.title}\n\n${c.text}`).join('\n\n\n')], { type: 'text/plain' }), true);
