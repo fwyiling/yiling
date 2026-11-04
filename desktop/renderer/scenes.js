@@ -77,15 +77,43 @@ const SCENES = {
       }
     },
   },
+  // a ring of bars around a glowing core, driven by the music
+  visualizer: {
+    scale: 1,
+    init(s) { s.bars = new Float32Array(96); s.rot = 0; },
+    draw(s, ctx, w, h, t, dt) {
+      const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+      bg.addColorStop(0, rgba(mix(s.base, s.colors[2] || s.colors[0], 0.5), 1)); bg.addColorStop(1, rgba(s.base, 1));
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      const a = s.audio || {}, bins = a.bins, n = s.bars.length;
+      for (let i = 0; i < n; i++) { // music when there is some, a calm idle wave otherwise
+        const target = bins ? bins[Math.floor(2 + (i % (n / 2)) * 1.6)] / 255 : 0.12 + 0.08 * Math.sin(t * 1.4 + i * 0.35);
+        s.bars[i] += (target - s.bars[i]) * 0.35;
+      }
+      s.rot += dt * 0.00004 * s.speed;
+      const cx = w / 2 + s.px * w * 0.03, cy = h / 2 + s.py * h * 0.03, r0 = Math.min(w, h) * (0.16 + (a.bass || 0) * 0.04);
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r0 * 2.2);
+      glow.addColorStop(0, rgba(s.colors[0], 0.55 + (a.bass || 0) * 0.4)); glow.addColorStop(1, rgba(s.colors[0], 0));
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+      ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, Math.min(w, h) * 0.006);
+      for (let i = 0; i < n; i++) {
+        const ang = s.rot + (i / n) * Math.PI * 2, len = r0 * (0.15 + s.bars[i] * 1.6 * (0.5 + s.intensity));
+        ctx.strokeStyle = rgba(i % 2 ? s.colors[1] : s.colors[0], 0.85);
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(cx + Math.cos(ang) * (r0 + len), cy + Math.sin(ang) * (r0 + len)); ctx.stroke();
+      }
+      ctx.fillStyle = rgba(s.base, 0.9); ctx.beginPath(); ctx.arc(cx, cy, r0 * 0.92, 0, Math.PI * 2); ctx.fill();
+    },
+  },
 };
-export const SCENE_NAMES = { aurora: 'Aurora', particles: 'Particles', waves: 'Waves', starfield: 'Starfield' };
+export const SCENE_NAMES = { aurora: 'Aurora', particles: 'Particles', waves: 'Waves', starfield: 'Starfield', visualizer: 'Visualizer' };
 
 export function createScene(canvas, opts) {
   const ctx = canvas.getContext('2d', { alpha: false });
   const s = { px: 0, py: 0, tx: 0, ty: 0 };
   let scene, raf = 0, last = 0, t = 0, paused = false, w = 0, h = 0;
   function configure(o) {
-    Object.assign(s, { speed: o.speed ?? 1, intensity: o.intensity ?? 0.8, parallax: o.parallax !== false, fps: o.fps || 60 });
+    Object.assign(s, { baseSpeed: o.speed ?? 1, baseIntensity: o.intensity ?? 0.8, parallax: o.parallax !== false, fps: o.fps || 60, levels: o.levels || null });
+    s.speed = s.baseSpeed; s.intensity = s.baseIntensity;
     s.colors = (o.colors?.length ? o.colors : ['#5e7d9c', '#a7afb8', '#2b3a4d']).map(hexToRgb);
     s.base = mix([10, 12, 16], s.colors[2] || s.colors[0], 0.18);
     const next = SCENES[o.scene] || SCENES.aurora;
@@ -105,6 +133,9 @@ export function createScene(canvas, opts) {
     t += (dt / 1000) * s.speed;
     // ease toward the mouse so parallax glides instead of jumping
     s.px += ((s.parallax ? s.tx : 0) - s.px) * 0.05; s.py += ((s.parallax ? s.ty : 0) - s.py) * 0.05;
+    // music makes every scene pulse: louder bass, brighter and a little faster
+    s.audio = s.levels ? s.levels() : null;
+    if (s.audio) { s.intensity = Math.min(1, s.baseIntensity * (0.75 + s.audio.bass * 0.9)); s.speed = s.baseSpeed * (1 + s.audio.level * 1.2); t += (dt / 1000) * s.baseSpeed * s.audio.level; }
     scene.draw(s, ctx, w, h, t, dt);
   }
   const ro = new ResizeObserver(() => resize(false)); ro.observe(canvas);

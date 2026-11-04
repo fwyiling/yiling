@@ -112,7 +112,8 @@ function findLayer() {
 const WS_EX_NOREDIRECTIONBITMAP = 0x00200000;
 // How the window joins the raised (24H2+) desktop. 'auto' is what the app uses; the others exist so the
 // Windows test run can compare them on a real machine.
-const RAISED_STRATEGIES = ['progman-layered', 'worker-child', 'progman-plain', 'progman-layered-redirected'];
+const RAISED_STRATEGIES = ['progman-layered', 'progman-layered+bottom', 'worker-child', 'progman-plain+bottom', 'progman-layered-redirected+bottom'];
+const HWND_BOTTOM = 1, SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002;
 
 /** Make an Electron window part of the desktop background. rect is in physical screen pixels. */
 function attachToDesktop(win, rect, strategy = 'auto') {
@@ -120,7 +121,8 @@ function attachToDesktop(win, rect, strategy = 'auto') {
   const layer = findLayer();
   if (!layer) return { ok: false, reason: 'desktop layer not found' };
   const hwnd = hwndOf(win);
-  const how = !layer.raised ? 'classic' : strategy === 'auto' ? 'progman-layered' : strategy;
+  const full = !layer.raised ? 'classic' : strategy === 'auto' ? 'progman-layered' : strategy;
+  const [how, extra] = full.split('+');
   let style = Number(u.GetWindowLongPtrW(hwnd, GWL_STYLE));
   style &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINMAXBOX | WS_MAXIMIZE);
   style |= WS_CHILD;
@@ -138,8 +140,10 @@ function attachToDesktop(win, rect, strategy = 'auto') {
   const x = rect.x - vx, y = rect.y - vy;
   if (how.startsWith('progman')) u.SetWindowPos(hwnd, layer.after, x, y, rect.width, rect.height, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
   else u.SetWindowPos(hwnd, 0, x, y, rect.width, rect.height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-  if (!same(u.GetParent(hwnd), parent)) return { ok: false, reason: 'Explorer refused the window', how };
-  return { ok: true, raised: layer.raised, how };
+  // Explorer's own WorkerW draws the plain wallpaper; it must stay the bottom child of Progman or it covers us (as Lively does)
+  if (extra === 'bottom' && layer.worker) u.SetWindowPos(layer.worker, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  if (!same(u.GetParent(hwnd), parent)) return { ok: false, reason: 'Explorer refused the window', how: full };
+  return { ok: true, raised: layer.raised, how: full };
 }
 
 /** True when the foreground window covers a whole monitor (a game or full-screen video). */

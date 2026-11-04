@@ -1,6 +1,7 @@
 // The wallpaper: an animated scene (or image / video / web page) plus the desktop widgets.
 // Used full-screen behind the icons and, scaled down, as the live preview in Customize.
 import { createScene } from './scenes.js';
+import { startAudio, stopAudio, levels } from './audio.js';
 import { greeting, quoteOfTheHour, fmtTime, fmtDate } from './common.js';
 
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
@@ -21,8 +22,11 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     root.style.setProperty('--dim', w.dim);
     const animated = !['image', 'video', 'web'].includes(w.scene);
     canvas.hidden = !animated;
+    // music-reactive: the wallpaper itself listens; the small preview in Customize never does
+    const wantAudio = !preview && (w.audio || w.scene === 'visualizer');
+    if (wantAudio) startAudio(); else if (!preview) stopAudio();
     if (animated) {
-      const opts = { ...w, colors: w.colors, fps: preview ? 30 : s.general.fps };
+      const opts = { ...w, colors: w.colors, fps: preview ? 30 : s.general.fps, levels: wantAudio ? levels : null };
       if (!scene) scene = createScene(canvas, opts); else scene.set(opts);
     } else { scene?.destroy(); scene = null; }
     const key = animated ? '' : `${w.scene}|${w.file}|${w.url}|${w.fileStamp || ''}`;

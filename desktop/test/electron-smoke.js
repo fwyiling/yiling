@@ -7,6 +7,7 @@ const path = require('path');
 const win32 = require('../win32');
 
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion'); // same as the app
+app.on('window-all-closed', () => {}); // keep running between strategies (default would quit)
 // how much of the screen is magenta (sampled on a grid)
 async function magentaShare(d) {
   const [src] = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: d.size });

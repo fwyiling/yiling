@@ -1,5 +1,5 @@
 // Syndicates Desktop – animated wallpaper + desktop widgets + a Home panel for Windows.
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -297,6 +297,12 @@ app.whenReady().then(() => {
       return net.fetch(pathToFileURL(f).href, { headers: req.headers }); // forwards Range for video seeking
     }
     return new Response('not found', { status: 404 });
+  });
+  // music-reactive wallpaper: system sound ("loopback", Windows only), and only for the wallpaper page
+  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
+    const fromWallpaper = (req.frame?.url || '').startsWith(ui('wallpaper.html'));
+    if (!fromWallpaper || !win32.isWin) return cb({});
+    desktopCapturer.getSources({ types: ['screen'] }).then((src) => cb({ video: src[0], audio: 'loopback' })).catch(() => cb({}));
   });
   wireIpc();
   buildWallpapers();
