@@ -13,6 +13,8 @@ GX-style customization, and a manga/novel downloader.
 - **Privacy:** block third-party cookies, remove tracker cookies, trim cross-site referrer, stop WebRTC IP leaks.
 - **Download guard:** risky file types (`.exe`, `.js`, `.bat`, `.msi`, …) are paused until you click Allow.
 - **Appearance:** accent color, dark mode on every site, per-site custom CSS, custom new tab (wallpaper, clock, speed dial).
+- **Client dock:** a floating button on every site (drag it up/down) with quick toggles – pause protection here,
+  dark mode, accent tint, save chapter, YouTube shortcuts. Hide it per site or turn it off in Style.
 - **Tab sleeper:** discard tabs idle for N minutes to free RAM.
 - **Downloader:** popup → *Download this page*. Chapter images → `.cbz`; novel text → `.epub` / `.txt`.
   Lazy-loaded readers: scroll the chapter once, then open the popup.

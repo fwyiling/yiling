@@ -8,6 +8,9 @@ const RISKY_EXT = [
   'hta', 'jar', 'lnk', 'reg', 'dll', 'apk', 'dmg', 'pkg', 'sh', 'iso', 'cpl', 'msc',
 ];
 const REFERRER_RULE_ID = 100000;
+const ALLOW_RULE_ID = 100001;
+const ALLOW_PRIORITY = 2 ** 30;      // beats every ad rule
+const MALWARE_PRIORITY = 2 ** 30 + 1; // ...but malware is blocked even on paused sites
 
 async function getSettings() {
   return { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
@@ -45,10 +48,21 @@ async function apply() {
 
   await setAdRulesets(s.adBlock);
 
+  // Sites the user paused: let everything through on those pages.
+  const allow = (s.allowlist || []).filter(Boolean);
+  const rules = [];
+  if (allow.length) {
+    rules.push({
+      id: ALLOW_RULE_ID, priority: ALLOW_PRIORITY,
+      action: { type: 'allowAllRequests' },
+      condition: { requestDomains: allow, resourceTypes: ['main_frame', 'sub_frame'] },
+    });
+  }
+
   // Referrer-Policy: send only the origin on cross-site requests.
   await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [REFERRER_RULE_ID],
-    addRules: s.referrerPolicy
+    removeRuleIds: [REFERRER_RULE_ID, ALLOW_RULE_ID],
+    addRules: rules.concat(s.referrerPolicy
       ? [{
           id: REFERRER_RULE_ID, priority: 1,
           action: {
@@ -57,8 +71,11 @@ async function apply() {
           },
           condition: { resourceTypes: ['main_frame', 'sub_frame'] },
         }]
-      : [],
+      : []),
   });
+
+  chrome.declarativeNetRequest.setExtensionActionOptions?.({ displayActionCountAsBadgeText: true });
+  chrome.action.setBadgeBackgroundColor({ color: s.accent || '#fa1e4e' });
 
   try {
     await chrome.privacy.websites.thirdPartyCookiesAllowed.set({ value: !s.blockTpCookies });
@@ -85,7 +102,7 @@ async function applyMalwareRules(enabled) {
   const addRules = [];
   for (let i = 0; i < malwareDomains.length; i += 1000) {
     addRules.push({
-      id: i / 1000 + 1, priority: 2,
+      id: i / 1000 + 1, priority: MALWARE_PRIORITY,
       action: { type: 'block' },
       condition: {
         requestDomains: malwareDomains.slice(i, i + 1000),
@@ -190,6 +207,35 @@ async function sleepTabs() {
 chrome.alarms.create('tab-sleep', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => a.name === 'tab-sleep' && sleepTabs());
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === 'update-malware-list') updateMalwareList();
+// ---- messages from the popup and the in-page dock ----
+async function scanTab(tabId) {
+  const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, files: ['content/scanner.js'] });
+  return result;
+}
+async function startJob(job) {
+  const id = crypto.randomUUID();
+  await chrome.storage.session.set({ [`job_${id}`]: job });
+  await chrome.tabs.create({ url: chrome.runtime.getURL(`downloader/downloader.html?job=${id}`) });
+}
+async function toggleListEntry(key, host, on) {
+  const s = await getSettings();
+  const list = new Set(s[key] || []);
+  on ? list.add(host) : list.delete(host);
+  await chrome.storage.sync.set({ [key]: [...list] });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  const tabId = msg.tabId ?? sender.tab?.id;
+  const run = {
+    'update-malware-list': () => updateMalwareList(),
+    'scan': () => scanTab(tabId),
+    'start-job': () => startJob(msg.job),
+    'set-paused': () => toggleListEntry('allowlist', msg.host, msg.paused),
+    'hide-dock-here': () => toggleListEntry('dockHiddenOn', msg.host, true),
+    'open-settings': () => chrome.action.openPopup().catch(() =>
+      chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html?tab=1') })),
+  }[msg?.type];
+  if (!run) return;
+  Promise.resolve(run()).then((r) => reply({ ok: true, result: r }), (e) => reply({ ok: false, error: e.message }));
+  return true;
 });

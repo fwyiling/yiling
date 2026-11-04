@@ -2,64 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shield Client</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h1>Shield Client</h1>
-
-  <section>
-    <h2>Blocking</h2>
-    <label><input type="checkbox" data-key="adBlock"> Block ads &amp; trackers</label>
-    <label><input type="checkbox" data-key="malware"> Block malicious domains <small id="mal"></small></label>
-  </section>
-
-  <section>
-    <h2>Privacy</h2>
-    <label><input type="checkbox" data-key="blockTpCookies"> Block third-party cookies</label>
-    <label><input type="checkbox" data-key="cleanTrackerCookies"> Remove tracker cookies</label>
-    <label><input type="checkbox" data-key="referrerPolicy"> Trim cross-site referrer</label>
-    <label><input type="checkbox" data-key="webrtc"> Prevent WebRTC IP leak</label>
-    <label><input type="checkbox" data-key="downloadGuard"> Confirm risky downloads (.exe, .js, …)</label>
-  </section>
-
-  <section>
-    <h2>YouTube</h2>
-    <label><input type="checkbox" data-key="ytAds"> Skip video ads</label>
-    <label><input type="checkbox" data-key="ytHideShorts"> Hide Shorts</label>
-    <label>Default speed
-      <select data-key="ytSpeed" data-num>
-        <option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option>
-      </select></label>
-    <label>Volume boost
-      <select data-key="ytBoost" data-num>
-        <option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option>
-      </select></label>
-  </section>
-
-  <section>
-    <h2>Appearance</h2>
-    <label>Accent color <input type="color" data-key="accent"></label>
-    <label><input type="checkbox" data-key="accentPages"> Tint scrollbars &amp; selection</label>
-    <label><input type="checkbox" data-key="forceDark"> Dark mode on every site</label>
-    <label>New-tab wallpaper URL <input type="text" data-key="wallpaper" placeholder="https://…" style="flex:1;min-width:0"></label>
-    <label>Sleep idle tabs
-      <select data-key="tabSleepMin" data-num>
-        <option value="0">Off</option><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option>
-      </select></label>
-    <div><small>Custom CSS for <b id="host"></b></small>
-      <textarea id="css" rows="4" spellcheck="false" placeholder="body { font-family: Georgia; }"></textarea>
-      <button id="saveCss">Save CSS</button></div>
-  </section>
-
-  <section>
-    <h2>Download this page</h2>
-    <div id="scan">Scanning…</div>
-    <div class="row">
-      <button id="dlImages" hidden></button>
-      <button id="dlEpub" hidden></button>
-      <button id="dlTxt" hidden></button>
+  <header>
+    <div class="brand">
+      <img src="../icons/icon48.png" alt="" width="28" height="28">
+      <div>
+        <div class="name">Shield Client</div>
+        <div class="site" id="site">—</div>
+      </div>
     </div>
-  </section>
+    <label class="switch big" title="Protection on this site">
+      <input type="checkbox" id="siteOn"><span></span>
+    </label>
+  </header>
+
+  <div class="status" id="status">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z"/></svg>
+    <span id="statusText">You're protected on this site</span>
+  </div>
+
+  <nav>
+    <button data-tab="protect" class="on">
+      <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z"/></svg>Protect</button>
+    <button data-tab="youtube">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm6 3v6l5-3-5-3Z"/></svg>YouTube</button>
+    <button data-tab="style">
+      <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.8 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8Zm-5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>Style</button>
+    <button data-tab="save">
+      <svg viewBox="0 0 24 24"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Save</button>
+  </nav>
+
+  <main>
+    <!-- PROTECT -->
+    <section data-panel="protect" class="on">
+      <h2>Blocking</h2>
+      <div class="card">
+        <label class="row"><div><b>Block ads &amp; trackers</b><small>Removes ads and stops sites following you around.</small></div>
+          <span class="switch"><input type="checkbox" data-key="adBlock"><span></span></span></label>
+        <label class="row"><div><b>Block dangerous sites</b><small id="mal">Stops known malware and scam domains from loading.</small></div>
+          <span class="switch"><input type="checkbox" data-key="malware"><span></span></span></label>
+        <label class="row"><div><b>Ask before risky downloads</b><small>Pauses .exe, .bat, .js and other files that can run on your PC.</small></div>
+          <span class="switch"><input type="checkbox" data-key="downloadGuard"><span></span></span></label>
+      </div>
+      <h2>Privacy</h2>
+      <div class="card">
+        <label class="row"><div><b>Block third-party cookies</b><small>Other companies can't set cookies while you browse.</small></div>
+          <span class="switch"><input type="checkbox" data-key="blockTpCookies"><span></span></span></label>
+        <label class="row"><div><b>Delete tracker cookies</b><small>Wipes cookies from known tracking companies.</small></div>
+          <span class="switch"><input type="checkbox" data-key="cleanTrackerCookies"><span></span></span></label>
+        <label class="row"><div><b>Hide where you came from</b><small>Sites only see the domain you clicked from, not the full page.</small></div>
+          <span class="switch"><input type="checkbox" data-key="referrerPolicy"><span></span></span></label>
+        <label class="row"><div><b>Hide your real IP from WebRTC</b><small>Stops video-call tech leaking your IP (useful with a VPN).</small></div>
+          <span class="switch"><input type="checkbox" data-key="webrtc"><span></span></span></label>
+      </div>
+      <div class="paused" id="pausedWrap" hidden>
+        <h2>Paused sites</h2>
+        <div class="chips" id="paused"></div>
+      </div>
+    </section>
+
+    <!-- YOUTUBE -->
+    <section data-panel="youtube">
+      <h2>Watching</h2>
+      <div class="card">
+        <label class="row"><div><b>Skip video ads</b><small>Jumps past ads automatically and mutes them.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytAds"><span></span></span></label>
+        <label class="row"><div><b>Hide Shorts</b><small>Removes Shorts from home, search and the sidebar.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytHideShorts"><span></span></span></label>
+      </div>
+      <h2>Playback speed</h2>
+      <div class="seg" data-seg="ytSpeed">
+        <button value="1">1×</button><button value="1.25">1.25×</button><button value="1.5">1.5×</button><button value="1.75">1.75×</button><button value="2">2×</button>
+      </div>
+      <h2>Volume boost</h2>
+      <div class="seg" data-seg="ytBoost">
+        <button value="1">Off</button><button value="1.5">150%</button><button value="2">200%</button><button value="3">300%</button>
+      </div>
+    </section>
+
+    <!-- STYLE -->
+    <section data-panel="style">
+      <h2>Accent color</h2>
+      <div class="swatches" id="swatches">
+        <label class="custom" title="Pick any color"><input type="color" data-key="accent"><span>+</span></label>
+      </div>
+      <div class="card">
+        <label class="row"><div><b>Client dock on every site</b><small>A small button in the corner of every page with quick controls.</small></div>
+          <span class="switch"><input type="checkbox" data-key="dock"><span></span></span></label>
+        <label class="row"><div><b>Dark mode everywhere</b><small>Turns every website dark, even ones without a dark theme.</small></div>
+          <span class="switch"><input type="checkbox" data-key="forceDark"><span></span></span></label>
+        <label class="row"><div><b>Accent on websites</b><small>Colors scrollbars and highlighted text with your accent.</small></div>
+          <span class="switch"><input type="checkbox" data-key="accentPages"><span></span></span></label>
+      </div>
+      <h2>New tab wallpaper</h2>
+      <input class="field" type="url" data-key="wallpaper" placeholder="Paste an image link…">
+      <h2>Put idle tabs to sleep</h2>
+      <div class="seg" data-seg="tabSleepMin">
+        <button value="0">Never</button><button value="5">5m</button><button value="15">15m</button><button value="30">30m</button><button value="60">1h</button>
+      </div>
+      <details>
+        <summary>Custom CSS for <b id="host">this site</b></summary>
+        <textarea id="css" rows="5" spellcheck="false" placeholder="body { font-family: Georgia; }"></textarea>
+        <button class="btn ghost" id="saveCss">Save CSS</button>
+      </details>
+    </section>
+
+    <!-- SAVE -->
+    <section data-panel="save">
+      <div class="empty" id="scan">
+        <div class="spinner"></div>
+        <p>Looking for a chapter on this page…</p>
+      </div>
+      <div class="found" id="found" hidden>
+        <div class="title" id="foundTitle"></div>
+        <button class="btn" id="dlImages" hidden></button>
+        <button class="btn" id="dlEpub" hidden></button>
+        <button class="btn ghost" id="dlTxt" hidden></button>
+      </div>
+      <p class="tip">Tip: on manga sites, scroll to the bottom of the chapter first so every page loads.</p>
+    </section>
+  </main>
 
   <script type="module" src="popup.js"></script>
 </body>
