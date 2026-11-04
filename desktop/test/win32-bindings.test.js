@@ -40,6 +40,7 @@ const calls = {
   listWindows: () => w.listWindows([1]),
   focusWindow: () => w.focusWindow(123),
   desktopTree: () => w.desktopTree(),
+  mediaKey: () => w.mediaKey(0xB3),
 };
 const errors = [];
 const origError = console.error;

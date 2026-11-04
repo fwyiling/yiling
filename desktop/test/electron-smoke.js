@@ -34,6 +34,7 @@ app.whenReady().then(async () => {
   if (process.platform !== 'win32') { console.log('skipped: not Windows'); return app.exit(0); }
   const d = screen.getPrimaryDisplay();
   console.log('win32:', JSON.stringify(win32.status()), '| display:', JSON.stringify(d.bounds), 'scale', d.scaleFactor);
+  console.log('VISIBLE WINDOWS', JSON.stringify(win32.listWindows([process.pid]).map((w) => w.title)));
   { // control: an ordinary window on top. If even this is not seen, the screen capture itself is broken.
     const c = new BrowserWindow({ ...d.bounds, frame: false, show: false, backgroundColor: '#ff00ff' });
     await c.loadURL('data:text/html,<body style="margin:0;background:%23ff00ff"></body>');

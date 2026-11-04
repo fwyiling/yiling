@@ -25,10 +25,6 @@ jobs:
         run: node test/win32-bindings.test.js
       - name: Win32 bindings on real Windows
         run: node test/win32-real.smoke.js
-      - name: Compare ways of joining the desktop layer
-        run: npx electron test/electron-smoke.js --compare
-      - name: Wallpaper shows behind the desktop icons
-        run: npx electron test/electron-smoke.js
       - name: App starts and runs for 15 seconds
         shell: pwsh
         run: |
@@ -46,6 +42,15 @@ jobs:
           name: Syndicates-Desktop-Windows
           path: desktop/dist/*.exe
           if-no-files-found: error
+      - name: Show the bare desktop (minimize every window, like Win+D)
+        shell: pwsh
+        run: |
+          (New-Object -ComObject Shell.Application).MinimizeAll()
+          Start-Sleep -Seconds 2
+      - name: Compare ways of joining the desktop layer
+        run: npx electron test/electron-smoke.js --compare
+      - name: Wallpaper shows behind the desktop icons
+        run: npx electron test/electron-smoke.js
       - name: Upload the desktop screenshot from the test
         if: always()
         uses: actions/upload-artifact@v4
