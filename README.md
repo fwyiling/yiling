@@ -52,10 +52,11 @@ Apps stay loaded while you switch (chats stay connected, music keeps playing). *
 Drag the panel's left edge to make it wider.
 
 ## Chrome's own bars
-- **Bottom bar on the new tab page** ("Syndicates Client" link + "Customise Chrome"): Chrome adds it to every extension's new tab page.
-  **Right-click it → Hide footer**, or double-click `tools\windows\hide-new-tab-footer.reg` and restart Chrome
-  (sets the official policy `NTPFooterExtensionAttributionEnabled` = off; Chrome then says "Managed by your organization" – normal).
-  Undo with `show-new-tab-footer.reg`.
+- **Bottom bar on the new tab page** ("Syndicates Client" link + "Customise Chrome"): Chrome adds it to every extension's new tab page. Any one of:
+  1. Right-click directly on the bar → **Hide footer** (newer Chrome).
+  2. Double-click `tools\windows\hide-new-tab-footer.reg`, close every Chrome window, reopen. `chrome://policy` should list
+     `NTPFooterExtensionAttributionEnabled = false` (status OK). Chrome then says "Managed by your organization" – normal. Undo: `show-new-tab-footer.reg`.
+  3. Start Chrome with `--disable-features=NtpFooter` (`tools\windows\start-chrome-without-footer.bat`, or add it to your Chrome shortcut's *Target*).
 - **Tab strip / address bar / bookmarks bar:** only a Chrome *theme* can restyle them. Matching themes are in `themes/`
   (red, cyan, violet, matrix): `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red` (the theme folder itself).
   Popup → Style → **Reskin Chrome's top bar & footer** walks you through it. Make your own with `python3 tools/make-themes.py`.

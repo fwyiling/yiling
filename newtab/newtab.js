@@ -752,11 +752,7 @@ buildDrawer();
 paintHud();
 if (location.hash === '#customize') openDrawer(true);
 setInterval(tick, 1000);
-async function paintHud() {
-  const { adBlock = true } = await chrome.storage.sync.get('adBlock');
-  $('hud').classList.toggle('off', !adBlock);
-  $('hudText').textContent = adBlock ? 'Syndicates online' : 'Syndicates offline';
-}
+function paintHud() {} // status label removed
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === 'sync' && c.adBlock) paintHud();
   if (area === 'sync' && c.accent) { accent = c.accent.newValue; applyLook(); applyBackground(); accentMarkers.forEach((m) => m()); }

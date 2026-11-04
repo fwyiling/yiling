@@ -209,6 +209,7 @@ chrome.downloads.onChanged.addListener((d) => {
   const w = waiters.get(d.id);
   if (w && d.state && d.state.current !== 'in_progress') { waiters.delete(d.id); w(d.state.current); }
 });
+const savedPaths = new Map();
 async function saveFile(filename, blob, keepInList = false) {
   const url = URL.createObjectURL(blob);
   try {
@@ -221,6 +222,9 @@ async function saveFile(filename, blob, keepInList = false) {
     }
     const state = await new Promise((r) => waiters.set(id, r));
     if (state !== 'complete') throw new Error('save failed');
+    // where Chrome really put it (it may rename files or folders) – the reader uses this
+    const [item] = await chrome.downloads.search({ id });
+    savedPaths.set(id, item?.filename || '');
     if (keepInList) lastId = id; else chrome.downloads.erase({ id });
     return id;
   } finally {
@@ -285,8 +289,9 @@ $('start').onclick = async () => {
           await saveFile(`${base}/${name}.cbz`, makeZip(files, 'application/vnd.comicbook+zip'), true);
         } else {
           const dir = `chapters/${name}`;
-          await pool(files, 3, (f) => saveFile(`${base}/${dir}/${f.name}`, new Blob([f.data])));
-          readerChapters.push({ label: c.label || `Chapter ${c.num}`, pages: files.map((f) => `${dir}/${f.name}`) });
+          const ids = new Array(files.length);
+          await pool(files, 3, async (f, i) => { ids[i] = await saveFile(`${base}/${dir}/${f.name}`, new Blob([f.data])); });
+          readerChapters.push({ label: c.label || `Chapter ${c.num}`, pages: files.map((f, i) => ({ rel: `${dir}/${f.name}`, abs: savedPaths.get(ids[i]) || '' })) });
         }
         pagesDone += files.length;
         el.lastChild.textContent = files.length < page.images.length ? `✓ ${files.length}/${page.images.length} pages` : `✓ ${files.length} pages`;
@@ -307,6 +312,19 @@ $('start').onclick = async () => {
   // write the reader / book
   let mainFile = null;
   if (isImages && fmt === 'reader' && readerChapters.length) {
+    // series folder on disk = the folder that contains "chapters"
+    const firstAbs = readerChapters[0].pages.find((p) => p.abs)?.abs || '';
+    const parts = firstAbs.split(/[\\/]/);
+    const ci = parts.lastIndexOf('chapters');
+    const seriesDir = ci > 0 ? parts.slice(0, ci).join('/') : '';
+    const fileUrl = (p) => 'file:///' + p.replace(/\\/g, '/').replace(/^\/+/, '').split('/').map((s, i) => (i === 0 && /:$/.test(s) ? s : encodeURIComponent(s))).join('/');
+    for (const ch of readerChapters) {
+      ch.pages = ch.pages.map((p) => {
+        const norm = (p.abs || '').replace(/\\/g, '/');
+        const rel = seriesDir && norm.startsWith(seriesDir + '/') ? norm.slice(seriesDir.length + 1) : p.rel;
+        return p.abs ? [rel, fileUrl(p.abs)] : [p.rel, ''];
+      });
+    }
     mainFile = await saveFile(`${base}/Read ${seriesName}.html`, new Blob([buildMangaReader(job.series, readerChapters, accent)], { type: 'text/html' }), true);
   }
   if (!isImages && textChapters.length) {

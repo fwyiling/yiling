@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Syndicates Client",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",

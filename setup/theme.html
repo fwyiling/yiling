@@ -49,10 +49,11 @@
   </ol>
 
   <h2>Hide Chrome's footer completely</h2>
-  <p>It only appears on the new tab page (Chrome adds it to every extension's new tab page). Two ways to remove it:</p>
+  <p>Chrome adds this bar to every extension's new tab page, so it can only be switched off in Chrome itself. Use whichever works for you:</p>
   <ol>
-    <li><div><b>Right-click the bottom bar → Hide footer</b> (if your Chrome shows that option).</div></li>
-    <li><div>Or double-click <code class="p">tools\windows\hide-new-tab-footer.reg</code> in the yiling folder, confirm, and restart Chrome. It sets Chrome's official policy <code class="p">NTPFooterExtensionAttributionEnabled</code> to off, which removes the bar completely. Chrome will then show "Managed by your organization" in its menu – that's normal. Undo with <code class="p">show-new-tab-footer.reg</code>.</div></li>
+    <li><div><b>Right-click directly on the bottom bar → Hide footer</b> (newer Chrome versions).</div></li>
+    <li><div><b>Policy file (recommended):</b> double-click <code class="p">tools\windows\hide-new-tab-footer.reg</code> → Yes, then <b>close every Chrome window</b> and reopen. Check <code class="p">chrome://policy</code> – <i>NTPFooterExtensionAttributionEnabled</i> should show <b>false · OK</b>. Chrome will say "Managed by your organization" – normal. Undo: <code class="p">show-new-tab-footer.reg</code>.</div></li>
+    <li><div><b>Startup switch:</b> double-click <code class="p">tools\windows\start-chrome-without-footer.bat</code>, or make it permanent: right-click your Chrome shortcut → Properties → at the end of <i>Target</i> add <code class="p">--disable-features=NtpFooter</code>.</div></li>
   </ol>
 
   <h2>Go back to normal</h2>
