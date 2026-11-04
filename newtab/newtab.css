@@ -512,3 +512,80 @@ body.theme-chrome #qcard:not([hidden]) { display: block; width: min(680px, 92vw)
 #qcard figcaption { margin-top: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--c-muted); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
 #qcard button { border: 0; background: none; color: var(--c-muted); cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 8px; }
 #qcard button:hover { color: var(--c-text); background: color-mix(in srgb, var(--c-text) 8%, transparent); }
+
+/* =====================================================================
+   MATERIAL YOU (Mynt-inspired) – tonal surfaces from one seed colour,
+   big rounded clock card, pill search, shape-shifting shortcut tiles.
+   Builds on the Chrome+ layout (body also has .theme-chrome).
+   ===================================================================== */
+body.theme-mynt { --font: "Outfit", "Segoe UI", system-ui, sans-serif; font-family: var(--font); }
+body.theme-mynt #grain { display: none; }
+body.theme-mynt #bg.theme-bg {
+  background:
+    radial-gradient(48vmax 38vmax at 8% 4%, color-mix(in srgb, var(--c-pc) 55%, transparent), transparent 70%),
+    radial-gradient(42vmax 34vmax at 96% 96%, color-mix(in srgb, var(--c-tc) 45%, transparent), transparent 70%),
+    var(--c-bg) !important;
+}
+/* top bar: tonal round buttons */
+body.theme-mynt .icon { background: var(--c-surface2); color: var(--c-text); }
+body.theme-mynt .icon:hover { background: var(--c-surface4); border-radius: 14px; }
+body.theme-mynt #btnAniManga { background: var(--c-pc); color: var(--c-onPc); }
+body.theme-mynt .chip { background: var(--c-surface2); padding: 8px 16px; }
+
+/* greeting + clock card + date chip */
+body.theme-mynt #center { padding-top: max(64px, 11vh); gap: 10px; }
+body.theme-mynt #greeting { font-size: 20px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--c-text); }
+body.theme-mynt #clock {
+  font-size: min(var(--clock), 104px); font-weight: 600; letter-spacing: -.03em; line-height: 1;
+  padding: 26px 46px 24px; border-radius: 48px; background: var(--c-pc); color: var(--c-onPc);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px color-mix(in srgb, var(--c-pc) 45%, transparent);
+}
+body.theme-mynt #time { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--c-onPc); filter: none; }
+body.theme-mynt #ampm { color: color-mix(in srgb, var(--c-onPc) 75%, transparent); font-weight: 500; }
+body.theme-mynt #date { display: inline-block; margin: 2px 0 22px; padding: 7px 16px; border-radius: 999px; background: var(--c-sc); color: var(--c-onSc); font-size: 14px; font-weight: 500; letter-spacing: .01em; }
+
+/* search: tall tonal pill, engine as a filled tonal button */
+body.theme-mynt #search { height: 60px; border-radius: 30px; width: min(640px, 92vw); padding: 0 8px 0 22px; background: var(--c-surface3); backdrop-filter: none; box-shadow: none; margin-bottom: 26px; }
+body.theme-mynt #search:hover { background: var(--c-surface4); }
+body.theme-mynt #search:focus-within { background: var(--c-surface3); box-shadow: 0 0 0 2px var(--c-primary); }
+body.theme-mynt #search > svg { color: var(--c-primary); opacity: 1; }
+body.theme-mynt #q { font-size: 17px; }
+body.theme-mynt .engine { height: 44px; padding: 0 18px; border-radius: 22px; background: var(--c-sc); color: var(--c-onSc); font-weight: 600; }
+body.theme-mynt .engine:hover { background: var(--c-pc); color: var(--c-onPc); }
+
+/* shortcuts: tonal squircles that morph into circles on hover */
+body.theme-mynt #shortcuts { grid-template-columns: repeat(auto-fill, 96px); gap: 14px; }
+body.theme-mynt .tile { height: 96px; border-radius: 28px; background: var(--c-surface2) !important; box-shadow: none !important; backdrop-filter: none; font-size: 12.5px; font-weight: 500; transition: border-radius .25s cubic-bezier(.2, 0, 0, 1), background .2s, transform .2s; }
+body.theme-mynt .tile:hover { border-radius: 48px; background: var(--c-sc) !important; color: var(--c-onSc); transform: none; box-shadow: none !important; }
+body.theme-mynt .tile .fav { width: 46px; height: 46px; border-radius: 50%; background: var(--c-surface4); }
+body.theme-mynt .tile:hover .fav { background: var(--c-onSc); }
+body.theme-mynt .tile .fav.add-ic { background: var(--c-pc); color: var(--c-onPc); }
+body.theme-mynt .tile .ed button { background: var(--c-surface4); }
+
+/* cards: flat tonal containers, extra-large corners */
+body.theme-mynt .dcard { border-radius: 28px; background: var(--c-surface2); backdrop-filter: none; box-shadow: none; }
+body.theme-mynt .dt { font-weight: 600; }
+body.theme-mynt .ring b { background: var(--c-surface2); }
+body.theme-mynt .todo .ck { border-radius: 50%; }
+body.theme-mynt .todo li.done .ck { box-shadow: inset 0 0 0 3px var(--c-surface2); }
+body.theme-mynt .dcard input { background: var(--c-surface4); border-radius: 16px; }
+body.theme-mynt .dcard form button, body.theme-mynt .dcard .nav { background: var(--c-pc); color: var(--c-onPc); border-radius: 16px; }
+body.theme-mynt .tt li.now { background: var(--c-tc); color: var(--c-onTc); box-shadow: none; }
+body.theme-mynt .tt li.now small, body.theme-mynt .tt li.now time { color: var(--c-onTc); }
+
+/* shelves (Ani Manga) */
+body.theme-mynt .shelf-h span { color: var(--c-text); letter-spacing: .02em; text-transform: none; font-size: 16px; font-weight: 600; }
+body.theme-mynt .shelf-h a { padding: 6px 14px; border-radius: 999px; background: var(--c-pc); color: var(--c-onPc); font-weight: 600; }
+body.theme-mynt .pc-img { border-radius: 24px; box-shadow: none; background-color: var(--c-surface2); }
+body.theme-mynt .pcard:hover .pc-img { border-radius: 32px; box-shadow: 0 0 0 3px var(--c-primary); transform: none; }
+
+/* popovers, quote, drawer */
+body.theme-mynt .pop { background: var(--c-surface2); border-radius: 28px; }
+body.theme-mynt #notes, body.theme-mynt #todoIn, body.theme-mynt #todos li { background: var(--c-surface4); border-radius: 16px; }
+body.theme-mynt #qcard .q { font-family: var(--font); font-style: normal; font-weight: 400; }
+body.theme-mynt #drawer { background: var(--c-surface); border-radius: 28px 0 0 28px; }
+body.theme-mynt .seg button.on, body.theme-mynt .sw input:checked + span { background: var(--c-pc); color: var(--c-onPc); }
+
+/* extended FAB for Customize */
+body.theme-mynt #pillCustomize { height: 56px; padding: 0 22px 0 18px; border-radius: 18px; background: var(--c-pc); color: var(--c-onPc); font-weight: 600; font-size: 15px; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); }
+body.theme-mynt #pillCustomize:hover { background: color-mix(in srgb, var(--c-pc) 88%, var(--c-onPc)); border-radius: 22px; }

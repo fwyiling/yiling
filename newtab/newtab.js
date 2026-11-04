@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
-  theme: 'chrome', seed: '#8a5a44', mode: 'system', scanlines: true, glitch: true, hud: true, animate: false, perfV: 4,
+  theme: 'mynt', seed: '#8a5a44', mode: 'dark', scanlines: true, glitch: true, hud: true, animate: false, perfV: 5,
   bgType: 'theme', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
   showGreeting: true, name: '', greetingText: '',
   showClock: true, clock24: false, clockSeconds: false, clockSize: 96, clockWeight: 300, showDate: true,
@@ -104,6 +104,8 @@ function hexToHsl(hex) {
   return [h * 60, s * 100, l * 100];
 }
 const hsl = (h, s, l) => `hsl(${h.toFixed(1)} ${Math.max(0, Math.min(100, s)).toFixed(1)}% ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`;
+// Chrome+ and Material You share one layout (dashboard cards, shelves, quote card); Mynt restyles it.
+const chromeLike = () => s.theme === 'chrome' || s.theme === 'mynt';
 function isDark() { return s.mode === 'dark' || (s.mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); }
 function chromePalette() {
   const [h, sat] = hexToHsl(s.seed || '#8a5a44');
@@ -115,6 +117,19 @@ function chromePalette() {
     : { bg: hsl(h, c * 0.45, 97), surface: hsl(h, c * 0.45, 93), surface2: hsl(h, c * 0.4, 89), surface3: hsl(h, c * 0.4, 84),
         outline: hsl(h, c * 0.3, 75), primary: hsl(h, Math.max(c, 50), 38), onPrimary: hsl(h, 20, 98),
         text: hsl(h, c * 0.3, 12), muted: hsl(h, c * 0.2, 35), glow: hsl(h, Math.max(c, 55), 70) };
+}
+// Material You-style tonal palette (primary / secondary / tertiary containers) from one seed colour.
+// An untouched seed follows the client's accent colour.
+function myntPalette() {
+  const [h, sat] = hexToHsl(!s.seed || s.seed === '#8a5a44' ? accent : s.seed);
+  const c = Math.max(38, Math.min(sat, 72)), t = (h + 60) % 360;
+  return isDark()
+    ? { bg: hsl(h, c * 0.16, 6), surface: hsl(h, c * 0.2, 10), surface2: hsl(h, c * 0.22, 13), surface3: hsl(h, c * 0.24, 17), surface4: hsl(h, c * 0.25, 21),
+        outline: hsl(h, c * 0.14, 42), primary: hsl(h, c, 80), onPrimary: hsl(h, c * 0.9, 18), text: hsl(h, c * 0.12, 92), muted: hsl(h, c * 0.14, 72), glow: hsl(h, c, 42),
+        pc: hsl(h, c * 0.7, 27), onPc: hsl(h, c, 91), sc: hsl(h, c * 0.32, 23), onSc: hsl(h, c * 0.35, 88), tc: hsl(t, c * 0.55, 27), onTc: hsl(t, c * 0.8, 90) }
+    : { bg: hsl(h, c * 0.5, 98), surface: hsl(h, c * 0.45, 95), surface2: hsl(h, c * 0.42, 92), surface3: hsl(h, c * 0.4, 89), surface4: hsl(h, c * 0.38, 86),
+        outline: hsl(h, c * 0.18, 62), primary: hsl(h, c, 40), onPrimary: hsl(h, 30, 99), text: hsl(h, c * 0.3, 11), muted: hsl(h, c * 0.18, 34), glow: hsl(h, c, 72),
+        pc: hsl(h, c * 0.85, 88), onPc: hsl(h, c, 13), sc: hsl(h, c * 0.35, 89), onSc: hsl(h, c * 0.4, 15), tc: hsl(t, c * 0.7, 88), onTc: hsl(t, c, 13) };
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (s.mode === 'system') { bgKey = ''; render(); } });
 
@@ -146,10 +161,11 @@ function applyLook() {
   b.toggle('no-labels', !s.shortcutLabels);
   b.toggle('style-flat', s.shortcutStyle === 'flat');
   b.toggle('theme-cyber', s.theme === 'cyber');
-  b.toggle('theme-chrome', s.theme === 'chrome');
-  b.toggle('light', s.theme === 'chrome' && !isDark());
-  if (s.theme === 'chrome') {
-    const p = chromePalette();
+  b.toggle('theme-chrome', chromeLike());
+  b.toggle('theme-mynt', s.theme === 'mynt');
+  b.toggle('light', chromeLike() && !isDark());
+  if (chromeLike()) {
+    const p = s.theme === 'mynt' ? myntPalette() : chromePalette();
     for (const [k, v] of Object.entries(p)) r.setProperty('--c-' + k, v);
     r.setProperty('--accent', p.primary);
   }
@@ -379,7 +395,7 @@ async function renderShortcuts() {
   });
   if (editable) {
     const add = Object.assign(document.createElement('button'), { className: 'tile add', title: 'Add shortcut' });
-    if (s.theme === 'chrome') add.innerHTML = '<div class="fav add-ic">+</div><span>Add shortcut</span>';
+    if (chromeLike()) add.innerHTML = '<div class="fav add-ic">+</div><span>Add shortcut</span>';
     else add.textContent = '+';
     add.onclick = () => openEditor(-1);
     box.append(add);
@@ -434,10 +450,10 @@ async function renderWeather() {
 function renderQuote() {
   const day = Math.floor(Date.now() / 864e5) + (s.quoteShift || 0);
   const [q, a] = QUOTES[((day % QUOTES.length) + QUOTES.length) % QUOTES.length];
-  $('quote').hidden = !s.showQuote || s.theme === 'chrome';
+  $('quote').hidden = !s.showQuote || chromeLike();
   $('quote').replaceChildren(`“${q}”`, Object.assign(document.createElement('i'), { textContent: a }));
   const qc = $('qcard');
-  qc.hidden = !s.showQuote || s.theme !== 'chrome';
+  qc.hidden = !s.showQuote || !chromeLike();
   qc.querySelector('.q').textContent = `“${q}”`;
   qc.querySelector('.who').textContent = `— ${a}`;
 }
@@ -482,7 +498,7 @@ let ttDay = new Date().getDay();
 const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
 function renderDash() {
   const dash = $('dash');
-  const show = s.theme === 'chrome' && (s.showToday || s.showTimetable);
+  const show = chromeLike() && (s.showToday || s.showTimetable);
   dash.hidden = !show;
   if (!show) return;
   // Today
@@ -550,7 +566,7 @@ async function coverUrl(url) {
 let shelvesKey = '';
 async function renderShelves() {
   const box = $('shelves');
-  if (s.showShelves === false || s.theme !== 'chrome') { box.replaceChildren(); return; }
+  if (s.showShelves === false || !chromeLike()) { box.replaceChildren(); return; }
   const { mdLibrary = [], animeList = [] } = await chrome.storage.local.get(['mdLibrary', 'animeList']);
   const reading = mdLibrary.filter((e) => e.lastNum).sort((a, b) => (b.lastRun || 0) - (a.lastRun || 0)).slice(0, 6);
   const now = Date.now() / 1000;
@@ -607,9 +623,9 @@ function render() {
 // ================= customize drawer =================
 const SECTIONS = [
   { em: '⚡', title: 'Style', items: [
-    { type: 'seg', key: 'theme', label: 'Theme', options: [['chrome', 'Chrome+'], ['cyber', 'Cyber / gamer'], ['glass', 'Clean glass']] },
-    { type: 'custom', when: () => s.theme === 'chrome', render: renderSeedPicker },
-    { type: 'seg', key: 'mode', label: 'Mode', options: [['system', 'Follow device'], ['dark', 'Dark'], ['light', 'Light']], when: () => s.theme === 'chrome' },
+    { type: 'seg', key: 'theme', label: 'Theme', options: [['mynt', 'Material You'], ['chrome', 'Chrome+'], ['cyber', 'Cyber / gamer'], ['glass', 'Clean glass']] },
+    { type: 'custom', when: chromeLike, render: renderSeedPicker },
+    { type: 'seg', key: 'mode', label: 'Mode', options: [['system', 'Follow device'], ['dark', 'Dark'], ['light', 'Light']], when: chromeLike },
     { type: 'toggle', key: 'hud', label: 'HUD frame', desc: 'Corner brackets around the clock', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'glitch', label: 'Glitch effect', desc: 'Clock glitches every few seconds', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'scanlines', label: 'Scanlines', desc: 'Retro screen lines + vignette', when: () => s.theme === 'cyber' },
@@ -873,6 +889,7 @@ const [{ ntp }, sync] = await Promise.all([chrome.storage.local.get('ntp'), chro
 s = { ...DEFAULTS, ...(ntp || {}) };
 if ((s.perfV || 0) < 3) { s.animate = false; s.theme = 'chrome'; s.bgType = 'theme'; s.font = 'system'; s.perfV = 3; chrome.storage.local.set({ ntp: s }); }
 if (s.perfV < 4) { s.showShelves = false; s.perfV = 4; chrome.storage.local.set({ ntp: s }); }
+if (s.perfV < 5) { s.theme = 'mynt'; s.mode = 'dark'; s.bgType = 'theme'; s.showShelves = true; s.perfV = 5; chrome.storage.local.set({ ntp: s }); } // one-time move to the Material You home
 accent = sync.accent || accent;
 render();
 buildDrawer();
