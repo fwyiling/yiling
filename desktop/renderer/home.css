@@ -1,0 +1,58 @@
+:root { --a: #5e7d9c; --t: #eef1f4; --m: #9aa3ad; --card: rgba(24, 29, 37, .72); --line: rgba(255, 255, 255, .08); color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color: var(--t); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+button, input, textarea { font: inherit; color: inherit; }
+.search svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#backdrop { position: fixed; inset: 0; background: radial-gradient(1200px 700px at 30% 10%, color-mix(in srgb, var(--a) 22%, transparent), transparent 70%), rgba(8, 10, 14, .78); animation: fade .18s ease; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+#panel { position: relative; margin: 6vh auto 0; width: min(1080px, 92vw); max-height: 88vh; display: flex; flex-direction: column; gap: 18px; animation: rise .22s cubic-bezier(.2, 0, 0, 1); }
+.top { display: flex; justify-content: space-between; align-items: flex-end; }
+#greet { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
+#date, .muted { color: var(--m); }
+#time { font-size: 56px; font-weight: 600; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+#time small { font-size: 18px; color: var(--m); margin-left: 4px; font-weight: 500; }
+.search { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 18px; border-radius: 30px; background: var(--card); border: 1px solid var(--line); backdrop-filter: blur(20px); }
+.search:focus-within { border-color: color-mix(in srgb, var(--a) 70%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--a) 22%, transparent); }
+.search svg { color: color-mix(in srgb, var(--a) 70%, #fff); }
+#q { flex: 1; border: 0; outline: none; background: none; font-size: 18px; }
+kbd { font: 600 11px system-ui; padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, .08); color: var(--m); }
+#results { display: grid; gap: 4px; padding: 8px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); max-height: 46vh; overflow-y: auto; }
+.res { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 12px; cursor: pointer; }
+.res img, .res .ph { width: 28px; height: 28px; border-radius: 7px; flex: none; }
+.res .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 30%, #222); font-weight: 700; }
+.res.on, .res:hover { background: color-mix(in srgb, var(--a) 24%, transparent); }
+.res small { margin-left: auto; color: var(--m); }
+.cols { display: grid; grid-template-columns: 1fr 320px; gap: 18px; min-height: 0; }
+.sec-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.sec-h h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.chip { border: 1px solid var(--line); background: rgba(255, 255, 255, .05); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 12.5px; margin-left: 6px; }
+.chip:hover, .chip.on { border-color: var(--a); background: color-mix(in srgb, var(--a) 22%, transparent); }
+.apps { padding: 16px; border-radius: 24px; background: var(--card); border: 1px solid var(--line); overflow-y: auto; max-height: 62vh; scrollbar-width: thin; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.app { position: relative; display: grid; justify-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 18px; cursor: pointer; border: 0; background: none; text-align: center; transition: background .15s, border-radius .2s; }
+.app:hover, .app:focus-visible { background: rgba(255, 255, 255, .07); border-radius: 26px; outline: none; }
+.app img, .app .ph { width: 40px; height: 40px; border-radius: 10px; }
+.app .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 35%, #20262f); font-weight: 700; font-size: 17px; }
+.app span { font-size: 12.5px; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .pin { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .5); color: var(--t); cursor: pointer; opacity: 0; font-size: 12px; line-height: 22px; }
+.app:hover .pin { opacity: 1; }
+.empty { color: var(--m); padding: 18px 4px; grid-column: 1 / -1; }
+.side { display: grid; gap: 14px; align-content: start; }
+.card { padding: 14px 16px; border-radius: 22px; background: var(--card); border: 1px solid var(--line); }
+#todos { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; max-height: 170px; overflow-y: auto; }
+#todos li { display: flex; align-items: center; gap: 10px; padding: 6px 6px; border-radius: 10px; }
+#todos li:hover { background: rgba(255, 255, 255, .05); }
+#todos .ck { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .3); background: none; cursor: pointer; flex: none; padding: 0; }
+#todos li.done .ck { background: var(--a); border-color: var(--a); }
+#todos li.done span { text-decoration: line-through; color: var(--m); }
+#todos span { flex: 1; } #todos .rm { opacity: 0; border: 0; background: none; color: var(--m); cursor: pointer; } #todos li:hover .rm { opacity: 1; }
+#todoIn, #notes { width: 100%; border: 0; outline: none; border-radius: 12px; padding: 9px 12px; background: rgba(255, 255, 255, .06); }
+#notes { min-height: 90px; resize: vertical; }
+.sys { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 40px 1fr 44px; align-items: center; gap: 10px; font-size: 12.5px; }
+.bar i { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; } .bar b { display: block; height: 100%; width: 0; background: var(--a); transition: width .6s; }
+.bar em { font-style: normal; text-align: right; color: var(--m); font-variant-numeric: tabular-nums; }
+.foot { display: flex; justify-content: space-between; align-items: center; }
+@media (max-width: 860px) { .cols { grid-template-columns: 1fr; } .side { grid-template-columns: 1fr 1fr; } }
