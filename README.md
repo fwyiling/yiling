@@ -29,6 +29,14 @@ GX-style customization, and a manga/novel downloader.
   corner roundness, export/import. Open the ⚙ button.
 - **Web skins:** cyber look on Google Search and YouTube (neon accent, dark synthwave backdrop, glowing progress bar).
   Toggle in the popup → Style. Skins live in `skins/` – plain CSS, easy to tweak.
+- **Pop-up blocker (strict):** blocks pop-ups/pop-unders opened without a real click, invisible click-trap links, and pages that
+  jump to another site after a click that wasn't on a link. Logins/payments allowed; every block has "Open anyway".
+- **Learning tracker blocker:** third parties that set cookies on 3+ different sites get blocked (Privacy Badger-style).
+- **Clean up on close:** a site's cookies & storage are deleted 30 s after its last tab closes, except sites you keep (Cookie AutoDelete-style).
+- **Auto-load next chapter:** on manga & novel sites the next chapter is appended as you scroll (Pagetual-style).
+- **Sidebar apps:** Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch, Shield Music or your own sites in Chrome's side panel.
+- **Shield Music:** Spotify-style player for YouTube Music's catalogue (search, home feed, liked songs, playlists, queue + radio,
+  lyrics, video view, media keys). Built on YouTube.js (MIT); playback through YouTube's embed with your ad stripping applied.
 - **Client dock:** floating button on every site with quick toggles and Download.
 - **Tab sleeper**, accent color everywhere, per-site custom CSS.
 
@@ -49,9 +57,12 @@ To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the n
 - YouTube changes its markup often; ad-skip selectors in `content/youtube.js` may need updates.
 - Only download content you have the right to keep offline.
 
-## Rebuilding the cookie script
+## Rebuilding bundled scripts
 ```bash
-cd tools && npm install && npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
+cd tools && npm install
+npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
+npx esbuild ../content/src/autonext.js --bundle --format=iife --outfile=../content/autonext.js
+NODE_PATH=$PWD/node_modules npx esbuild ../music/src/music.js --bundle --format=esm --platform=browser --outfile=../music/music.js
 ```
 
 ## Updating filter lists
@@ -74,4 +85,6 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
 - [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
 - [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner auto-reject engine + rules, vendored in `lib/vendor/`.
+- [YouTube.js](https://github.com/LuanRT/YouTube.js) (MIT) – YouTube Music data for Shield Music (bundled into `music/music.js`).
+- Pagetual, Privacy Badger, Cookie AutoDelete, Popup Blocker (strict) – behaviour references (own code).
 - [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.

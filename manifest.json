@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Client",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -16,7 +16,11 @@
     "topSites",
     "favicon",
     "webNavigation",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "webRequest",
+    "browsingData",
+    "sidePanel",
+    "contentSettings"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -59,7 +63,19 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.youtube.com/*"
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/popguard-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*"
       ],
       "js": [
         "content/yt-main.js"
@@ -132,6 +148,26 @@
       "run_at": "document_start",
       "all_frames": true,
       "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/popguard.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/autonext.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
@@ -150,5 +186,8 @@
         "<all_urls>"
       ]
     }
-  ]
+  ],
+  "side_panel": {
+    "default_path": "sidebar/sidebar.html"
+  }
 }

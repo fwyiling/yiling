@@ -98,6 +98,8 @@ async function apply(changed) {
   }
 
   if (has('malware')) await applyMalwareRules(s.malware);
+  if (has('learnTrackers')) await applyLearnedRule();
+  if (changed && changed.includes('autoClean') && s.autoClean && !(s.keepSites || []).length) await seedKeepList();
 }
 
 // ---- malware blocklist -> dynamic rules (many domains per rule) ----
@@ -331,6 +333,210 @@ async function handleAutoconsent(msg, sender) {
   }
 }
 
+// ---- shared: registrable domain ("site") of a URL ----
+const SLD = new Set(['co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'or', 'ne', 'go', 'gob', 'mil']);
+function regDomain(host) {
+  const p = host.replace(/^www\./, '').split('.');
+  if (p.length <= 2 || /^\d+$/.test(p[p.length - 1])) return p.join('.');
+  const n = p[p.length - 1].length === 2 && SLD.has(p[p.length - 2]) ? 3 : 2;
+  return p.slice(-n).join('.');
+}
+function siteOf(url) {
+  try { const u = new URL(url); return /^https?:$/.test(u.protocol) ? regDomain(u.hostname) : null; } catch { return null; }
+}
+
+// ---- clear a site's data when its last tab closes (Cookie AutoDelete-style) ----
+const tabSites = new Map();
+chrome.tabs.query({}).then((tabs) => tabs.forEach((t) => { const s = siteOf(t.url || ''); if (s) tabSites.set(t.id, s); }));
+chrome.tabs.onUpdated.addListener((id, info, tab) => { const s = siteOf(tab.url || ''); if (s) tabSites.set(id, s); });
+chrome.tabs.onRemoved.addListener(async (id) => {
+  const site = tabSites.get(id);
+  tabSites.delete(id);
+  if (!site) return;
+  const s = await getSettings();
+  if (!s.autoClean || (s.keepSites || []).includes(site)) return;
+  chrome.alarms.create(`clean:${site}`, { when: Date.now() + 30000 }); // grace period: reopen within 30s and nothing is lost
+});
+async function cleanSite(site) {
+  const s = await getSettings();
+  if (!s.autoClean || (s.keepSites || []).includes(site)) return;
+  const open = (await chrome.tabs.query({})).some((t) => siteOf(t.url || '') === site);
+  if (open) return;
+  const cookies = await chrome.cookies.getAll({ domain: site });
+  await Promise.all(cookies.map((c) => chrome.cookies.remove({ url: `http${c.secure ? 's' : ''}://${c.domain.replace(/^\./, '')}${c.path}`, name: c.name, storeId: c.storeId }).catch(() => {})));
+  const origins = [];
+  for (const sub of ['', 'www.']) for (const proto of ['https://', 'http://']) origins.push(proto + sub + site);
+  await chrome.browsingData.remove({ origins }, { cacheStorage: true, indexedDB: true, localStorage: true, serviceWorkers: true, fileSystems: true }).catch(() => {});
+  const { cleanStats = 0 } = await chrome.storage.local.get('cleanStats');
+  chrome.storage.local.set({ cleanStats: cleanStats + 1 });
+}
+chrome.alarms.onAlarm.addListener((a) => { if (a.name.startsWith('clean:')) cleanSite(a.name.slice(6)); });
+const KEEP_DEFAULTS = ['google.com', 'youtube.com', 'mangadex.org', 'github.com', 'discord.com', 'spotify.com', 'claude.ai', 'chatgpt.com', 'whatsapp.com', 'twitch.tv', 'microsoft.com', 'live.com'];
+async function seedKeepList() {
+  const top = await chrome.topSites.get().catch(() => []);
+  const sites = new Set([...KEEP_DEFAULTS, ...top.map((t) => siteOf(t.url)).filter(Boolean)]);
+  const s = await getSettings();
+  await chrome.storage.sync.set({ keepSites: [...new Set([...(s.keepSites || []), ...sites])].slice(0, 200) });
+}
+
+// ---- learning tracker blocker (Privacy Badger-style) ----
+// A third-party site that sets cookies on 3+ different websites is following you → block it.
+const LEARN_RULE_ID = 100020;
+const LEARN_THRESHOLD = 3;
+const ENTITY = {}; // sites owned by the same company don't count as third parties for each other
+for (const [owner, sites] of Object.entries({
+  google: ['google.com', 'youtube.com', 'gstatic.com', 'googleusercontent.com', 'ggpht.com', 'googlevideo.com', 'ytimg.com', 'googleapis.com', 'blogger.com', 'youtube-nocookie.com'],
+  meta: ['facebook.com', 'fbcdn.net', 'instagram.com', 'cdninstagram.com', 'whatsapp.com', 'whatsapp.net', 'messenger.com'],
+  microsoft: ['microsoft.com', 'live.com', 'bing.com', 'msn.com', 'office.com', 'microsoftonline.com', 'skype.com', 'xbox.com', 'outlook.com'],
+  amazon: ['amazon.com', 'media-amazon.com', 'ssl-images-amazon.com', 'primevideo.com', 'twitch.tv', 'jtvnw.net', 'ttvnw.net'],
+  discord: ['discord.com', 'discordapp.com', 'discord.gg', 'discordapp.net'],
+  spotify: ['spotify.com', 'scdn.co', 'spotifycdn.com'],
+  mangadex: ['mangadex.org', 'mangadex.network'],
+  apple: ['apple.com', 'icloud.com', 'mzstatic.com'],
+  x: ['x.com', 'twitter.com', 'twimg.com'],
+  reddit: ['reddit.com', 'redd.it', 'redditstatic.com', 'redditmedia.com'],
+})) for (const s of sites) ENTITY[s] = owner;
+const entity = (site) => ENTITY[site] || site;
+// services sites need to work: never learned as trackers
+const NEVER_BLOCK = new Set(['gstatic.com', 'googleapis.com', 'recaptcha.net', 'hcaptcha.com', 'cloudflare.com', 'cloudflareinsights.com', 'cloudfront.net',
+  'akamaihd.net', 'akamaized.net', 'jsdelivr.net', 'unpkg.com', 'fastly.net', 'bootstrapcdn.com', 'fontawesome.com', 'typekit.net', 'ytimg.com',
+  'googlevideo.com', 'youtube.com', 'youtube-nocookie.com', 'vimeo.com', 'vimeocdn.com', 'paypal.com', 'paypalobjects.com', 'stripe.com', 'stripe.network',
+  'github.com', 'githubusercontent.com', 'google.com', 'apple.com', 'microsoft.com', 'microsoftonline.com', 'live.com', 'twitch.tv', 'discord.com',
+  'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com']);
+let learn = null, learnDirty = false;
+async function loadLearn() {
+  if (!learn) { const { learned } = await chrome.storage.local.get('learned'); learn = learned || { seen: {}, blocked: [] }; }
+  return learn;
+}
+async function applyLearnedRule() {
+  const s = await getSettings();
+  const l = await loadLearn();
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [LEARN_RULE_ID],
+    addRules: s.learnTrackers && l.blocked.length ? [{
+      id: LEARN_RULE_ID, priority: 3, action: { type: 'block' },
+      condition: { requestDomains: l.blocked.slice(0, 5000), domainType: 'thirdParty', resourceTypes: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'ping', 'media', 'other'] },
+    }] : [],
+  });
+}
+let learnFlushT = null;
+function learnSoon() {
+  learnDirty = true;
+  clearTimeout(learnFlushT);
+  learnFlushT = setTimeout(async () => { if (!learnDirty) return; learnDirty = false; await chrome.storage.local.set({ learned: learn }); }, 4000);
+}
+chrome.webRequest.onHeadersReceived.addListener((d) => {
+  if (!settingsCache?.learnTrackers || d.tabId < 0 || !d.initiator || !learn) return;
+  const first = siteOf(d.initiator), third = siteOf(d.url);
+  if (!first || !third || first === third || entity(first) === entity(third) || NEVER_BLOCK.has(third)) return;
+  if (!d.responseHeaders?.some((h) => h.name.toLowerCase() === 'set-cookie')) return;
+  const seen = (learn.seen[third] ||= []);
+  if (seen.includes(first)) return;
+  seen.push(first);
+  if (seen.length > 10) seen.shift();
+  if (seen.length >= LEARN_THRESHOLD && !learn.blocked.includes(third)) { learn.blocked.push(third); applyLearnedRule(); }
+  learnSoon();
+}, { urls: ['<all_urls>'], types: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'ping', 'other'] }, ['responseHeaders', 'extraHeaders']);
+getSettings().then(() => loadLearn());
+
+// ---- sidebar apps: let sites load inside the side panel ----
+// Side-panel frames have no tab (tabId -1): strip only their "don't embed me" headers.
+const SIDEBAR_RULE = 100030;
+chrome.declarativeNetRequest.updateSessionRules({
+  removeRuleIds: [SIDEBAR_RULE],
+  addRules: [{
+    id: SIDEBAR_RULE, priority: 4,
+    action: { type: 'modifyHeaders', responseHeaders: [
+      { header: 'x-frame-options', operation: 'remove' },
+      { header: 'content-security-policy', operation: 'remove' },
+      { header: 'cross-origin-opener-policy', operation: 'remove' },
+    ] },
+    condition: { tabIds: [chrome.tabs.TAB_ID_NONE], resourceTypes: ['sub_frame'] },
+  }],
+}).catch((e) => console.warn('sidebar rule', e));
+chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
+async function sidebarAllow(url) {
+  // keep logins working inside the panel even with third-party cookies blocked
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    const site = regDomain(host);
+    await chrome.contentSettings.cookies.set({ primaryPattern: `https://[*.]${site}/*`, setting: 'allow' });
+  } catch {}
+}
+
+// ---- Shield Music: YouTube's embed refuses pages without a referrer, and its API rejects
+// chrome-extension:// origins – give our own requests YouTube's address instead.
+const MUSIC_RULES = [100040, 100041];
+chrome.declarativeNetRequest.updateSessionRules({
+  removeRuleIds: MUSIC_RULES,
+  addRules: [
+    { id: MUSIC_RULES[0], priority: 5,
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://www.youtube.com/' }] },
+      condition: { initiatorDomains: [chrome.runtime.id], requestDomains: ['youtube-nocookie.com', 'youtube.com'], resourceTypes: ['sub_frame'] } },
+    { id: MUSIC_RULES[1], priority: 5,
+      action: { type: 'modifyHeaders', requestHeaders: [
+        { header: 'Origin', operation: 'set', value: 'https://music.youtube.com' },
+        { header: 'Referer', operation: 'set', value: 'https://music.youtube.com/' }] },
+      condition: { initiatorDomains: [chrome.runtime.id], requestDomains: ['youtube.com'], resourceTypes: ['xmlhttprequest', 'other'] } },
+  ],
+}).catch((e) => console.warn('music rules', e));
+
+// ---- strict pop-up blocker: new tabs/windows a page opens by itself, and hijacked redirects ----
+const OK_POPUP_HOST = /^(accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com|login\.live\.com|(www\.)?facebook\.com|discord\.com|github\.com|(www\.)?paypal\.com|checkout\.stripe\.com|(api\.)?twitter\.com|x\.com|id\.twitch\.tv|steamcommunity\.com|pay\.google\.com)$/i;
+const lastClicks = new Map();   // tabId -> { t, site, interactive }
+const pendingPopups = new Map(); // new tabId -> { source, t }
+const tabTopSite = new Map();    // tabId -> site of the committed page
+function userWanted(sourceTab, targetSite, within = 1500) {
+  const c = lastClicks.get(sourceTab);
+  return !!c && Date.now() - c.t < within && (c.site === targetSite || (c.interactive && !c.site));
+}
+async function popupGuardOn(tabId) {
+  const s = await getSettings();
+  if (s.popupBlock === false) return false;
+  try { const t = await chrome.tabs.get(tabId); const h = new URL(t.url).hostname.replace(/^www\./, ''); return !(s.allowlist || []).includes(h); } catch { return true; }
+}
+async function judgePopup(newTab, url) {
+  const p = pendingPopups.get(newTab);
+  if (!p) return;
+  const target = siteOf(url);
+  if (!target) return; // about:blank – wait for the real address
+  pendingPopups.delete(newTab);
+  const src = tabTopSite.get(p.source);
+  let host = ''; try { host = new URL(url).hostname; } catch {}
+  if (!src || target === src || OK_POPUP_HOST.test(host) || userWanted(p.source, target)) return;
+  if (!(await popupGuardOn(p.source))) return;
+  chrome.tabs.remove(newTab).catch(() => {});
+  chrome.tabs.sendMessage(p.source, { type: 'show-popup-toast', url, why: 'pop-up tab' }, { frameId: 0 }).catch(() => {});
+  recentPopupBlock.set(p.source, Date.now());
+}
+const recentPopupBlock = new Map();
+chrome.webNavigation.onCreatedNavigationTarget.addListener(({ sourceTabId, tabId, url }) => {
+  pendingPopups.set(tabId, { source: sourceTabId, t: Date.now() });
+  setTimeout(() => pendingPopups.delete(tabId), 5000);
+  judgePopup(tabId, url);
+});
+chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => {
+  if (frameId === 0 && pendingPopups.has(tabId)) judgePopup(tabId, url);
+});
+// the page you're on jumps to another site right after a click that wasn't on a link → go back
+chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId, url, transitionType, transitionQualifiers }) => {
+  if (frameId !== 0) return;
+  const before = tabTopSite.get(tabId), now = siteOf(url);
+  if (now) tabTopSite.set(tabId, now);
+  if (!before || !now || before === now) return;
+  if (!['link', 'auto_bookmark'].includes(transitionType) && !(transitionQualifiers || []).includes('client_redirect')) return;
+  if (transitionQualifiers?.includes('forward_back') || transitionType === 'typed' || transitionType === 'generated') return;
+  const c = lastClicks.get(tabId);
+  const hijack = c && Date.now() - c.t < 1500 && !c.interactive && c.site !== now;
+  const tabUnder = (recentPopupBlock.get(tabId) || 0) > Date.now() - 4000 && !(c && c.site === now);
+  if (!(hijack || tabUnder) || OK_POPUP_HOST.test(new URL(url).hostname)) return;
+  if (!(await popupGuardOn(tabId))) return;
+  tabTopSite.set(tabId, before);
+  chrome.tabs.goBack(tabId).catch(() => {});
+  setTimeout(() => chrome.tabs.sendMessage(tabId, { type: 'show-popup-toast', url, why: 'redirect' }, { frameId: 0 }).catch(() => {}), 1200);
+});
+chrome.tabs.onRemoved.addListener((id) => { lastClicks.delete(id); tabTopSite.delete(id); recentPopupBlock.delete(id); });
+
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -371,6 +577,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
     'allow-once': () => allowOnce(msg.host),
+    'sidebar-allow': () => sidebarAllow(msg.url),
+    'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
+    'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
+    'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },
+    'learn-reset': async () => { learn = { seen: {}, blocked: [] }; await chrome.storage.local.set({ learned: learn }); await applyLearnedRule(); },
+    'learn-stats': async () => { const l = await loadLearn(); return { blocked: l.blocked.length, watching: Object.keys(l.seen).length, list: l.blocked.slice(-30) }; },
+    'keep-site': async () => { const s = await getSettings(); const k = new Set(s.keepSites || []); msg.keep ? k.add(msg.site) : k.delete(msg.site); await chrome.storage.sync.set({ keepSites: [...k] }); },
+    'clean-now': () => cleanSite(msg.site),
     'yt-data': () => ytData(msg.videoId),
     'md-diagnose': async () => mangaDexDiagnose((await chrome.tabs.get(tabId)).url, tabId),
     'download': () => startJob(buildJob(msg.page, msg.kind, msg.preset)),

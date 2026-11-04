@@ -101,6 +101,29 @@ chrome.storage.local.get('cookieStats').then(({ cookieStats }) => {
   if (cookieStats) $('cookieInfo').textContent = `Clicks "Reject all" on cookie banners for you – ${cookieStats.toLocaleString()} rejected so far.`;
 });
 
+// sidebar
+$('openSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id }); window.close(); };
+// learned trackers
+send({ type: 'learn-stats' }).then((r) => { if (r?.ok && r.result.blocked) $('learnInfo').textContent = `Blocks companies that follow you across 3+ sites – ${r.result.blocked} learned so far.`; });
+$('learnReset').onclick = async () => { await send({ type: 'learn-reset' }); $('learnReset').textContent = 'Reset ✓'; $('learnInfo').textContent = 'Blocks companies that follow you across 3+ sites.'; };
+// keep logins for this site when auto-clean is on
+{
+  const siteOf = (h) => { const p = h.split('.'); return p.slice(p.length > 2 && p[p.length - 1].length === 2 && ['co', 'com', 'net', 'org'].includes(p[p.length - 2]) ? -3 : -2).join('.'); };
+  const site = host && siteOf(host);
+  const paint = () => {
+    const kept = (settings.keepSites || []).includes(site);
+    $('keepSite').hidden = !site || !settings.autoClean;
+    $('keepSite').textContent = kept ? `✓ Keeping ${site}` : `Keep ${site}'s logins`;
+  };
+  $('keepSite').onclick = async () => {
+    const kept = (settings.keepSites || []).includes(site);
+    await send({ type: 'keep-site', site, keep: !kept });
+    settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) }; paint();
+  };
+  document.querySelector('[data-key="autoClean"]').addEventListener('change', () => setTimeout(async () => { settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) }; paint(); }, 600));
+  paint();
+}
+
 // ---- custom CSS ----
 if (host) {
   $('host').textContent = host;
