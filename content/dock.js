@@ -75,7 +75,7 @@
         ${yt ? tile('shorts', 'Hide Shorts', s.ytHideShorts ? 'Hidden' : 'Showing', s.ytHideShorts)
              : tile('accent', 'Accent tint', s.accentPages ? 'On' : 'Off', s.accentPages)}
         ${yt ? tile('ytads', 'Skip ads', s.ytAds ? 'On' : 'Off', s.ytAds)
-             : tile('save', 'Save chapter', 'Manga / novel', false)}
+             : tile('save', 'Download', /mangadex\.org$/.test(location.hostname) ? 'MangaDex series' : 'Chapter or series', false)}
       </div>
       <div class="out"></div>
       <div class="foot">
@@ -86,25 +86,24 @@
 
   async function saveChapter() {
     const out = panel.querySelector('.out');
-    out.innerHTML = '<div class="msg">Looking for a chapter…</div>';
+    out.innerHTML = '<div class="msg">Looking for chapters…</div>';
     const r = await send({ type: 'scan' });
     const p = r?.ok && r.result;
-    if (!p) { out.innerHTML = '<div class="msg">Couldn\'t read this page.</div>'; return; }
-    const imgs = p.images.length >= 3, txt = p.text.length >= 1500;
-    if (!imgs && !txt) { out.innerHTML = '<div class="msg">No chapter found. Scroll to the end so every page loads, then try again.</div>'; return; }
+    if (!p) { out.innerHTML = `<div class="msg">Couldn't read this page${r?.error ? ': ' + r.error : ''}.</div>`; return; }
+    const md = p.source === 'mangadex';
+    const kind = md || p.images.length >= 3 ? 'images' : p.text.length >= 1500 ? 'text' : null;
+    if (!kind) { out.innerHTML = '<div class="msg">No chapter found. Scroll to the end so every page loads, then try again.</div>'; return; }
     out.innerHTML = '';
-    const add = (label, job, ghost) => {
+    const n = p.chapters.length;
+    const add = (label, preset, ghost) => {
       const b = document.createElement('button');
       b.className = 'btn' + (ghost ? ' ghost' : '');
       b.textContent = label;
-      b.onclick = () => send({ type: 'start-job', job });
+      b.onclick = () => send({ type: 'download', page: p, kind, preset });
       out.append(b);
     };
-    if (imgs) add(`Download ${p.images.length} pages (.cbz)`, { mode: 'images', title: p.title, images: p.images, url: p.url, origin: p.origin });
-    if (txt) {
-      add('Save as eBook (.epub)', { mode: 'text', format: 'epub', title: p.title, text: p.text }, imgs);
-      add('Save as text (.txt)', { mode: 'text', format: 'txt', title: p.title, text: p.text }, true);
-    }
+    if (n > 1 || md) add(n > 1 ? `Whole series (${n} chapters)` : 'Choose chapters', 'all');
+    if (!md || p.currentIndex >= 0) add('This chapter only', 'current', n > 1 || md);
   }
 
   async function act(a) {

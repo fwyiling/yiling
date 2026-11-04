@@ -59,15 +59,15 @@ try { const u = new URL(tab.url); if (/^https?:$/.test(u.protocol)) host = u.hos
 
 function paintSite() {
   const paused = host && (settings.allowlist || []).includes(host);
-  $('site').textContent = host || 'Browser page';
-  $('siteOn').checked = !!host && !paused && settings.adBlock;
-  $('siteOn').disabled = !host;
-  $('status').classList.toggle('off', !!host && (!!paused || !settings.adBlock));
-  $('status').classList.toggle('idle', !host);
-  $('statusText').textContent = !host ? 'Nothing to protect on this page'
-    : paused ? `Protection paused on ${host}`
-    : !settings.adBlock ? 'Ad blocking is turned off'
-    : `You're protected on ${host}`;
+  $('site').textContent = host || 'Protection everywhere';
+  $('siteOn').checked = host ? !paused && settings.adBlock : settings.adBlock;
+  $('siteOn').title = host ? `Protection on ${host}` : 'Protection on every site';
+  const off = host ? !!paused || !settings.adBlock : !settings.adBlock;
+  $('status').classList.toggle('off', off);
+  $('statusText').textContent = !settings.adBlock ? 'Ad blocking is off everywhere'
+    : paused ? `Paused on ${host} – tap the switch to turn it back on`
+    : host ? `Protected on ${host}`
+    : 'On – every site is checked before it loads';
 
   const list = settings.allowlist || [];
   $('pausedWrap').hidden = !list.length;
@@ -79,6 +79,7 @@ function paintSite() {
   }));
 }
 $('siteOn').onchange = async () => {
+  if (!host) { await save({ adBlock: $('siteOn').checked }); paintSite(); return; }
   const paused = !$('siteOn').checked;
   if (!paused && !settings.adBlock) await save({ adBlock: true });
   await send({ type: 'set-paused', host, paused });
@@ -91,6 +92,8 @@ paintSite();
 // malware list size
 const { malwareDomains = [] } = await chrome.storage.local.get('malwareDomains');
 if (malwareDomains.length) $('mal').textContent = `Stops ${malwareDomains.length.toLocaleString()} known malware & scam domains.`;
+
+$('customizeHome').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('newtab/newtab.html#customize') });
 
 // ---- custom CSS ----
 if (host) {
@@ -106,36 +109,41 @@ if (host) {
 } else $('saveCss').disabled = true;
 
 // ---- save (downloader) ----
+$('mdLangs').value = (settings.mdLangs || DEFAULTS.mdLangs).join(',');
+$('mdLangs').onchange = () => save({ mdLangs: $('mdLangs').value.split(',') });
+
 let scanned = false;
 async function scan() {
   if (scanned) return;
   scanned = true;
   const empty = (msg) => { $('scan').innerHTML = `<p>${msg}</p>`; };
-  if (!host) return empty('Open a manga, manhwa or novel chapter, then come back here.');
+  if (!host) return empty('Open a manga, manhwa or novel chapter (or a MangaDex title page), then come back here.');
   const r = await send({ type: 'scan', tabId: tab.id });
-  if (!r?.ok) return empty('This page can\'t be read. Try reloading it.');
+  if (!r?.ok) return empty(r?.error ? `Couldn't read this page: ${r.error}` : 'This page can\'t be read. Try reloading it.');
   const page = r.result;
-  const hasImages = page.images.length >= 3;
-  const hasText = page.text.length >= 1500;
-  if (!hasImages && !hasText) {
-    return empty('No chapter found here.<br>If pages load as you scroll, scroll to the end and try again.');
-  }
+  const md = page.source === 'mangadex';
+  const kind = md || page.images.length >= 3 ? 'images' : page.text.length >= 1500 ? 'text' : null;
+  if (!kind) return empty('No chapter found here.<br>If pages load as you scroll, scroll to the end and try again.');
+
   $('scan').hidden = true;
   $('found').hidden = false;
-  $('foundTitle').textContent = page.title;
-  const go = (job) => send({ type: 'start-job', job }).then(() => window.close());
-  if (hasImages) {
-    $('dlImages').hidden = false;
-    $('dlImages').textContent = `Download ${page.images.length} pages (.cbz)`;
-    $('dlImages').onclick = () => go({ mode: 'images', title: page.title, images: page.images, url: page.url, origin: page.origin });
-  }
-  if (hasText) {
-    const words = page.text.split(/\s+/).length.toLocaleString();
-    $('dlEpub').hidden = false; $('dlEpub').textContent = `Save as eBook (.epub) · ${words} words`;
-    $('dlEpub').onclick = () => go({ mode: 'text', format: 'epub', title: page.title, text: page.text });
-    $('dlTxt').hidden = false; $('dlTxt').textContent = 'Save as plain text (.txt)';
-    $('dlTxt').onclick = () => go({ mode: 'text', format: 'txt', title: page.title, text: page.text });
-  }
+  $('foundTitle').textContent = page.series || page.title;
+  const n = page.chapters.length;
+  $('foundSub').textContent = md
+    ? `MangaDex · ${n} chapter${n === 1 ? '' : 's'} in ${({ en: 'English', zh: 'Chinese (Simplified)', 'zh-hk': 'Chinese (Traditional)' })[page.lang] || page.lang}`
+    : n > 1 ? `${n} chapters found` : kind === 'images' ? `${page.images.length} pages on this page` : 'Novel chapter';
+
+  const add = (label, preset, ghost) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (ghost ? ' ghost' : '');
+    b.textContent = label;
+    b.onclick = () => send({ type: 'download', page, kind, preset }).then(() => window.close());
+    $('dlButtons').append(b);
+  };
+  if (n > 1) add(`Download whole series (${n} chapters)`, 'all');
+  if (!md || page.currentIndex >= 0) add('Download this chapter', 'current', n > 1);
+  if (!n && md) $('foundSub').textContent += ' – try another language on the next screen';
+  if (!n && md) add('Choose language & chapters', 'all');
 }
 
 showTab(lastTab);

@@ -35,7 +35,6 @@ header {
   background: color-mix(in srgb, var(--good) 14%, transparent);
   color: var(--good); font-weight: 600;
 }
-.status.idle { background: var(--panel); color: var(--muted); }
 .status.off { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .status .ico { width: 16px; height: 16px; fill: currentColor; flex: none; }
 
@@ -122,3 +121,5 @@ summary { cursor: pointer; color: var(--muted); }
 .chips button { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 20px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .chips button:hover { border-color: var(--accent); }
 .chips button::after { content: " ✕"; color: var(--muted); }
+.found .sub { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+select.field { appearance: none; cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }

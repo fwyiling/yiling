@@ -1,5 +1,7 @@
 // Shield Client – service worker
 import { DEFAULTS } from './lib/defaults.js';
+import { scanDocument } from './lib/extract.js';
+import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters } from './lib/mangadex.js';
 
 
 const MALWARE_FEED = 'https://urlhaus.abuse.ch/downloads/hostfile/';
@@ -100,14 +102,17 @@ async function applyMalwareRules(enabled) {
   const { malwareDomains = [] } = await chrome.storage.local.get('malwareDomains');
   if (!malwareDomains.length) return;
   const addRules = [];
-  for (let i = 0; i < malwareDomains.length; i += 1000) {
+  for (let i = 0, n = 0; i < malwareDomains.length; i += 1000, n++) {
+    const requestDomains = malwareDomains.slice(i, i + 1000);
+    // page visits -> friendly warning page; everything else -> silently blocked
     addRules.push({
-      id: i / 1000 + 1, priority: MALWARE_PRIORITY,
+      id: n * 2 + 1, priority: MALWARE_PRIORITY,
+      action: { type: 'redirect', redirect: { extensionPath: '/blocked/blocked.html' } },
+      condition: { requestDomains, resourceTypes: ['main_frame'] },
+    }, {
+      id: n * 2 + 2, priority: MALWARE_PRIORITY,
       action: { type: 'block' },
-      condition: {
-        requestDomains: malwareDomains.slice(i, i + 1000),
-        resourceTypes: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'media', 'other'],
-      },
+      condition: { requestDomains, resourceTypes: ['sub_frame', 'script', 'xmlhttprequest', 'media', 'image', 'object', 'other'] },
     });
   }
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old, addRules });
@@ -207,10 +212,39 @@ async function sleepTabs() {
 chrome.alarms.create('tab-sleep', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => a.name === 'tab-sleep' && sleepTabs());
 
+// Remember where each tab was heading, so the warning page can say which site was stopped.
+chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => {
+  if (frameId === 0 && /^https?:/.test(url)) chrome.storage.session.set({ [`nav_${tabId}`]: url });
+});
+chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`nav_${tabId}`));
+
+let allowSeq = 900000;
+async function allowOnce(host) {
+  // session rule: lives until Chrome restarts
+  await chrome.declarativeNetRequest.updateSessionRules({
+    addRules: [{ id: allowSeq++, priority: MALWARE_PRIORITY + 1, action: { type: 'allowAllRequests' },
+      condition: { requestDomains: [host], resourceTypes: ['main_frame', 'sub_frame'] } }],
+  });
+}
+
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
-  const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, files: ['content/scanner.js'] });
+  const tab = await chrome.tabs.get(tabId);
+  if (parseMangaDexUrl(tab.url)) {
+    const s = await getSettings();
+    const info = await mangaDexInfo(tab.url, s.mdLangs);
+    const chapters = await mangaDexChapters(info.mangaId, info.lang);
+    return {
+      ...info, title: info.series, url: tab.url, origin: 'https://mangadex.org', images: [], text: '',
+      chapters, currentIndex: chapters.findIndex((c) => c.id === info.currentChapterId),
+    };
+  }
+  const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: scanDocument, args: [null, null] });
   return result;
+}
+function buildJob(page, kind, preset) {
+  const { images, text, ...rest } = page;
+  return { ...rest, kind, preset, current: page.source ? null : { images, text, title: page.title } };
 }
 async function startJob(job) {
   const id = crypto.randomUUID();
@@ -230,6 +264,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'update-malware-list': () => updateMalwareList(),
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
+    'allow-once': () => allowOnce(msg.host),
+    'download': () => startJob(buildJob(msg.page, msg.kind, msg.preset)),
     'set-paused': () => toggleListEntry('allowlist', msg.host, msg.paused),
     'hide-dock-here': () => toggleListEntry('dockHiddenOn', msg.host, true),
     'open-settings': () => chrome.action.openPopup().catch(() =>

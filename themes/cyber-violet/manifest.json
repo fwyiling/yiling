@@ -1,0 +1,110 @@
+{
+  "manifest_version": 3,
+  "version": "1.0",
+  "name": "Shield Cyber \u00b7 Violet",
+  "description": "Futuristic tab strip, toolbar and address bar for Shield Client.",
+  "theme": {
+    "images": {
+      "theme_frame": "images/frame.png",
+      "theme_toolbar": "images/toolbar.png"
+    },
+    "colors": {
+      "frame": [
+        10,
+        5,
+        22
+      ],
+      "frame_inactive": [
+        7,
+        3,
+        15
+      ],
+      "frame_incognito": [
+        6,
+        3,
+        13
+      ],
+      "frame_incognito_inactive": [
+        5,
+        2,
+        11
+      ],
+      "toolbar": [
+        24,
+        20,
+        35
+      ],
+      "toolbar_text": [
+        240,
+        240,
+        248
+      ],
+      "toolbar_button_icon": [
+        191,
+        123,
+        255
+      ],
+      "tab_text": [
+        255,
+        255,
+        255
+      ],
+      "tab_background_text": [
+        216,
+        176,
+        255
+      ],
+      "tab_background_text_inactive": [
+        150,
+        150,
+        165
+      ],
+      "bookmark_text": [
+        229,
+        202,
+        255
+      ],
+      "omnibox_background": [
+        29,
+        14,
+        49
+      ],
+      "omnibox_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_background": [
+        5,
+        1,
+        10
+      ],
+      "ntp_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_link": [
+        170,
+        80,
+        255
+      ],
+      "button_background": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "tints": {
+      "buttons": [
+        -1,
+        -1,
+        -1
+      ]
+    },
+    "properties": {
+      "ntp_background_alignment": "bottom"
+    }
+  }
+}

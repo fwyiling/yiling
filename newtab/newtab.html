@@ -2,17 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>New Tab</title>
   <link rel="stylesheet" href="newtab.css">
 </head>
 <body>
-  <main>
-    <div id="clock"></div>
-    <form id="search" action="https://www.google.com/search" method="get">
-      <input name="q" placeholder="Search or type a URL" autofocus autocomplete="off">
+  <div id="bg"></div>
+  <div id="dim"></div>
+
+  <div id="topbar">
+    <div id="hud" class="glass chip"><span class="dot"></span><span id="hudText">Shield online</span></div>
+    <div id="weather" class="glass chip" hidden></div>
+    <div class="spacer"></div>
+    <button class="icon glass" id="btnTodo" title="To-do list" hidden>
+      <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></button>
+    <button class="icon glass" id="btnNotes" title="Notes" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 4h16v12l-4 4H4zM16 20v-4h4M8 9h8M8 13h5"/></svg></button>
+    <button class="icon glass" id="btnZen" title="Focus mode (hide everything but the clock)">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button class="icon glass" id="btnCustomize" title="Customize">
+      <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+  </div>
+
+  <div id="popNotes" class="pop glass" hidden>
+    <div class="pop-h">Notes</div>
+    <textarea id="notes" placeholder="Write anything… it saves automatically."></textarea>
+  </div>
+  <div id="popTodo" class="pop glass" hidden>
+    <div class="pop-h">To-do <button class="link" id="todoClear">Clear done</button></div>
+    <ul id="todos"></ul>
+    <form id="todoForm"><input id="todoIn" placeholder="Add a task and press Enter" autocomplete="off"></form>
+  </div>
+
+  <main id="center">
+    <div id="greeting"></div>
+    <div id="clock"><span id="time"></span><span id="ampm"></span></div>
+    <div id="date"></div>
+    <form id="search" class="glass">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" autocomplete="off" spellcheck="false">
+      <button type="button" id="engineBtn" class="engine" title="Change search engine"></button>
     </form>
-    <div id="dial"></div>
+    <div id="shortcuts"></div>
   </main>
-  <script src="newtab.js"></script>
+
+  <div id="quote"></div>
+  <div id="credit"></div>
+
+  <!-- shortcut editor -->
+  <div id="modal" hidden>
+    <form id="scForm" class="glass">
+      <h3 id="scTitle">Add shortcut</h3>
+      <label>Name <input id="scName" required maxlength="40"></label>
+      <label>Link <input id="scUrl" required placeholder="youtube.com"></label>
+      <div class="row"><button type="button" class="ghost" id="scCancel">Cancel</button><button class="primary">Save</button></div>
+    </form>
+  </div>
+
+  <!-- customize drawer -->
+  <aside id="drawer" aria-hidden="true">
+    <div class="d-head">
+      <div><b>Customize</b><small>Changes apply instantly</small></div>
+      <button class="icon" id="drawerClose" title="Close">✕</button>
+    </div>
+    <div class="d-body" id="drawerBody"></div>
+  </aside>
+
+  <script type="module" src="newtab.js"></script>
 </body>
 </html>

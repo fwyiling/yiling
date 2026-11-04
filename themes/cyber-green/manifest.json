@@ -1,0 +1,110 @@
+{
+  "manifest_version": 3,
+  "version": "1.0",
+  "name": "Shield Cyber \u00b7 Matrix",
+  "description": "Futuristic tab strip, toolbar and address bar for Shield Client.",
+  "theme": {
+    "images": {
+      "theme_frame": "images/frame.png",
+      "theme_toolbar": "images/toolbar.png"
+    },
+    "colors": {
+      "frame": [
+        3,
+        12,
+        8
+      ],
+      "frame_inactive": [
+        2,
+        8,
+        5
+      ],
+      "frame_incognito": [
+        1,
+        7,
+        4
+      ],
+      "frame_incognito_inactive": [
+        1,
+        6,
+        4
+      ],
+      "toolbar": [
+        18,
+        26,
+        22
+      ],
+      "toolbar_text": [
+        240,
+        240,
+        248
+      ],
+      "toolbar_button_icon": [
+        93,
+        255,
+        153
+      ],
+      "tab_text": [
+        255,
+        255,
+        255
+      ],
+      "tab_background_text": [
+        158,
+        255,
+        194
+      ],
+      "tab_background_text_inactive": [
+        150,
+        150,
+        165
+      ],
+      "bookmark_text": [
+        190,
+        255,
+        214
+      ],
+      "omnibox_background": [
+        7,
+        41,
+        21
+      ],
+      "omnibox_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_background": [
+        5,
+        1,
+        10
+      ],
+      "ntp_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_link": [
+        40,
+        255,
+        120
+      ],
+      "button_background": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "tints": {
+      "buttons": [
+        -1,
+        -1,
+        -1
+      ]
+    },
+    "properties": {
+      "ntp_background_alignment": "bottom"
+    }
+  }
+}
