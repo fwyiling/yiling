@@ -1,0 +1,132 @@
+// Windows-only: put a window behind the desktop icons, and spot full-screen apps.
+//
+// Technique from Lively Wallpaper and the Windows 11 24H2 fixes in C0uki/beautiful-wallpaper#83 and
+// youllook/VibingWrapper#7. Sending 0x052C to Progman makes Explorer create the wallpaper layer:
+//  - classic desktop (Windows 10, Windows 11 up to 23H2): a top-level WorkerW sits behind the
+//    WorkerW that holds the icons (SHELLDLL_DefView); our window becomes its child.
+//  - raised desktop (Windows 11 24H2+): SHELLDLL_DefView and WorkerW are both children of Progman;
+//    our window becomes a *layered* child of Progman, placed directly below the icons.
+// The layout is detected from the window tree, not the Windows version.
+const isWin = process.platform === 'win32';
+let u = null;
+
+function load() {
+  if (u || !isWin) return u;
+  const koffi = require('koffi');
+  const user32 = koffi.load('user32.dll');
+  const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
+  const EnumProc = koffi.proto('bool __stdcall EnumWindowsProc(intptr_t hwnd, intptr_t lparam)');
+  u = {
+    koffi, RECT, EnumProc,
+    FindWindowW: user32.func('intptr_t __stdcall FindWindowW(str16 cls, str16 name)'),
+    FindWindowExW: user32.func('intptr_t __stdcall FindWindowExW(intptr_t parent, intptr_t after, str16 cls, str16 name)'),
+    SendMessageTimeoutW: user32.func('intptr_t __stdcall SendMessageTimeoutW(intptr_t hwnd, uint msg, uintptr_t wp, intptr_t lp, uint flags, uint timeout, _Out_ uintptr_t *result)'),
+    EnumWindows: user32.func('bool __stdcall EnumWindows(EnumWindowsProc *cb, intptr_t lparam)'),
+    SetParent: user32.func('intptr_t __stdcall SetParent(intptr_t child, intptr_t parent)'),
+    GetParent: user32.func('intptr_t __stdcall GetParent(intptr_t hwnd)'),
+    GetWindowLongPtrW: user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hwnd, int index)'),
+    SetWindowLongPtrW: user32.func('intptr_t __stdcall SetWindowLongPtrW(intptr_t hwnd, int index, intptr_t value)'),
+    SetLayeredWindowAttributes: user32.func('bool __stdcall SetLayeredWindowAttributes(intptr_t hwnd, uint key, uint8 alpha, uint flags)'),
+    SetWindowPos: user32.func('bool __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int cx, int cy, uint flags)'),
+    GetSystemMetrics: user32.func('int __stdcall GetSystemMetrics(int index)'),
+    GetForegroundWindow: user32.func('intptr_t __stdcall GetForegroundWindow()'),
+    GetWindowRect: user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)'),
+    GetClassNameW: user32.func('int __stdcall GetClassNameW(intptr_t hwnd, uint16_t *buf, int max)'),
+    PostMessageW: user32.func('bool __stdcall PostMessageW(intptr_t hwnd, uint msg, uintptr_t wp, intptr_t lp)'),
+  };
+  return u;
+}
+
+const GWL_STYLE = -16, GWL_EXSTYLE = -20;
+const WS_CHILD = 0x40000000, WS_POPUP = 0x80000000, WS_CAPTION = 0x00C00000, WS_THICKFRAME = 0x00040000;
+const WS_SYSMENU = 0x00080000, WS_MINMAXBOX = 0x00030000, WS_MAXIMIZE = 0x01000000, WS_EX_LAYERED = 0x00080000;
+const SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010, SWP_FRAMECHANGED = 0x0020, SWP_SHOWWINDOW = 0x0040;
+
+// Window handles are plain integers (they fit in 32 bits even on 64-bit Windows).
+const hwndOf = (win) => { const buf = win.getNativeWindowHandle(); return Number(buf.length >= 8 ? buf.readBigInt64LE(0) : buf.readInt32LE(0)); };
+const isNull = (h) => !h || Number(h) === 0;
+const same = (a, b) => !isNull(a) && Number(a) === Number(b);
+
+function spawnLayer(progman, wp, lp) {
+  const out = [0];
+  u.SendMessageTimeoutW(progman, 0x052C, wp, lp, 0, 1000, out);
+}
+
+function findLayer() {
+  const progman = u.FindWindowW('Progman', null);
+  if (isNull(progman)) return null;
+  const tryFind = () => {
+    const defView = u.FindWindowExW(progman, 0, 'SHELLDLL_DefView', null);
+    const worker = u.FindWindowExW(progman, 0, 'WorkerW', null);
+    if (!isNull(defView) && !isNull(worker)) return { raised: true, parent: progman, after: defView };
+    let classic = null;
+    const cb = u.koffi.register((hwnd) => {
+      const view = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null);
+      if (!isNull(view)) { const w = u.FindWindowExW(0, hwnd, 'WorkerW', null); if (!isNull(w)) classic = w; }
+      return true;
+    }, u.koffi.pointer(u.EnumProc));
+    try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
+    return classic ? { raised: false, parent: classic, after: null } : null;
+  };
+  spawnLayer(progman, 0xD, 1); // the form 24H2 needs; older builds accept it too
+  let layer = tryFind();
+  if (!layer) { spawnLayer(progman, 0, 0); layer = tryFind(); }
+  return layer;
+}
+
+/** Make an Electron window part of the desktop background. rect is in physical screen pixels. */
+function attachToDesktop(win, rect) {
+  if (!load()) return { ok: false, reason: 'not Windows' };
+  const layer = findLayer();
+  if (!layer) return { ok: false, reason: 'desktop layer not found' };
+  const hwnd = hwndOf(win);
+  let style = Number(u.GetWindowLongPtrW(hwnd, GWL_STYLE));
+  style &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINMAXBOX | WS_MAXIMIZE);
+  style |= WS_CHILD;
+  u.SetWindowLongPtrW(hwnd, GWL_STYLE, style >>> 0); // keep it an unsigned 32-bit style value
+  if (layer.raised) { // Progman has no redirection surface: only layered children show up
+    const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)) | WS_EX_LAYERED;
+    u.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+    u.SetLayeredWindowAttributes(hwnd, 0, 255, 0x2);
+  }
+  u.SetParent(hwnd, layer.parent);
+  // child windows are positioned relative to the parent, which covers the whole virtual screen
+  const vx = u.GetSystemMetrics(76), vy = u.GetSystemMetrics(77); // SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN
+  const x = rect.x - vx, y = rect.y - vy;
+  if (layer.raised) u.SetWindowPos(hwnd, layer.after, x, y, rect.width, rect.height, SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  else u.SetWindowPos(hwnd, 0, x, y, rect.width, rect.height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  if (!same(u.GetParent(hwnd), layer.parent)) return { ok: false, reason: 'Explorer refused the window' };
+  return { ok: true, raised: layer.raised };
+}
+
+/** True when the foreground window covers a whole monitor (a game or full-screen video). */
+function fullscreenAppRunning(displays) {
+  if (!load()) return false;
+  const fg = u.GetForegroundWindow();
+  if (isNull(fg)) return false;
+  const buf = new Uint16Array(64);
+  const n = u.GetClassNameW(fg, buf, 64);
+  const cls = String.fromCharCode(...buf.slice(0, n));
+  if (cls === 'Progman' || cls === 'WorkerW' || cls === 'Shell_TrayWnd') return false; // the desktop itself
+  const r = {};
+  if (!u.GetWindowRect(fg, r)) return false;
+  return displays.some((d) => r.left <= d.x && r.top <= d.y && r.right >= d.x + d.width && r.bottom >= d.y + d.height);
+}
+
+/** Show or hide the desktop icons (the same toggle as Desktop > View > Show desktop icons). */
+function setDesktopIcons(show) {
+  if (!load()) return false;
+  const progman = u.FindWindowW('Progman', null);
+  let view = u.FindWindowExW(progman, 0, 'SHELLDLL_DefView', null);
+  if (isNull(view)) { // classic layout: the icons live in a WorkerW
+    const cb = u.koffi.register((hwnd) => { const v = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null); if (!isNull(v)) view = v; return true; }, u.koffi.pointer(u.EnumProc));
+    try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
+  }
+  if (isNull(view)) return false;
+  const list = u.FindWindowExW(view, 0, 'SysListView32', null);
+  const visible = !isNull(list) && (Number(u.GetWindowLongPtrW(list, GWL_STYLE)) & 0x10000000) !== 0; // WS_VISIBLE
+  if (visible !== show) u.PostMessageW(view, 0x0111, 0x7402, 0); // WM_COMMAND "toggle desktop icons"
+  return true;
+}
+
+module.exports = { isWin, attachToDesktop, fullscreenAppRunning, setDesktopIcons };
