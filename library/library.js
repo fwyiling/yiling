@@ -9,6 +9,26 @@ const save = () => chrome.storage.local.set({ mdLibrary });
 $('fmt').value = libraryPrefs.fmt; $('saver').checked = libraryPrefs.saver;
 $('fmt').onchange = $('saver').onchange = () => { libraryPrefs = { fmt: $('fmt').value, saver: $('saver').checked }; chrome.storage.local.set({ libraryPrefs }); };
 
+// covers load through the extension (Referer rule for uploads.mangadex.org) – plain <img> links get refused
+const coverCache = new Map();
+async function coverBlob(url) {
+  if (!url) throw new Error('no cover');
+  if (!coverCache.has(url)) {
+    coverCache.set(url, (async () => {
+      for (const u of [url, url.replace(/\.256\.jpg$/, '.512.jpg'), url.replace(/\.256\.jpg$/, '')]) {
+        const r = await fetch(u, { credentials: 'omit' }).catch(() => null);
+        if (r && r.ok && /^image\//.test(r.headers.get('content-type') || 'image/')) return URL.createObjectURL(await r.blob());
+        if (r && !r.ok) var lastStatus = r.status;
+      }
+      throw new Error(lastStatus ? `cover blocked (HTTP ${lastStatus})` : 'cover unavailable');
+    })());
+  }
+  return coverCache.get(url);
+}
+function setCover(el, url) {
+  coverBlob(url).then((b) => { el.style.backgroundImage = `url("${b}")`; }, (e) => { el.dataset.err = e.message; el.title = e.message; });
+}
+
 function status(msg) { $('status').hidden = !msg; $('status').textContent = msg || ''; }
 const ago = (t) => { if (!t) return 'never'; const d = Math.round((Date.now() - t) / 864e5); return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
 
@@ -20,7 +40,7 @@ function render() {
     c.innerHTML = `<div class="cover"><span class="badge"></span></div><div class="body"><div class="title"></div><div class="meta"></div>
       <div class="row"><select title="Language"></select></div>
       <div class="row"><button data-a="new">New</button><button data-a="all">All</button><button data-a="open" title="Open on MangaDex">↗</button><button data-a="rm" class="x" title="Remove">✕</button></div></div>`;
-    c.querySelector('.cover').style.backgroundImage = e.cover ? `url("${e.cover}")` : '';
+    setCover(c.querySelector('.cover'), e.cover);
     c.querySelector('.badge').textContent = e.lastNum ? `Ch. ${e.lastNum}` : 'not downloaded';
     c.querySelector('.title').textContent = e.series;
     c.querySelector('.meta').textContent = `${LANG_NAMES[e.lang] || e.lang}${e.total ? ` · ${e.total} chapters` : ''} · last run ${ago(e.lastRun)}`;
@@ -122,7 +142,7 @@ async function search() {
       const c = document.createElement('div'); c.className = 'res';
       c.innerHTML = `<div class="cover"><span class="badge"></span></div><div class="body"><div class="title"></div><div class="meta"></div><div class="desc"></div>
         <div class="row"><button data-a="add"></button><button data-a="dl" class="pri">Download</button></div></div>`;
-      c.querySelector('.cover').style.backgroundImage = it.cover ? `url("${it.cover}")` : '';
+      setCover(c.querySelector('.cover'), it.cover);
       const badge = c.querySelector('.badge'); badge.textContent = it.status || ''; badge.hidden = !it.status;
       c.querySelector('.title').textContent = it.series;
       c.querySelector('.meta').textContent = [it.year, LANG_NAMES[it.lang] || it.lang].filter(Boolean).join(' · ');

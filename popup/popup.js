@@ -110,7 +110,7 @@ chrome.storage.local.get(['popupStats', 'cookieStats', 'cleanStats', 'learned'])
 // sidebar
 // what a new tab opens (read by newtab/redirect.js before the page renders)
 {
-  const cur = (() => { try { return localStorage.getItem('scStartPage') || 'google'; } catch { return 'google'; } })();
+  const cur = (() => { try { return localStorage.getItem('scStartPage') || 'syndicates'; } catch { return 'syndicates'; } })();
   document.querySelectorAll('#startSeg button').forEach((b) => {
     b.classList.toggle('on', b.value === cur);
     b.onclick = () => { try { localStorage.setItem('scStartPage', b.value); } catch {} document.querySelectorAll('#startSeg button').forEach((x) => x.classList.toggle('on', x === b)); };

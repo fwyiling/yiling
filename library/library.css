@@ -44,3 +44,4 @@ button:disabled { opacity: .5; cursor: default; }
 .res .row button.on { background: var(--good); border-color: var(--good); color: #062; }
 h2.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--m); margin: 10px 0 10px; }
 .results .empty { grid-column: 1 / -1; text-align: left; padding: 10px 2px; }
+.cover[data-err]::after { content: attr(data-err); position: absolute; inset: auto 8px 8px; color: var(--m); font-size: 11px; }

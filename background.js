@@ -208,7 +208,7 @@ chrome.notifications.onClosed.addListener(async (nid) => {
 // MangaDex's API answers "403 Bot challenge not passed" to browser-looking requests from
 // outside its site. Its API rules ask clients to identify themselves with an honest
 // User-Agent instead (approach from Ryuu3rs/storyhoard-extension, Apache-2.0).
-const MD_RULES = [100010, 100011, 100012, 100013];
+const MD_RULES = [100010, 100011, 100012, 100013, 100014];
 async function mangaDexHeaderRules() {
   const ua = `SyndicatesClient/${chrome.runtime.getManifest().version} (browser extension; +https://github.com/fwyiling/yiling)`;
   const api = { type: 'modifyHeaders', requestHeaders: [
@@ -217,14 +217,17 @@ async function mangaDexHeaderRules() {
     { header: 'Referer', operation: 'remove' },
   ] };
   const img = { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://mangadex.org/' }] };
+  const cover = { type: 'modifyHeaders', requestHeaders: [{ header: 'User-Agent', operation: 'set', value: ua }, { header: 'Referer', operation: 'set', value: 'https://mangadex.org/' }] };
   const types = ['xmlhttprequest', 'image', 'other'];
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: MD_RULES,
     addRules: [
       { id: MD_RULES[0], priority: 5, action: api, condition: { requestDomains: ['api.mangadex.org'], resourceTypes: types, initiatorDomains: [chrome.runtime.id] } }, // popup / downloader page
       { id: MD_RULES[1], priority: 5, action: api, condition: { requestDomains: ['api.mangadex.org'], resourceTypes: types, tabIds: [chrome.tabs.TAB_ID_NONE] } },      // service worker
-      { id: MD_RULES[2], priority: 5, action: img, condition: { requestDomains: ['mangadex.network', 'uploads.mangadex.org'], resourceTypes: types, initiatorDomains: [chrome.runtime.id] } },
-      { id: MD_RULES[3], priority: 5, action: img, condition: { requestDomains: ['mangadex.network', 'uploads.mangadex.org'], resourceTypes: types, tabIds: [chrome.tabs.TAB_ID_NONE] } },
+      { id: MD_RULES[2], priority: 5, action: img, condition: { requestDomains: ['mangadex.network'], resourceTypes: types, initiatorDomains: [chrome.runtime.id] } },
+      { id: MD_RULES[3], priority: 5, action: img, condition: { requestDomains: ['mangadex.network'], resourceTypes: types, tabIds: [chrome.tabs.TAB_ID_NONE] } },
+      // covers (uploads.mangadex.org): same honest User-Agent as the API, plus MangaDex as referrer
+      { id: MD_RULES[4], priority: 5, action: cover, condition: { requestDomains: ['uploads.mangadex.org'], resourceTypes: types, initiatorDomains: [chrome.runtime.id] } },
     ],
   });
 }

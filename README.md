@@ -44,8 +44,8 @@ whole MangaDex list to import it. **Download new chapters** checks every series 
 gets all chapters. Each series keeps one reader that grows as new chapters arrive. On a MangaDex page: popup → Save → **Add to download list**.
 
 ## Look & feel
-- **New tabs open google.com**, customised: your theme colours, greeting + clock, your shortcuts under the search box, no footer or
-  corner clutter. Prefer the old page? Popup → Style → *New tab opens* → **Syndicates page**.
+- **New tab:** the Syndicates page (right-click Chrome's bottom bar → Hide footer once; Chrome remembers it). Or popup → Style →
+  *New tab opens* → **Google (customised)**: google.com with your theme colours, greeting + clock and your shortcuts.
 - **Home page (new tab):** **Chrome+** (default – Chrome's own layout in tones of your Chrome colour, so it blends in), **Cyber/gamer** (neon HUD, synthwave) or **Clean glass**. Backgrounds (theme colour, synthwave, anime wallpapers, Bing daily, photos, gradients, upload…), clock & greeting, search engine picker, editable shortcuts, weather, quote, notes, to-do, fonts – all under **Customize**.
 - **Google & YouTube skins** follow the home-page theme (calm Chrome+ tones by default, neon in Cyber mode).
 - **Dark mode on every site** – Dark Reader engine (images keep their colours), with "No dark mode here" in the dock.
