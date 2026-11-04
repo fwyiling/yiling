@@ -22,12 +22,28 @@ async function loadTrackerDomains() {
   return trackerDomains;
 }
 
+// Big EasyList/EasyPrivacy rulesets only fit if Chrome's shared static-rule pool has room,
+// so enable them one at a time and fall back to the small built-in list on failure.
+async function setAdRulesets(on) {
+  const dnr = chrome.declarativeNetRequest;
+  if (!on) {
+    await dnr.updateEnabledRulesets({ disableRulesetIds: ['ads', 'easylist', 'easyprivacy'] });
+    return;
+  }
+  await dnr.updateEnabledRulesets({ enableRulesetIds: ['ads'] });
+  for (const id of ['easylist', 'easyprivacy']) {
+    try {
+      await dnr.updateEnabledRulesets({ enableRulesetIds: [id] });
+    } catch (e) {
+      console.warn(`ruleset ${id} not enabled (rule budget?)`, e.message);
+    }
+  }
+}
+
 async function apply() {
   const s = await getSettings();
 
-  await chrome.declarativeNetRequest.updateEnabledRulesets(
-    s.adBlock ? { enableRulesetIds: ['ads'] } : { disableRulesetIds: ['ads'] }
-  );
+  await setAdRulesets(s.adBlock);
 
   // Referrer-Policy: send only the origin on cross-site requests.
   await chrome.declarativeNetRequest.updateDynamicRules({
@@ -157,8 +173,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   const cur = await chrome.storage.sync.get(null);
   await chrome.storage.sync.set({ ...DEFAULTS, ...cur });
   chrome.alarms.create('malware-update', { periodInMinutes: 60 * 12 });
+  await apply();            // protection first; don't wait on the network
   await updateMalwareList();
-  await apply();
 });
 chrome.runtime.onStartup.addListener(apply);
 chrome.alarms.onAlarm.addListener((a) => a.name === 'malware-update' && updateMalwareList());

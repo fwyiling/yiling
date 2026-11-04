@@ -15,16 +15,44 @@ function save(blob, filename) {
 
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif' };
 
-async function fetchImage(url, tries = 3) {
+// Retry/validation approach adapted from saptarshimondal/Comics-Manga-Downloader-Extension (MIT).
+const SIGS = [
+  ['jpg', [0xff, 0xd8, 0xff]], ['png', [0x89, 0x50, 0x4e, 0x47]], ['gif', [0x47, 0x49, 0x46]],
+];
+function sniff(bytes) {
+  if (!bytes.length) return null;
+  for (const [ext, sig] of SIGS) if (sig.every((b, i) => bytes[i] === b)) return ext;
+  if (bytes.length > 11 && bytes[0] === 0x52 && bytes[8] === 0x57 && bytes[9] === 0x45) return 'webp';
+  if (bytes.length > 11 && String.fromCharCode(...bytes.slice(4, 12)).startsWith('ftypavif')) return 'avif';
+  return 'unknown';
+}
+const BACKOFF = [250, 750, 1750];
+const retryable = (s) => s === 429 || (s >= 500 && s < 600);
+
+async function fetchImage(url, tries = 3, timeoutMs = 25000) {
   let err;
   for (let i = 0; i < tries; i++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
     try {
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const res = await fetch(url, { credentials: 'include', signal: ctl.signal });
+      if (!res.ok) {
+        const e = new Error('HTTP ' + res.status);
+        e.fatal = !retryable(res.status);
+        throw e;
+      }
+      const data = new Uint8Array(await res.arrayBuffer());
+      const kind = sniff(data);
+      if (!kind) throw new Error('empty body');
+      if (kind === 'unknown' && /^\s*</.test(new TextDecoder().decode(data.slice(0, 64)))) throw new Error('got HTML, not an image');
       const type = (res.headers.get('content-type') || '').split(';')[0];
-      const ext = EXT[type] || (url.split(/[?#]/)[0].split('.').pop().slice(0, 4).toLowerCase() || 'jpg');
-      return { data: new Uint8Array(await res.arrayBuffer()), ext };
-    } catch (e) { err = e; await new Promise((r) => setTimeout(r, 400 * (i + 1))); }
+      const ext = kind !== 'unknown' ? kind : (EXT[type] || url.split(/[?#]/)[0].split('.').pop().slice(0, 4).toLowerCase() || 'jpg');
+      return { data, ext };
+    } catch (e) {
+      err = e;
+      if (e.fatal || i === tries - 1) break;
+      await new Promise((r) => setTimeout(r, BACKOFF[i] * (0.8 + 0.4 * Math.random())));
+    } finally { clearTimeout(timer); }
   }
   throw err;
 }
