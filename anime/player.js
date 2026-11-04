@@ -1,5 +1,7 @@
 // Ani Manga player: plays HiAnime episodes in the client and downloads them (single or queued).
 import { watchUrl, isPlaylist, isVideoFile } from '../lib/hianime.js';
+import { DEFAULTS } from '../lib/defaults.js';
+import { getWatching, loadShow, rememberShow, saveProgress } from '../lib/watching.js';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -12,11 +14,23 @@ const safe = (s, fallback = 'Untitled') => {
   return t || fallback;
 };
 
-const { accent } = await chrome.storage.sync.get('accent');
-if (accent) document.documentElement.style.setProperty('--a', accent);
+const prefs = { ...DEFAULTS, ...(await chrome.storage.sync.get(['accent', 'amAutoNext', 'amSkipFiller', 'amResume', 'amSyncList'])) };
+if (prefs.accent) document.documentElement.style.setProperty('--a', prefs.accent);
 
-const key = new URLSearchParams(location.search).get('s');
-const { [key]: job } = key ? await chrome.storage.session.get(key) : {};
+const params = new URLSearchParams(location.search);
+let key = params.get('s'), job, resumeAt = 0;
+if (params.get('resume')) { // "Continue watching": rebuild the job from what was saved for this show
+  const rkey = params.get('resume'), show = await loadShow(rkey), spot = (await getWatching()).find((w) => w.key === rkey);
+  if (show?.episodes?.length) {
+    job = { anime: show.anime, aniId: show.aniId, cover: show.cover, episodes: show.episodes, lang: show.lang, mode: 'watch', idx: spot?.idx || 0 };
+    resumeAt = spot?.time || 0;
+    key = `am_${crypto.randomUUID()}`;
+    await chrome.storage.session.set({ [key]: job });
+  }
+} else if (key) {
+  ({ [key]: job } = await chrome.storage.session.get(key));
+  resumeAt = job?.resumeAt || 0;
+}
 const me = await chrome.tabs.getCurrent();
 const video = $('video'), overlay = $('overlay'), msg = $('msg');
 
@@ -32,7 +46,9 @@ if (!job?.episodes?.length) {
 const { anime, episodes } = job;
 let lang = job.lang || 'sub';
 let currentIdx = Math.min(Math.max(job.idx || 0, 0), episodes.length - 1);
+const resumeIdx = currentIdx;
 $('animeTitle').textContent = anime;
+let seen = job.mode === 'download' ? {} : await rememberShow(job);
 
 // ---------- stream resolution ----------
 // Each episode lists one or more players (sub and/or dub). A link straight to a video is used as is;
@@ -172,8 +188,8 @@ let hls = null, currentStream = null, loadSeq = 0;
 function renderEpList() {
   $('epList').replaceChildren(...episodes.map((ep, i) => {
     const chip = document.createElement('button');
-    chip.className = 'ep-chip' + (ep.filler ? ' filler' : '') + (i === currentIdx ? ' active' : '');
-    chip.title = ep.title;
+    chip.className = 'ep-chip' + (ep.filler ? ' filler' : '') + (seen[ep.number] ? ' seen' : '') + (i === currentIdx ? ' active' : '');
+    chip.title = seen[ep.number] ? `${ep.title} (watched)` : ep.title;
     chip.textContent = ep.number;
     chip.onclick = () => loadEpisode(i);
     return chip;
@@ -219,6 +235,8 @@ async function loadEpisode(idx) {
     if (mine !== loadSeq) return; // another episode was picked meanwhile
     currentStream = stream;
     $('dlBtn').disabled = false;
+    const startAt = idx === resumeIdx && prefs.amResume ? resumeAt : 0;
+    if (startAt) video.addEventListener('loadedmetadata', () => { if (mine === loadSeq && startAt < video.duration - Math.min(10, video.duration * 0.1)) video.currentTime = startAt; }, { once: true });
     if (stream.file) {
       video.src = stream.file;
       video.addEventListener('loadedmetadata', () => { if (mine === loadSeq) { overlay.classList.add('hidden'); video.play().catch(() => {}); } }, { once: true });
@@ -239,7 +257,24 @@ async function loadEpisode(idx) {
     $('fallbackBtn').hidden = false;
   }
 }
-video.addEventListener('ended', () => { if (currentIdx < episodes.length - 1) loadEpisode(currentIdx + 1); });
+// remember the position every few seconds of playback (and on pause / leaving)
+let lastSave = 0;
+const save = async () => {
+  if (!currentStream || !video.duration) return;
+  lastSave = Date.now();
+  const s = await saveProgress({ ...job, lang }, currentIdx, video.currentTime, video.duration, { syncList: prefs.amSyncList });
+  if (s && Object.keys(s).length !== Object.keys(seen).length) { seen = s; renderEpList(); }
+};
+video.addEventListener('timeupdate', () => { if (Date.now() - lastSave > 5000) save(); });
+video.addEventListener('pause', save);
+addEventListener('pagehide', save);
+video.addEventListener('ended', async () => {
+  await save();
+  if (!prefs.amAutoNext) return;
+  let next = currentIdx + 1;
+  while (prefs.amSkipFiller && episodes[next]?.filler) next++;
+  if (next < episodes.length) loadEpisode(next);
+});
 $('prevBtn').onclick = () => loadEpisode(currentIdx - 1);
 $('nextBtn').onclick = () => loadEpisode(currentIdx + 1);
 $('fallbackBtn').onclick = () => { const ep = episodes[currentIdx]; chrome.tabs.create({ url: ep.slug ? watchUrl(ep) : ep.sub[0] || ep.dub[0] }); };

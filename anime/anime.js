@@ -1,11 +1,14 @@
 // Syndicates anime hub: discover, airing schedule, your list, official places to watch (AniList data).
 import { trending, seasonal, search, details, schedule, byIds, titleOf, currentSeason } from '../lib/anilist.js';
 import { findAnime, fetchEpisodes, episodesFromMal } from '../lib/hianime.js';
+import { DEFAULTS } from '../lib/defaults.js';
+import { getWatching, loadShow, forget, clearWatching, resumeUrl, fmtTime } from '../lib/watching.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const { accent, hiAnime: hiAnimeOn = true } = await chrome.storage.sync.get(['accent', 'hiAnime']);
-if (accent) document.documentElement.style.setProperty('--a', accent);
+const AM_KEYS = ['hiAnime', 'amLang', 'amAutoNext', 'amSkipFiller', 'amResume', 'amSyncList'];
+const prefs = { ...DEFAULTS, ...(await chrome.storage.sync.get(['accent', ...AM_KEYS])) };
+if (prefs.accent) document.documentElement.style.setProperty('--a', prefs.accent);
 let { animeList = [] } = await chrome.storage.local.get('animeList');
 const saveList = () => chrome.storage.local.set({ animeList });
 const inList = (id) => animeList.some((a) => a.id === id);
@@ -31,6 +34,7 @@ async function viewDiscover() {
   try {
     const [tr, se] = await Promise.all([trending(), seasonal()]);
     const v = $('view'); v.replaceChildren();
+    await continueRow(v);
     const top = tr.find((m) => m.bannerImage) || tr[0];
     if (top) {
       const h = document.createElement('div'); h.className = 'hero';
@@ -46,6 +50,51 @@ async function viewDiscover() {
     v.insertAdjacentHTML('beforeend', `<h2>${season[0] + season.slice(1).toLowerCase()} ${year}</h2>`); v.append(grid(se));
   } catch (e) { fail(e); }
 }
+
+async function continueRow(v) {
+  const list = await getWatching();
+  if (!list.length) return;
+  v.insertAdjacentHTML('beforeend', '<h2>Continue watching</h2>');
+  const row = document.createElement('div'); row.className = 'cw-row';
+  for (const w of list) {
+    const c = document.createElement('div'); c.className = 'cw';
+    c.innerHTML = '<div class="cw-img"><span class="cw-ep"></span><i class="cw-bar"><b></b></i><button class="cw-x" title="Remove from Continue watching">✕</button></div><b class="cw-t"></b><span class="cw-s"></span>';
+    if (w.cover) c.querySelector('.cw-img').style.backgroundImage = `url("${w.cover}")`;
+    c.querySelector('.cw-ep').textContent = `Ep ${w.number}${w.total ? ` / ${w.total}` : ''}`;
+    c.querySelector('.cw-bar b').style.width = w.duration ? `${Math.min(100, (w.time / w.duration) * 100)}%` : '0';
+    c.querySelector('.cw-t').textContent = w.anime;
+    c.querySelector('.cw-s').textContent = w.duration ? `${fmtTime(w.duration - w.time)} left` : 'Up next';
+    c.onclick = () => chrome.tabs.create({ url: resumeUrl(w.key) });
+    c.querySelector('.cw-x').onclick = async (e) => { e.stopPropagation(); await forget(w.key); c.remove(); if (!row.children.length) { row.previousElementSibling?.remove(); row.remove(); } };
+    row.append(c);
+  }
+  v.append(row);
+}
+
+// ---- Ani Manga settings ----
+function openSettings() {
+  const d = $('amSettings');
+  const sw = (k, label, desc) => `<label class="set-row"><span><b>${label}</b><small>${desc}</small></span><input type="checkbox" data-k="${k}"${prefs[k] ? ' checked' : ''}></label>`;
+  d.innerHTML = `<form method="dialog">
+    <h2>Ani Manga settings</h2>
+    <label class="set-row"><span><b>Default audio</b><small>Used when a show has both.</small></span>
+      <select data-k="amLang"><option value="sub">Subtitled</option><option value="dub"${prefs.amLang === 'dub' ? ' selected' : ''}>Dubbed</option></select></label>
+    ${sw('amResume', 'Resume where I stopped', 'Episodes start at the second you left off.')}
+    ${sw('amAutoNext', 'Play the next episode', 'Starts the next one when an episode ends.')}
+    ${sw('amSkipFiller', 'Skip filler episodes', 'When playing the next episode automatically.')}
+    ${sw('amSyncList', 'Update My list as I watch', 'Finishing an episode moves your episode count on My list.')}
+    ${sw('hiAnime', 'Show “Watch & download”', 'The HiAnime episode list on each show.')}
+    <div class="set-foot"><button type="button" class="set-clear">Clear Continue watching</button><button value="close" class="pri">Done</button></div>
+  </form>`;
+  d.querySelectorAll('[data-k]').forEach((el) => el.onchange = async () => {
+    const v = el.type === 'checkbox' ? el.checked : el.value;
+    prefs[el.dataset.k] = v;
+    await chrome.storage.sync.set({ [el.dataset.k]: v });
+  });
+  d.querySelector('.set-clear').onclick = async (e) => { await clearWatching(); e.target.textContent = 'Cleared ✓'; if (tab === 'discover') go('discover'); };
+  d.showModal();
+}
+$('amGear').onclick = openSettings;
 
 let day = 0;
 async function viewSchedule() {
@@ -125,8 +174,8 @@ async function openSheet(id) {
     paint();
 
     // HiAnime section — load asynchronously so the sheet shows instantly
-    if (hiAnimeOn) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native], m.idMal,
-      m.episodes || (m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : 0));
+    if (prefs.hiAnime) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native], m.idMal,
+      m.episodes || (m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : 0), { aniId: m.id, cover: m.coverImage?.extraLarge || m.coverImage?.large || '' });
   } catch (e) { sh.innerHTML = `<button class="close">✕</button><p class="empty" style="padding:30px">${esc(e.message)}</p>`; }
   sh.querySelector('.close').onclick = closeSheet;
 }
@@ -138,7 +187,7 @@ async function openPlayer(job) {
   chrome.tabs.create({ url: chrome.runtime.getURL(`anime/player.html?s=${encodeURIComponent(key)}`) });
 }
 
-async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListEpisodes) {
+async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListEpisodes, meta = {}) {
   container.innerHTML = '<h2>Watch &amp; download</h2><p class="empty hi-loading">Looking for this show on HiAnime…</p>';
   let match, episodes, note = '';
   try {
@@ -157,7 +206,8 @@ async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListE
   const eps = episodes;
   const hasDub = eps.some((ep) => ep.dub.length);  // guessed lists offer dub too; the player falls back to sub
   const lang = () => wrap.querySelector('.hi-lang')?.value || 'sub';
-  const base = { anime: animeTitle, episodes: eps };
+  const base = { anime: animeTitle, episodes: eps, ...meta };
+  const seen = (await loadShow(String(meta.aniId || animeTitle)))?.seen || {};
   const watch = (idx) => openPlayer({ ...base, mode: 'watch', idx, lang: lang() });
   const download = (queue) => openPlayer({ ...base, mode: 'download', queue, lang: lang() });
 
@@ -166,7 +216,7 @@ async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListE
     <h2>Watch &amp; download <small class="hi-match"></small></h2>
     <div class="hi-toolbar">
       <span class="hi-count">${eps.length} episode${eps.length !== 1 ? 's' : ''}</span>
-      ${hasDub ? '<select class="hi-lang" title="Subtitled or dubbed"><option value="sub">Sub</option><option value="dub">Dub</option></select>' : ''}
+      ${hasDub ? `<select class="hi-lang" title="Subtitled or dubbed"><option value="sub">Sub</option><option value="dub"${prefs.amLang === 'dub' ? ' selected' : ''}>Dub</option></select>` : ''}
       <button class="hi-play">▶ Play from Ep ${eps[0].number}</button>
       <label>Ep <select class="hi-from"></select></label><label>to <select class="hi-to"></select></label>
       <button class="hi-dl-range">⬇ Download range</button>
@@ -190,7 +240,7 @@ async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListE
   const grid = wrap.querySelector('.hi-eps');
   eps.forEach((ep, i) => {
     const row = document.createElement('div');
-    row.className = 'hi-ep' + (ep.filler ? ' filler' : '');
+    row.className = 'hi-ep' + (ep.filler ? ' filler' : '') + (seen[ep.number] ? ' seen' : '');
     row.innerHTML = `<span class="hi-num">${ep.number}</span><span class="hi-title"></span><div class="hi-btns"><button class="hi-watch">▶ Watch</button><button class="hi-dl" title="Download this episode">⬇</button></div>`;
     row.querySelector('.hi-title').textContent = [ep.title, ep.filler && '(filler)', !ep.guessed && ep.dub.length && '· dub'].filter(Boolean).join(' ');
     row.querySelector('.hi-watch').onclick = () => watch(i);

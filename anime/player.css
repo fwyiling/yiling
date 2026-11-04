@@ -44,3 +44,4 @@ button { font: inherit; color: inherit; }
 .ep-chip:hover { border-color: var(--a); color: var(--t); }
 .ep-chip.active { background: var(--a); color: #fff; border-color: var(--a); }
 .ep-chip.filler { opacity: .6; }
+#epList .ep-chip.seen:not(.active) { color: var(--t); background: color-mix(in srgb, var(--a) 18%, var(--p)); border-color: color-mix(in srgb, var(--a) 45%, var(--l)); }
