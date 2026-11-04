@@ -1,4 +1,4 @@
-:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #fa1e4e; --bg: #0e0b12; --p: #18141d; --p2: #211b28; --l: #2c2534; --t: #f2eef7; --m: #a39bae; --good: #2ecc71; }
+:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #5e7d9c; --bg: #0e0b12; --p: #18141d; --p2: #211b28; --l: #2c2534; --t: #f2eef7; --m: #a39bae; --good: #2ecc71; }
 * { box-sizing: border-box; }
 body { margin: 0; background: radial-gradient(1100px 500px at 80% -10%, color-mix(in srgb, var(--a) 18%, transparent), transparent 60%), var(--bg); color: var(--t); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
 main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }

@@ -58,7 +58,7 @@ const FONTS = {
   playfair: ['Playfair Display', 'Playfair+Display:wght@400;500;700'],
   mono: ['JetBrains Mono', 'JetBrains+Mono:wght@300;400;600'],
 };
-const SWATCHES = ['#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8', '#ffffff'];
+const SWATCHES = ['#5e7d9c', '#8a96a3', '#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8', '#ffffff'];
 const QUOTES = [
   ['You have power over your mind – not outside events. Realize this, and you will find strength.', 'Marcus Aurelius'],
   ['The happiness of your life depends upon the quality of your thoughts.', 'Marcus Aurelius'],
@@ -83,7 +83,7 @@ const QUOTES = [
 ];
 
 let s = { ...DEFAULTS };
-let accent = '#fa1e4e';
+let accent = '#5e7d9c';
 const saveTimers = {};
 function set(patch, { quiet } = {}) {
   Object.assign(s, patch);
@@ -627,8 +627,19 @@ function render() {
 }
 
 // ================= customize drawer =================
+// line icons for the Customize sections (stroked with currentColor like the page's other icons)
+const SECTION_ICONS = {
+  style: '<path d="M12 3.5l1.8 4.9 4.9 1.8-4.9 1.8L12 16.9l-1.8-4.9-4.9-1.8 4.9-1.8z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',
+  widgets: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 10h17M10 10v10.5"/>',
+  sliders: '<path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/>',
+  archive: '<rect x="3" y="4" width="18" height="4.5" rx="1.2"/><path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5M10 12.5h4"/>',
+};
 const SECTIONS = [
-  { em: '⚡', title: 'Style', items: [
+  { icon: 'style', title: 'Style', items: [
     { type: 'seg', key: 'theme', label: 'Theme', options: [['mynt', 'Material You'], ['chrome', 'Chrome+'], ['cyber', 'Cyber / gamer'], ['glass', 'Clean glass']] },
     { type: 'custom', when: chromeLike, render: renderSeedPicker },
     { type: 'seg', key: 'mode', label: 'Mode', options: [['system', 'Follow device'], ['dark', 'Dark'], ['light', 'Light']], when: chromeLike },
@@ -638,7 +649,7 @@ const SECTIONS = [
     { type: 'custom', render: (w) => { const b = document.createElement('div'); b.className = 'btns'; const x = Object.assign(document.createElement('button'), { textContent: 'Reskin Chrome top bar & footer →' }); x.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('setup/theme.html') }); b.append(x); w.append(b); } },
     { type: 'toggle', key: 'animate', label: 'Animations', desc: 'Moving grid + glitch. Uses more power and can make typing feel slower' },
   ] },
-  { em: '🖼️', title: 'Background', items: [
+  { icon: 'image', title: 'Background', items: [
     { type: 'seg', key: 'bgType', label: 'Type', options: [['theme', 'Theme colour'], ['cyber', 'Synthwave'], ['anime', 'Anime'], ['bing', 'Bing daily'], ['photo', 'Photos'], ['gradient', 'Gradient'], ['color', 'Color'], ['url', 'Link'], ['upload', 'Upload']] },
     { type: 'seg', key: 'animeEvery', label: 'New wallpaper', options: [['day', 'Every day'], ['tab', 'Every new tab']], when: () => s.bgType === 'anime' },
     { type: 'custom', when: () => s.bgType === 'gradient', render: renderGradientPicker },
@@ -650,7 +661,7 @@ const SECTIONS = [
     { type: 'range', key: 'bgDim', label: 'Darken', min: 0, max: 85, unit: '%' },
     { type: 'toggle', key: 'bgZoom', label: 'Slight zoom', desc: 'Hides blurred edges' },
   ] },
-  { em: '🕒', title: 'Clock & greeting', items: [
+  { icon: 'clock', title: 'Clock & greeting', items: [
     { type: 'toggle', key: 'showClock', label: 'Show clock' },
     { type: 'seg', key: 'clock24', label: 'Format', options: [[false, '12-hour'], [true, '24-hour']], when: () => s.showClock },
     { type: 'toggle', key: 'clockSeconds', label: 'Show seconds', when: () => s.showClock },
@@ -661,13 +672,13 @@ const SECTIONS = [
     { type: 'text', key: 'name', label: 'Your name', placeholder: 'e.g. Alex', when: () => s.showGreeting },
     { type: 'text', key: 'greetingText', label: 'Custom message (replaces greeting)', placeholder: 'Leave empty for Good morning…', when: () => s.showGreeting },
   ] },
-  { em: '🔎', title: 'Search', items: [
+  { icon: 'search', title: 'Search', items: [
     { type: 'toggle', key: 'showSearch', label: 'Show search bar' },
     { type: 'select', key: 'engine', label: 'Search engine', options: Object.entries(ENGINES).map(([k, [n]]) => [k, n]), when: () => s.showSearch },
     { type: 'range', key: 'searchWidth', label: 'Width', min: 320, max: 900, unit: 'px', when: () => s.showSearch },
     { type: 'text', key: 'searchPlaceholder', label: 'Placeholder text', placeholder: 'Search or type a link', when: () => s.showSearch },
   ] },
-  { em: '⭐', title: 'Shortcuts', items: [
+  { icon: 'grid', title: 'Shortcuts', items: [
     { type: 'toggle', key: 'showShortcuts', label: 'Show shortcuts' },
     { type: 'seg', key: 'shortcutSource', label: 'Show', options: [['custom', 'My shortcuts'], ['top', 'Most visited']], when: () => s.showShortcuts },
     { type: 'custom', when: () => s.showShortcuts && s.shortcutSource === 'custom', render: renderShortcutList },
@@ -676,7 +687,7 @@ const SECTIONS = [
     { type: 'seg', key: 'shortcutStyle', label: 'Style', options: [['glass', 'Glass'], ['flat', 'Minimal']], when: () => s.showShortcuts },
     { type: 'toggle', key: 'shortcutLabels', label: 'Show names', when: () => s.showShortcuts },
   ] },
-  { em: '🧩', title: 'Widgets', items: [
+  { icon: 'widgets', title: 'Widgets', items: [
     { type: 'toggle', key: 'showToday', label: 'Today card', desc: 'Your to-do list on the home page' },
     { type: 'toggle', key: 'showTimetable', label: 'Timetable card', desc: 'Weekly timetable with what’s on now / next' },
     { type: 'toggle', key: 'showShelves', label: 'Ani Manga shelves', desc: 'Continue watching, continue reading and airing today' },
@@ -687,7 +698,7 @@ const SECTIONS = [
     { type: 'toggle', key: 'showNotes', label: 'Notes button' },
     { type: 'toggle', key: 'showTodo', label: 'To-do button' },
   ] },
-  { em: '🎨', title: 'Look & feel', items: [
+  { icon: 'sliders', title: 'Look & feel', items: [
     { type: 'custom', render: renderAccent },
     { type: 'select', key: 'font', label: 'Font', options: Object.entries(FONTS).map(([k, [n]]) => [k, n]) },
     { type: 'seg', key: 'layout', label: 'Position', options: [['center', 'Centered'], ['top', 'Higher up']] },
@@ -697,7 +708,7 @@ const SECTIONS = [
     { type: 'toggle', key: 'panelDark', label: 'Dark glass', desc: 'Better on bright wallpapers' },
     { type: 'toggle', key: 'textShadow', label: 'Text shadow', desc: 'Keeps text readable on any photo' },
   ] },
-  { em: '💾', title: 'Backup & reset', items: [{ type: 'custom', render: renderBackup }] },
+  { icon: 'archive', title: 'Backup & reset', items: [{ type: 'custom', render: renderBackup }] },
 ];
 
 const whenList = [];
@@ -710,7 +721,7 @@ function buildDrawer() {
   SECTIONS.forEach((sec, i) => {
     const d = document.createElement('details');
     d.className = 'sec'; d.open = i === 0;
-    d.innerHTML = `<summary><span class="em">${sec.em}</span>${sec.title}</summary>`;
+    d.innerHTML = `<summary><span class="em"><svg viewBox="0 0 24 24">${SECTION_ICONS[sec.icon] || ''}</svg></span>${sec.title}</summary>`;
     const inner = document.createElement('div'); inner.className = 'sec-body';
     for (const it of sec.items) {
       const node = buildItem(it);

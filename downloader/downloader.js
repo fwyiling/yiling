@@ -20,7 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pad = (n, w) => String(n).padStart(w, '0');
 
 const { [`job_${jobId}`]: job } = await chrome.storage.session.get(`job_${jobId}`);
-const { accent = '#fa1e4e' } = await chrome.storage.sync.get('accent');
+const { accent = '#5e7d9c' } = await chrome.storage.sync.get('accent');
 document.documentElement.style.setProperty('--a', accent);
 if (!job) { $('series').textContent = 'This download has expired. Start it again from the page.'; await new Promise(() => {}); } // stop here quietly
 

@@ -1,4 +1,4 @@
-:root { --bg: #131016; --rail: #0d0b10; --panel: #1b1720; --line: #2a2430; --text: #eee9f4; --muted: #9b93a6; --a: #fa1e4e; }
+:root { --bg: #131016; --rail: #0d0b10; --panel: #1b1720; --line: #2a2430; --text: #eee9f4; --muted: #9b93a6; --a: #5e7d9c; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
 body { display: flex; }

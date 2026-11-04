@@ -26,7 +26,7 @@
   let ntpTheme = null;
 
   function render(s) {
-    const accent = s.accent || '#fa1e4e';
+    const accent = s.accent || '#5e7d9c';
     root.style.setProperty('--sc-accent', accent);
     root.classList.toggle('sc-skin', s.webSkin !== false);
     const p = palette(ntpTheme, accent);

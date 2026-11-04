@@ -3,7 +3,7 @@ import { DEFAULTS } from '../lib/defaults.js';
 const $ = (id) => document.getElementById(id);
 const send = (msg) => chrome.runtime.sendMessage(msg);
 document.getElementById('ver').textContent = 'v' + chrome.runtime.getManifest().version;
-const SWATCHES = ['#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8'];
+const SWATCHES = ['#5e7d9c', '#8a96a3', '#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8'];
 
 let settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
 const save = (patch) => { Object.assign(settings, patch); return chrome.storage.sync.set(patch); };

@@ -57,7 +57,7 @@
   }
 
   function render() {
-    root.style.setProperty('--a', s.accent || '#fa1e4e');
+    root.style.setProperty('--a', s.accent || '#5e7d9c');
     const fab = shadow.querySelector('.fab');
     fab.classList.toggle('paused', paused() || !s.adBlock);
     fab.classList.toggle('open', open);

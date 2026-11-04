@@ -1,11 +1,12 @@
 :root {
-  --accent: #fa1e4e;
-  --bg: #0f0f14;
-  --panel: #18181f;
-  --panel-2: #20202a;
-  --line: #2a2a36;
-  --text: #f2f2f5;
-  --muted: #9a9aab;
+  --accent: #5e7d9c;
+  --grey: #a7afb8;
+  --bg: #0f1216;
+  --panel: #161a20;
+  --panel-2: #1d222a;
+  --line: #29303a;
+  --text: #eef1f4;
+  --muted: #959eaa;
   --good: #2ecc71;
   --warn: #f5a524;
 }
@@ -22,7 +23,8 @@ body.full { width: auto; max-width: 480px; margin: 24px auto; border-radius: 16p
 header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, var(--bg)), var(--bg) 70%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, var(--bg)), color-mix(in srgb, var(--grey) 6%, var(--bg)) 75%);
+  border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand img { border-radius: 8px; }
@@ -32,11 +34,12 @@ header {
 .status {
   display: flex; align-items: center; gap: 8px;
   margin: 0 16px; padding: 9px 12px; border-radius: 10px;
-  background: color-mix(in srgb, var(--good) 14%, transparent);
-  color: var(--good); font-weight: 600;
+  background: var(--panel); border: 1px solid var(--line);
+  color: var(--text); font-weight: 600;
 }
-.status.off { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
-.status .ico { width: 16px; height: 16px; fill: currentColor; flex: none; }
+.status.off { color: var(--warn); }
+.status.off .ico { fill: var(--warn); }
+.status .ico { width: 16px; height: 16px; fill: var(--accent); flex: none; }
 
 /* tabs */
 nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 12px 16px 4px; }

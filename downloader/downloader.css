@@ -1,4 +1,4 @@
-:root { --a: #fa1e4e; --bg: #0e0e12; --p: #17171e; --p2: #1f1f28; --l: #2a2a36; --t: #f2f2f5; --m: #9a9aab; --good: #2ecc71; }
+:root { --a: #5e7d9c; --bg: #0e0e12; --p: #17171e; --p2: #1f1f28; --l: #2a2a36; --t: #f2f2f5; --m: #9a9aab; --good: #2ecc71; }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body {

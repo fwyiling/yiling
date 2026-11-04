@@ -1,4 +1,4 @@
-:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #fa1e4e; --size: 19px; --font: Georgia, "Iowan Old Style", "Times New Roman", serif;
+:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #5e7d9c; --size: 19px; --font: Georgia, "Iowan Old Style", "Times New Roman", serif;
   --bg: #121015; --fg: #e9e4ee; --m: #9a93a3; --bar: #121015e6; --line: #ffffff12; }
 :root[data-theme="sepia"] { color-scheme: light; --bg: #f4ecd8; --fg: #3b2f22; --m: #7a6a55; --bar: #f4ecd8e6; --line: #3b2f2218; scrollbar-color: #c9b994 transparent; }
 :root[data-theme="light"] { color-scheme: light; --bg: #fbfaf8; --fg: #1d1b20; --m: #6b6670; --bar: #fbfaf8e6; --line: #0000000f; scrollbar-color: #cfcbd4 transparent; }

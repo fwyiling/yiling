@@ -4,7 +4,7 @@
 // Work is done in idle time slices so it never blocks the page.
 (() => {
   if (window.top !== window) return;
-  const A = 'var(--sc-accent, #fa1e4e)';
+  const A = 'var(--sc-accent, #5e7d9c)';
   // colours follow the home-page theme (set as CSS variables by theme.js)
   const PALETTE = {
     base: 'color-mix(in srgb, var(--sc-base) 88%, transparent)',

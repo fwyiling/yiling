@@ -1,5 +1,5 @@
 :root {
-  --accent: #fa1e4e;
+  --accent: #5e7d9c;
   --font: "Segoe UI", system-ui, -apple-system, sans-serif;
   --glass-blur: 14px;
   --glass-alpha: .18;
@@ -136,7 +136,8 @@ body.zen #center > *, body.zen #quote { transition: opacity .4s; }
 .sec > summary::-webkit-details-marker { display: none; }
 .sec > summary::after { content: "›"; margin-left: auto; color: #777; transition: transform .2s; font-size: 18px; }
 .sec[open] > summary::after { transform: rotate(90deg); }
-.sec > summary .em { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 22%, #1d1d26); font-size: 15px; }
+.sec > summary .em { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, #1d1d26); }
+.sec > summary .em svg { width: 17px; height: 17px; stroke-width: 1.8; }
 .sec-body { padding: 0 6px 14px; display: grid; gap: 12px; }
 .it { display: grid; gap: 6px; }
 .it > .lbl { display: flex; justify-content: space-between; color: #c9c9d4; }
@@ -396,7 +397,7 @@ body.theme-chrome #drawer { background: var(--c-surface); color: var(--c-text); 
 body.theme-chrome .d-head, body.theme-chrome .sec { border-color: color-mix(in srgb, var(--c-text) 10%, transparent); }
 body.theme-chrome .d-head small, body.theme-chrome .it small, body.theme-chrome .it > .lbl em { color: var(--c-muted); }
 body.theme-chrome .it > .lbl { color: var(--c-text); }
-body.theme-chrome .sec > summary .em { background: var(--c-surface2); }
+body.theme-chrome .sec > summary .em { background: var(--c-surface2); color: var(--c-primary); }
 body.theme-chrome .seg, body.theme-chrome .d-body input[type=text], body.theme-chrome .d-body select, body.theme-chrome .btns button, body.theme-chrome .btns label, body.theme-chrome .sclist div, body.theme-chrome .d-head .icon { background: var(--c-surface2); border-color: transparent; color: var(--c-text); }
 body.theme-chrome .seg button { color: var(--c-muted); }
 body.theme-chrome .seg button.on, body.theme-chrome .sw input:checked + span { background: var(--c-primary); color: var(--c-onPrimary); }
