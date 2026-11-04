@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
-  theme: 'cyber', scanlines: true, glitch: true, hud: true, animate: true,
+  theme: 'cyber', scanlines: true, glitch: true, hud: true, animate: false, perfV: 2,
   bgType: 'cyber', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
   showGreeting: true, name: '', greetingText: '',
   showClock: true, clock24: false, clockSeconds: false, clockSize: 96, clockWeight: 300, showDate: true,
@@ -117,7 +117,8 @@ function applyLook() {
   b.toggle('no-labels', !s.shortcutLabels);
   b.toggle('style-flat', s.shortcutStyle === 'flat');
   b.toggle('theme-cyber', s.theme === 'cyber');
-  b.toggle('scanlines', s.theme === 'cyber' && s.scanlines);
+  b.toggle('scanlines', s.theme === 'cyber' && s.scanlines && (s.animate || s.bgType !== 'cyber'));
+  b.toggle('static-bg', !s.animate);
   b.toggle('glitch', s.glitch);
   b.toggle('hud', s.hud);
   b.toggle('still', !s.animate);
@@ -130,13 +131,18 @@ async function applyBackground() {
   bg.style.filter = s.bgBlur ? `blur(${s.bgBlur}px)` : '';
   bg.style.transform = s.bgZoom ? 'scale(1.04)' : '';
   $('dim').style.opacity = s.bgDim / 100;
-  const key = [s.bgType, s.bgGradient, s.bgColor, s.bgUrl, s.bgPhotoEvery, s.animeEvery].join('|');
+  const key = [s.bgType, s.bgGradient, s.bgColor, s.bgUrl, s.bgPhotoEvery, s.animeEvery, s.animate, s.scanlines, accent, innerWidth, innerHeight].join('|');
   if (key === bgKey) return;
   bgKey = key;
   $('credit').textContent = '';
   bg.replaceChildren();
   const setImg = (url) => { bg.style.background = `#111 url("${url.replace(/"/g, '%22')}") center / cover no-repeat`; };
-  if (s.bgType === 'cyber') {
+  if (s.bgType === 'cyber' && !s.animate) {
+    // still image: drawn once, so typing never waits on animation/compositing
+    bg.style.background = '#05010a';
+    const url = await synthwaveImage(accent, s.theme === 'cyber' && s.scanlines);
+    setImg(url);
+  } else if (s.bgType === 'cyber') {
     bg.style.background = '#05010a';
     const c = document.createElement('div'); c.className = 'cyber-bg';
     c.innerHTML = '<div class="stars"></div><div class="sun"></div><div class="horizon"></div><div class="floor"><i></i></div>';
@@ -183,6 +189,72 @@ async function applyBackground() {
     else bg.style.background = GRADIENTS[2][1];
   } else bg.style.background = GRADIENTS[0][1];
 }
+
+// ---- synthwave scene rendered once to an image ----
+let lastSynthUrl = null;
+async function synthwaveImage(acc, scan) {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+  const c = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const g = c.getContext('2d');
+  const cx = W / 2, hy = H * 0.5, vmin = Math.min(W, H);
+  // sky
+  const sky = g.createRadialGradient(cx, H * 1.2, 0, cx, H * 1.2, H * 1.15);
+  sky.addColorStop(0, mixHex(acc, '#1a0533', 0.45)); sky.addColorStop(0.45, '#12021f'); sky.addColorStop(0.75, '#05010a'); sky.addColorStop(1, '#05010a');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  // stars (seeded so they don't jump between tabs)
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 220; i++) { g.globalAlpha = 0.25 + rnd() * 0.6; g.fillStyle = '#fff'; const r = (rnd() < 0.85 ? 0.7 : 1.3) * dpr; g.beginPath(); g.arc(rnd() * W, rnd() * hy * 0.95, r, 0, 7); g.fill(); }
+  g.globalAlpha = 1;
+  // sun with retro stripes
+  const D = vmin * 0.3, R = D / 2, sy = hy + vmin * 0.06 - R;
+  g.save(); g.beginPath(); g.rect(0, 0, W, hy); g.clip();
+  g.shadowColor = 'rgba(255,41,117,.65)'; g.shadowBlur = 90 * dpr;
+  const sg = g.createLinearGradient(0, sy - R, 0, sy + R);
+  sg.addColorStop(0, '#ffd319'); sg.addColorStop(0.55, '#ff2975'); sg.addColorStop(1, '#8c1eff');
+  g.fillStyle = sg; g.beginPath(); g.arc(cx, sy, R, 0, Math.PI * 2); g.fill();
+  g.shadowBlur = 0; g.globalCompositeOperation = 'destination-out';
+  for (let y = sy, gap = 2 * dpr, step = 0; y < sy + R; step++) { y += 12 * dpr; g.fillRect(cx - R, y, D, gap); gap += 0.9 * dpr; y += gap; }
+  g.restore();
+  // floor grid in perspective
+  const line = mixHex(acc, '#ffffff', 0.85);
+  g.save(); g.beginPath(); g.rect(0, hy, W, H - hy); g.clip();
+  g.fillStyle = '#07020e'; g.fillRect(0, hy, W, H - hy);
+  const strokes = (alpha, width) => {
+    g.strokeStyle = line; g.globalAlpha = alpha; g.lineWidth = width;
+    g.beginPath();
+    for (let i = 1; i <= 15; i++) { const t = Math.pow(i / 15, 2.2); const y = hy + (H - hy) * t; g.moveTo(0, y); g.lineTo(W, y); }
+    for (let k = -24; k <= 24; k++) { const xb = cx + k * W * 0.075; g.moveTo(cx + k * W * 0.006, hy); g.lineTo(xb, H); }
+    g.stroke();
+  };
+  strokes(0.22, 8 * dpr); strokes(0.95, 2 * dpr);
+  g.globalAlpha = 1;
+  const fade = g.createLinearGradient(0, hy, 0, hy + (H - hy) * 0.4);
+  fade.addColorStop(0, 'rgba(7,2,14,1)'); fade.addColorStop(1, 'rgba(7,2,14,0)');
+  g.fillStyle = fade; g.fillRect(0, hy, W, H - hy);
+  g.restore();
+  // horizon glow
+  const hg = g.createLinearGradient(0, hy - 30 * dpr, 0, hy + 30 * dpr);
+  hg.addColorStop(0, 'rgba(0,0,0,0)'); hg.addColorStop(0.5, hexA(acc, 0.55)); hg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = hg; g.fillRect(0, hy - 30 * dpr, W, 60 * dpr);
+  g.fillStyle = acc; g.fillRect(0, hy - dpr, W, 2 * dpr);
+  // baked scanlines + vignette
+  if (scan) {
+    g.fillStyle = 'rgba(0,0,0,.16)';
+    for (let y = 0; y < H; y += 3 * dpr) g.fillRect(0, y, W, dpr);
+    const v = g.createRadialGradient(cx, H / 2, Math.min(W, H) * 0.45, cx, H / 2, Math.max(W, H) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
+    g.fillStyle = v; g.fillRect(0, 0, W, H);
+  }
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  if (lastSynthUrl) URL.revokeObjectURL(lastSynthUrl);
+  return (lastSynthUrl = URL.createObjectURL(blob));
+}
+function hexRgb(h) { const n = parseInt(h.replace('#', '').padEnd(6, '0').slice(0, 6), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function mixHex(a, b, t) { const x = hexRgb(a), y = hexRgb(b); return `rgb(${x.map((v, i) => Math.round(v * t + y[i] * (1 - t))).join(',')})`; }
+function hexA(h, a) { return `rgba(${hexRgb(h).join(',')},${a})`; }
+let resizeT;
+addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => applyBackground(), 300); });
 
 function tick() {
   const d = new Date();
@@ -376,7 +448,7 @@ const SECTIONS = [
     { type: 'toggle', key: 'glitch', label: 'Glitch effect', desc: 'Clock glitches every few seconds', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'scanlines', label: 'Scanlines', desc: 'Retro screen lines + vignette', when: () => s.theme === 'cyber' },
     { type: 'custom', render: (w) => { const b = document.createElement('div'); b.className = 'btns'; const x = Object.assign(document.createElement('button'), { textContent: 'Reskin Chrome top bar & footer →' }); x.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('setup/theme.html') }); b.append(x); w.append(b); } },
-    { type: 'toggle', key: 'animate', label: 'Animations', desc: 'Moving grid, twinkling stars, glitch. Turn off on slower PCs' },
+    { type: 'toggle', key: 'animate', label: 'Animations', desc: 'Moving grid + glitch. Uses more power and can make typing feel slower' },
   ] },
   { em: '🖼️', title: 'Background', items: [
     { type: 'seg', key: 'bgType', label: 'Type', options: [['cyber', 'Synthwave'], ['anime', 'Anime'], ['bing', 'Bing daily'], ['photo', 'Photos'], ['gradient', 'Gradient'], ['color', 'Color'], ['url', 'Link'], ['upload', 'Upload']] },
@@ -604,6 +676,7 @@ document.addEventListener('keydown', (e) => {
 // ================= boot =================
 const [{ ntp }, sync] = await Promise.all([chrome.storage.local.get('ntp'), chrome.storage.sync.get(['accent'])]);
 s = { ...DEFAULTS, ...(ntp || {}) };
+if (s.perfV !== 2) { s.animate = false; s.perfV = 2; chrome.storage.local.set({ ntp: s }); }
 accent = sync.accent || accent;
 render();
 buildDrawer();
@@ -617,6 +690,6 @@ async function paintHud() {
 }
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === 'sync' && c.adBlock) paintHud();
-  if (area === 'sync' && c.accent) { accent = c.accent.newValue; applyLook(); accentMarkers.forEach((m) => m()); }
+  if (area === 'sync' && c.accent) { accent = c.accent.newValue; applyLook(); applyBackground(); accentMarkers.forEach((m) => m()); }
   if (area === 'local' && c.ntp && shortcutListDraw) { s = { ...DEFAULTS, ...c.ntp.newValue }; renderShortcuts(); shortcutListDraw(); }
 });

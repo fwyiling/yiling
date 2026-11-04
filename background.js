@@ -1,7 +1,7 @@
 // Shield Client – service worker
 import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
-import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab } from './lib/mangadex.js';
+import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, mangaDexDiagnose } from './lib/mangadex.js';
 
 
 const MALWARE_FEED = 'https://urlhaus.abuse.ch/downloads/hostfile/';
@@ -287,6 +287,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
     'allow-once': () => allowOnce(msg.host),
+    'md-diagnose': async () => mangaDexDiagnose((await chrome.tabs.get(tabId)).url, tabId),
     'download': () => startJob(buildJob(msg.page, msg.kind, msg.preset)),
     'set-paused': () => toggleListEntry('allowlist', msg.host, msg.paused),
     'hide-dock-here': () => toggleListEntry('dockHiddenOn', msg.host, true),

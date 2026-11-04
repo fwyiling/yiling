@@ -123,3 +123,8 @@ summary { cursor: pointer; color: var(--muted); }
 .chips button::after { content: " ✕"; color: var(--muted); }
 .found .sub { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 select.field { appearance: none; cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.diag { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.diag li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; padding: 7px 9px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; }
+.diag li b { font-weight: 600; }
+.diag li small { grid-column: 2; color: var(--muted); word-break: break-word; }
+.diag li.ok i { color: var(--good); } .diag li.bad i { color: #ff6b6b; } .diag i { font-style: normal; font-weight: 700; }

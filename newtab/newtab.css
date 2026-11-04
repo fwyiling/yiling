@@ -310,3 +310,7 @@ body.still .cyber-bg .floor > i, body.still .cyber-bg .stars, body.still.glitch 
 #center { will-change: transform; }
 #search { will-change: transform; contain: layout paint; }
 body.scanlines::after { will-change: transform; contain: strict; }
+
+/* still background: no extra GPU layers needed */
+body.static-bg #bg, body.static-bg #center, body.static-bg #search { will-change: auto; }
+body.static-bg #bg { contain: none; }

@@ -113,6 +113,24 @@ if (host) {
 $('mdLangs').value = (settings.mdLangs || DEFAULTS.mdLangs).join(',');
 $('mdLangs').onchange = () => save({ mdLangs: $('mdLangs').value.split(',') });
 
+// MangaDex connection test
+if (/(^|\.)mangadex\.org$/.test(host)) {
+  $('mdDiag').hidden = false;
+  $('mdTest').onclick = async () => {
+    $('mdTest').disabled = true; $('mdTest').textContent = 'Testing… (takes a few seconds)';
+    const r = await send({ type: 'md-diagnose', tabId: tab.id });
+    const steps = r?.ok ? r.result : [{ name: 'Run test', ok: false, detail: r?.error || 'no response from extension – reload it in chrome://extensions' }];
+    $('mdSteps').replaceChildren(...steps.map((st) => {
+      const li = document.createElement('li'); li.className = st.ok ? 'ok' : 'bad';
+      li.append(Object.assign(document.createElement('i'), { textContent: st.ok ? '✓' : '✕' }), Object.assign(document.createElement('b'), { textContent: st.name }), Object.assign(document.createElement('small'), { textContent: st.detail }));
+      return li;
+    }));
+    $('mdTest').disabled = false; $('mdTest').textContent = 'Test again';
+    $('mdCopy').hidden = false;
+    $('mdCopy').onclick = () => navigator.clipboard.writeText('Shield Client MangaDex test\n' + tab.url + '\n' + steps.map((st) => `${st.ok ? 'OK ' : 'FAIL'} ${st.name}: ${st.detail} (${st.ms ?? 0}ms)`).join('\n')).then(() => ($('mdCopy').textContent = 'Copied ✓'));
+  };
+}
+
 let scanned = false;
 async function scan() {
   if (scanned) return;
