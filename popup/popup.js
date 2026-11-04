@@ -2,6 +2,7 @@ import { DEFAULTS } from '../lib/defaults.js';
 
 const $ = (id) => document.getElementById(id);
 const send = (msg) => chrome.runtime.sendMessage(msg);
+document.getElementById('ver').textContent = 'v' + chrome.runtime.getManifest().version;
 const SWATCHES = ['#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8'];
 
 let settings = { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
@@ -116,7 +117,10 @@ $('mdLangs').onchange = () => save({ mdLangs: $('mdLangs').value.split(',') });
 // MangaDex connection test
 if (/(^|\.)mangadex\.org$/.test(host)) {
   $('mdDiag').hidden = false;
-  $('mdTest').onclick = async () => {
+  $('mdTest').onclick = () => runMdTest();
+}
+async function runMdTest() {
+  {
     $('mdTest').disabled = true; $('mdTest').textContent = 'Testing… (takes a few seconds)';
     const r = await send({ type: 'md-diagnose', tabId: tab.id });
     const steps = r?.ok ? r.result : [{ name: 'Run test', ok: false, detail: r?.error || 'no response from extension – reload it in chrome://extensions' }];
@@ -127,8 +131,8 @@ if (/(^|\.)mangadex\.org$/.test(host)) {
     }));
     $('mdTest').disabled = false; $('mdTest').textContent = 'Test again';
     $('mdCopy').hidden = false;
-    $('mdCopy').onclick = () => navigator.clipboard.writeText('Shield Client MangaDex test\n' + tab.url + '\n' + steps.map((st) => `${st.ok ? 'OK ' : 'FAIL'} ${st.name}: ${st.detail} (${st.ms ?? 0}ms)`).join('\n')).then(() => ($('mdCopy').textContent = 'Copied ✓'));
-  };
+    $('mdCopy').onclick = () => navigator.clipboard.writeText(`Shield Client v${chrome.runtime.getManifest().version} MangaDex test\n` + tab.url + '\n' + steps.map((st) => `${st.ok ? 'OK ' : 'FAIL'} ${st.name}: ${st.detail} (${st.ms ?? 0}ms)`).join('\n')).then(() => ($('mdCopy').textContent = 'Copied ✓'));
+  }
 }
 
 let scanned = false;
@@ -138,7 +142,11 @@ async function scan() {
   const empty = (msg) => { $('scan').innerHTML = `<p>${msg}</p>`; };
   if (!host) return empty('Open a manga, manhwa or novel chapter (or a MangaDex title page), then come back here.');
   const r = await send({ type: 'scan', tabId: tab.id });
-  if (!r?.ok) return empty(r?.error ? `Couldn't read this page: ${r.error}` : 'This page can\'t be read. Try reloading it.');
+  if (!r?.ok) {
+    empty(r?.error ? `Couldn't read this page: ${r.error}` : 'This page can\'t be read. Try reloading it.');
+    if (/(^|\.)mangadex\.org$/.test(host)) { $('scan').insertAdjacentHTML('beforeend', '<p>Running a connection test below – please screenshot it.</p>'); runMdTest(); }
+    return;
+  }
   const page = r.result;
   const md = page.source === 'mangadex';
   const kind = md || page.images.length >= 3 ? 'images' : page.text.length >= 1500 ? 'text' : null;
