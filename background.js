@@ -14,8 +14,12 @@ const ALLOW_RULE_ID = 100001;
 const ALLOW_PRIORITY = 2 ** 30;      // beats every ad rule
 const MALWARE_PRIORITY = 2 ** 30 + 1; // ...but malware is blocked even on paused sites
 
+// Settings are cached in memory: cookie/download events fire constantly and
+// re-reading storage each time made browsing feel slow.
+let settingsCache = null;
 async function getSettings() {
-  return { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
+  if (!settingsCache) settingsCache = { ...DEFAULTS, ...(await chrome.storage.sync.get(null)) };
+  return settingsCache;
 }
 
 let trackerDomains = null;
@@ -45,50 +49,41 @@ async function setAdRulesets(on) {
   }
 }
 
-async function apply() {
+const PRIVACY_KEYS = ['blockTpCookies', 'webrtc'];
+/** Apply settings. With `changed`, only the parts affected by those keys are touched. */
+async function apply(changed) {
   const s = await getSettings();
+  const has = (...k) => !changed || k.some((x) => changed.includes(x));
 
-  await setAdRulesets(s.adBlock);
+  if (has('adBlock')) await setAdRulesets(s.adBlock);
 
-  // Sites the user paused: let everything through on those pages.
-  const allow = (s.allowlist || []).filter(Boolean);
-  const rules = [];
-  if (allow.length) {
-    rules.push({
-      id: ALLOW_RULE_ID, priority: ALLOW_PRIORITY,
-      action: { type: 'allowAllRequests' },
-      condition: { requestDomains: allow, resourceTypes: ['main_frame', 'sub_frame'] },
+  if (has('allowlist')) {
+    // Sites the user paused: let everything through on those pages.
+    // (100000 was an old Referrer-Policy rule – Chrome already defaults to that policy, so it was removed.)
+    const allow = (s.allowlist || []).filter(Boolean);
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [REFERRER_RULE_ID, ALLOW_RULE_ID],
+      addRules: allow.length ? [{
+        id: ALLOW_RULE_ID, priority: ALLOW_PRIORITY,
+        action: { type: 'allowAllRequests' },
+        condition: { requestDomains: allow, resourceTypes: ['main_frame', 'sub_frame'] },
+      }] : [],
     });
   }
 
-  // Referrer-Policy: send only the origin on cross-site requests.
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [REFERRER_RULE_ID, ALLOW_RULE_ID],
-    addRules: rules.concat(s.referrerPolicy
-      ? [{
-          id: REFERRER_RULE_ID, priority: 1,
-          action: {
-            type: 'modifyHeaders',
-            responseHeaders: [{ header: 'Referrer-Policy', operation: 'set', value: 'strict-origin-when-cross-origin' }],
-          },
-          condition: { resourceTypes: ['main_frame', 'sub_frame'] },
-        }]
-      : []),
-  });
+  if (!changed) chrome.declarativeNetRequest.setExtensionActionOptions?.({ displayActionCountAsBadgeText: true });
+  if (has('accent')) chrome.action.setBadgeBackgroundColor({ color: s.accent || '#fa1e4e' });
 
-  chrome.declarativeNetRequest.setExtensionActionOptions?.({ displayActionCountAsBadgeText: true });
-  chrome.action.setBadgeBackgroundColor({ color: s.accent || '#fa1e4e' });
-
-  try {
-    await chrome.privacy.websites.thirdPartyCookiesAllowed.set({ value: !s.blockTpCookies });
-    await chrome.privacy.network.webRTCIPHandlingPolicy.set({
-      value: s.webrtc ? 'disable_non_proxied_udp' : 'default',
-    });
-  } catch (e) {
-    console.warn('privacy API', e);
+  if (has(...PRIVACY_KEYS)) {
+    try {
+      await chrome.privacy.websites.thirdPartyCookiesAllowed.set({ value: !s.blockTpCookies });
+      await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: s.webrtc ? 'disable_non_proxied_udp' : 'default' });
+    } catch (e) {
+      console.warn('privacy API', e);
+    }
   }
 
-  await applyMalwareRules(s.malware);
+  if (has('malware')) await applyMalwareRules(s.malware);
 }
 
 // ---- malware blocklist -> dynamic rules (many domains per rule) ----
@@ -138,10 +133,10 @@ async function updateMalwareList() {
 // ---- tracker-cookie cleaner ----
 chrome.cookies.onChanged.addListener(async ({ cookie, removed }) => {
   if (removed) return;
-  const s = await getSettings();
+  const s = settingsCache || await getSettings();
   if (!s.cleanTrackerCookies) return;
   const host = cookie.domain.replace(/^\./, '');
-  const set = await loadTrackerDomains();
+  const set = trackerDomains || await loadTrackerDomains();
   const parts = host.split('.');
   for (let i = 0; i < parts.length - 1; i++) {
     if (set.has(parts.slice(i).join('.'))) {
@@ -200,7 +195,11 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 chrome.runtime.onStartup.addListener(apply);
 chrome.alarms.onAlarm.addListener((a) => a.name === 'malware-update' && updateMalwareList());
-chrome.storage.onChanged.addListener((_c, area) => area === 'sync' && apply());
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area !== 'sync') return;
+  settingsCache = null;
+  apply(Object.keys(c));
+});
 // ---- tab sleeper (frees RAM like GX Control) ----
 async function sleepTabs() {
   const { tabSleepMin } = await getSettings();

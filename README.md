@@ -22,16 +22,22 @@ GX-style customization, and a manga/novel downloader.
   Backgrounds: synthwave, SFW anime wallpapers (wallhaven.cc), Bing daily, photos, gradients, color, link, or upload.
   Clock/greeting, search engine picker, editable drag-to-reorder shortcuts, weather, quote, notes, to-do, fonts, glass,
   corner roundness, export/import. Open the ⚙ button.
+- **Web skins:** cyber look on Google Search and YouTube (neon accent, dark synthwave backdrop, glowing progress bar).
+  Toggle in the popup → Style. Skins live in `skins/` – plain CSS, easy to tweak.
 - **Client dock:** floating button on every site with quick toggles and Download.
 - **Tab sleeper**, accent color everywhere, per-site custom CSS.
 
 ## Chrome theme (tab strip, toolbar, address bar)
+If your tab strip is still brown/grey, you haven't loaded a theme yet – that colour is Chrome's own.
 Extensions can't restyle Chrome's own bars, so matching **themes** are in `themes/` (red, cyan, violet, matrix green).
 Load one the same way: `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red`.
 Make your own colours by editing `tools/make-themes.py` and running `python3 tools/make-themes.py`.
 
 To hide Chrome's own "Customise Chrome" button and footer on the new tab page: click it and switch off **Show footer**
 (recent Chrome versions).
+
+## Console messages
+`net::ERR_BLOCKED_BY_CLIENT` lines in DevTools are Shield Client blocking ads/trackers – expected with any blocker.
 
 ## Limits
 - An extension can't sandbox your OS; it reduces exposure (blocklists, download prompts) but isn't antivirus.

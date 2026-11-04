@@ -1,0 +1,39 @@
+/* Shield Client – cyber skin for Google Search. Active only while <html> has .sc-skin */
+html.sc-skin { --sc-a: var(--sc-accent, #fa1e4e); color-scheme: dark; }
+html.sc-skin body {
+  background:
+    radial-gradient(1100px 520px at 88% -8%, color-mix(in srgb, var(--sc-a) 26%, transparent), transparent 62%),
+    radial-gradient(900px 500px at -10% 110%, color-mix(in srgb, #7b2cff 22%, transparent), transparent 60%),
+    #07040d !important;
+  background-attachment: fixed !important;
+}
+html.sc-skin body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--sc-a) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--sc-a) 9%, transparent) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask: linear-gradient(transparent 30%, #000); mask: linear-gradient(transparent 30%, #000);
+}
+/* let the backdrop show through the main columns */
+html.sc-skin #main, html.sc-skin #cnt, html.sc-skin #rcnt, html.sc-skin #center_col, html.sc-skin #rso,
+html.sc-skin #botstuff, html.sc-skin #fbar, html.sc-skin #sfooter, html.sc-skin .sfbg { background: transparent !important; }
+/* sticky header: dark glass with a neon edge */
+html.sc-skin #searchform {
+  background: color-mix(in srgb, #07040d 72%, transparent) !important;
+  backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--sc-a) 55%, transparent);
+}
+html.sc-skin #searchform form [role="combobox"], html.sc-skin form[role="search"] textarea { caret-color: var(--sc-a); }
+html.sc-skin #searchform form > div > div:first-child:focus-within {
+  box-shadow: 0 0 0 1px var(--sc-a), 0 0 22px color-mix(in srgb, var(--sc-a) 45%, transparent) !important;
+}
+/* result titles + links */
+html.sc-skin #rso h3, html.sc-skin #botstuff h3 { color: color-mix(in srgb, var(--sc-a) 45%, #fff) !important; transition: text-shadow .15s; }
+html.sc-skin #rso a:hover h3 { text-shadow: 0 0 10px color-mix(in srgb, var(--sc-a) 80%, transparent); text-decoration: none; }
+html.sc-skin #rso a:visited h3 { color: color-mix(in srgb, #b07cff 70%, #fff) !important; }
+/* the selected tab underline ("All", "Images"…) */
+html.sc-skin [role="navigation"] [aria-current="page"] { text-shadow: 0 0 10px color-mix(in srgb, var(--sc-a) 70%, transparent); }
+/* scrollbars + selection */
+html.sc-skin { scrollbar-color: var(--sc-a) #0d0816; }
+html.sc-skin ::selection { background: var(--sc-a); color: #fff; }
