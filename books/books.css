@@ -1,0 +1,8 @@
+.card.book .img.nocover { display: grid; place-items: center; padding: 14px; text-align: center; background: linear-gradient(160deg, color-mix(in srgb, var(--a) 35%, var(--p2)), var(--p2)); }
+.card.book .img.nocover::after { content: attr(data-t); font-weight: 700; font-size: 15px; line-height: 1.25; }
+.card.book .cw-x { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: #000a; cursor: pointer; opacity: 0; }
+.card.book:hover .cw-x { opacity: 1; }
+.more { display: block; margin: 22px auto 0; padding: 10px 22px; border-radius: 12px; border: 1px solid var(--l); background: var(--p2); cursor: pointer; font-weight: 600; }
+.more:hover { border-color: var(--a); }
+.sh-head .by { color: var(--m); margin-bottom: 4px; }
+.sh-head img { aspect-ratio: 2 / 3; object-fit: cover; }

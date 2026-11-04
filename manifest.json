@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Syndicates Client",
-  "version": "0.18.0",
-  "description": "Ad blocking, YouTube extras, privacy/malware protection, and Ani Manga: anime tracking, in-client watching and anime/manga downloads.",
+  "version": "0.19.0",
+  "description": "Ad blocking, YouTube extras, privacy/malware protection, and Ani Manga: anime tracking, in-client watching, anime/manga downloads and free books.",
   "permissions": [
     "declarativeNetRequest",
     "storage",

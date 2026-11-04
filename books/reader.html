@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ani Manga · Reader</title>
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <header class="rbar">
+    <a class="back" href="books.html">← Books</a>
+    <div class="meta"><b id="title">Loading…</b><span id="where"></span></div>
+    <div class="tools">
+      <button id="tocBtn" title="Contents">☰ Contents</button>
+      <button id="smaller" title="Smaller text">A−</button>
+      <button id="bigger" title="Bigger text">A+</button>
+      <button id="fontBtn" title="Serif / sans-serif">Aa</button>
+      <button id="themeBtn" title="Theme: dark, sepia or light" aria-label="Theme"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></button>
+    </div>
+    <i id="prog"></i>
+  </header>
+  <aside id="toc" hidden><h2>Contents</h2><ol id="tocList"></ol></aside>
+  <main id="page"><article id="book"><p class="status">Loading the book…</p></article></main>
+  <script type="module" src="reader.js"></script>
+</body>
+</html>

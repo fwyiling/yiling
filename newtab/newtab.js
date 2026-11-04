@@ -567,12 +567,15 @@ let shelvesKey = '';
 async function renderShelves() {
   const box = $('shelves');
   if (s.showShelves === false || !chromeLike()) { box.replaceChildren(); return; }
-  const { mdLibrary = [], animeList = [], amWatching = [] } = await chrome.storage.local.get(['mdLibrary', 'animeList', 'amWatching']);
+  const { mdLibrary = [], animeList = [], amWatching = [], bkReading = [] } = await chrome.storage.local.get(['mdLibrary', 'animeList', 'amWatching', 'bkReading']);
   const watching = amWatching.slice(0, 6);
-  const reading = mdLibrary.filter((e) => e.lastNum).sort((a, b) => (b.lastRun || 0) - (a.lastRun || 0)).slice(0, 6);
+  const reading = [
+    ...mdLibrary.filter((e) => e.lastNum).map((e) => ({ t: e.lastRun || 0, title: e.series, sub: `Ch. ${e.lastNum}${e.total ? ` of ${e.total}` : ''}`, cover: e.cover, href: e.url, k: `m${e.id}${e.lastNum}` })),
+    ...bkReading.map((b) => ({ t: b.updatedAt || 0, title: b.title, sub: `${Math.round((b.progress || 0) * 100)}% read`, cover: b.cover, href: chrome.runtime.getURL(`books/reader.html?id=${b.id}`), k: `b${b.id}${Math.round((b.progress || 0) * 100)}` })),
+  ].sort((a, b) => b.t - a.t).slice(0, 6);
   const now = Date.now() / 1000;
   const airing = animeList.filter((a) => a.next && a.next.airingAt - now < 86400 * 1.5 && a.next.airingAt - now > -3600).slice(0, 6);
-  const key = JSON.stringify([reading.map((e) => [e.id, e.lastNum]), airing.map((a) => [a.id, a.next?.episode]), watching.map((w) => [w.key, w.number, w.time])]);
+  const key = JSON.stringify([reading.map((e) => e.k), airing.map((a) => [a.id, a.next?.episode]), watching.map((w) => [w.key, w.number, w.time])]);
   if (key === shelvesKey) return;
   shelvesKey = key;
   const shelf = (title, items, link) => {
@@ -595,7 +598,7 @@ async function renderShelves() {
   const left = (w) => { const r = Math.max(0, (w.duration || 0) - (w.time || 0)); return w.duration ? `${Math.floor(r / 60)}:${String(Math.floor(r % 60)).padStart(2, '0')} left` : 'up next'; };
   box.replaceChildren(...[
     shelf('Continue watching', watching.map((w) => ({ title: w.anime, sub: `Ep ${w.number} · ${left(w)}`, cover: w.cover, href: chrome.runtime.getURL(`anime/player.html?resume=${encodeURIComponent(w.key)}`) })), 'anime/anime.html'),
-    shelf('Continue reading', reading.map((e) => ({ title: e.series, sub: `Ch. ${e.lastNum}${e.total ? ` of ${e.total}` : ''}`, cover: e.cover, href: e.url })), 'library/library.html'),
+    shelf('Continue reading', reading, bkReading.length ? 'books/books.html' : 'library/library.html'),
     // Ani Manga stays reachable from here even before anything is in your lists
     !reading.length && !airing.length && !watching.length && (() => {
       const sec = document.createElement('div'); sec.className = 'shelf';

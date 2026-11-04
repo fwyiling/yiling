@@ -3,6 +3,7 @@ import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
 import { filterCompactRules, evalSnippets } from './lib/vendor/autoconsent.esm.js';
 import { HIANIME_HOST, API_HOSTS, PLAYER_HOSTS, capturable } from './lib/hianime.js';
+import { BOOK_HOSTS } from './lib/gutendex.js';
 import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, mangaDexDiagnose } from './lib/mangadex.js';
 
 
@@ -245,7 +246,7 @@ chrome.declarativeNetRequest.updateSessionRules({
   removeRuleIds: [AM_RULE, AM_RULE + 1, AM_RULE + 2],
   addRules: [
     // the client's own blockers (ad lists, learned trackers) must never break Ani Manga; malware rules still win
-    { id: AM_RULE + 2, priority: AM_ALLOW, action: { type: 'allow' }, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS], initiatorDomains: [chrome.runtime.id] } },
+    { id: AM_RULE + 2, priority: AM_ALLOW, action: { type: 'allow' }, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS, ...BOOK_HOSTS], initiatorDomains: [chrome.runtime.id] } },
     { id: AM_RULE, priority: AM_HEADERS, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `${AM_SITE}/` }, { header: 'Origin', operation: 'set', value: AM_SITE }] } },
     { id: AM_RULE + 1, priority: AM_HEADERS, condition: { requestDomains: PLAYER_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'media', 'other'] },
@@ -331,9 +332,9 @@ async function amCaptureStream(url, playerTabId) {
 
 async function openAniManga(from) {
   const anime = chrome.runtime.getURL('anime/anime.html');
-  const manga = chrome.runtime.getURL('library/library.html');
+  const pages = ['anime/anime.html', 'library/library.html', 'books/books.html'].map((p) => chrome.runtime.getURL(p));
   const tabs = await chrome.tabs.query({ windowId: from?.windowId ?? chrome.windows.WINDOW_ID_CURRENT });
-  const open = tabs.find((t) => { const u = t.url || t.pendingUrl || ''; return u.startsWith(anime) || u.startsWith(manga); });
+  const open = tabs.find((t) => { const u = t.url || t.pendingUrl || ''; return pages.some((p) => u.startsWith(p)); });
   if (open) return chrome.tabs.update(open.id, { active: true });
   return chrome.tabs.create({ url: anime, windowId: from?.windowId, index: from ? from.index + 1 : undefined });
 }
@@ -528,7 +529,7 @@ const NEVER_BLOCK = new Set(['gstatic.com', 'googleapis.com', 'recaptcha.net', '
   'github.com', 'githubusercontent.com', 'google.com', 'apple.com', 'microsoft.com', 'microsoftonline.com', 'live.com', 'twitch.tv', 'discord.com',
   'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'steampowered.com', 'steamcommunity.com', 'hcaptcha.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com',
   // HiAnime streaming CDNs — required for in-client playback and downloads
-  HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS]);
+  HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS, ...BOOK_HOSTS]);
 let learn = null, learnDirty = false;
 async function loadLearn() {
   if (!learn) { const { learned } = await chrome.storage.local.get('learned'); learn = learned || { seen: {}, blocked: [] }; }

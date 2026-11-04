@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ani Manga · Books</title>
+  <link rel="stylesheet" href="../anime/anime.css">
+  <link rel="stylesheet" href="books.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="../icons/icon48.png" alt="" width="34" height="34"><b>Ani Manga</b></div>
+    <nav class="am-switch" aria-label="Ani Manga sections"><a href="../anime/anime.html">Anime</a><a href="../library/library.html">Manga</a><a class="on" aria-current="page">Books</a></nav>
+    <nav id="tabs">
+      <button data-tab="popular" class="on">Popular</button>
+      <button data-tab="genres">Genres</button>
+      <button data-tab="reading">Reading</button>
+    </nav>
+    <input id="q" placeholder="Search 70,000 free books…" autocomplete="off">
+  </header>
+  <main id="view"></main>
+  <div id="drawer" hidden><div class="scrim"></div><article class="sheet" id="sheet"></article></div>
+  <footer class="credit">Free public-domain books from <a href="https://www.gutenberg.org" target="_blank" rel="noopener">Project Gutenberg</a> · catalogue by <a href="https://gutendex.com" target="_blank" rel="noopener">Gutendex</a></footer>
+  <script type="module" src="books.js"></script>
+</body>
+</html>
