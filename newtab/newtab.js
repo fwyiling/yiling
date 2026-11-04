@@ -731,7 +731,14 @@ $('pillCustomize').onclick = () => openDrawer(true);
 $('btnCustomize').onclick = () => openDrawer(!$('drawer').classList.contains('open'));
 $('drawerClose').onclick = () => openDrawer(false);
 
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', async (e) => {
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    const { hotSidebar = ']', hotMusic = '[' } = await chrome.storage.sync.get(['hotSidebar', 'hotMusic']);
+    if (e.key === hotSidebar || e.key === hotMusic) {
+      if (e.key === hotMusic) await chrome.storage.local.set({ lastSidebarApp: 'music', sidebarPing: Date.now() });
+      const w = await chrome.windows.getCurrent(); chrome.sidePanel.open({ windowId: w.id }); return;
+    }
+  }
   if (e.key === 'Escape') { openDrawer(false); togglePop(null); $('modal').hidden = true; }
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('q').focus(); }
 });

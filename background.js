@@ -455,6 +455,13 @@ chrome.declarativeNetRequest.updateSessionRules({
   }],
 }).catch((e) => console.warn('sidebar rule', e));
 chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
+// ] and [ hotkeys: open the side panel (and switch it to Shield Music for [)
+function openSidebarFor(which, windowId) {
+  // open first – Chrome only allows it straight after the key press
+  const open = windowId != null ? chrome.sidePanel.open({ windowId }) : Promise.reject(new Error('no window'));
+  chrome.storage.local.set(which === 'music' ? { lastSidebarApp: 'music', sidebarPing: Date.now() } : { sidebarPing: Date.now() });
+  return open.catch(() => chrome.tabs.create({ url: chrome.runtime.getURL(which === 'music' ? 'music/music.html' : 'sidebar/sidebar.html') }));
+}
 chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
 });
@@ -582,6 +589,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'allow-once': () => allowOnce(msg.host),
     'sidebar-allow': () => sidebarAllow(msg.url),
     'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
+    'hotkey': () => openSidebarFor(msg.which, sender.tab?.windowId),
     'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
     'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },
     'learn-reset': async () => { learn = { seen: {}, blocked: [] }; await chrome.storage.local.set({ learned: learn }); await applyLearnedRule(); },

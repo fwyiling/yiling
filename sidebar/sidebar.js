@@ -73,5 +73,8 @@ $('addForm').onsubmit = async (e) => {
   renderRail(); openApp(app.id);
 };
 
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area === 'local' && c.sidebarPing) chrome.storage.local.get('lastSidebarApp').then(({ lastSidebarApp: id }) => { if (id && id !== lastSidebarApp) openApp(id); });
+});
 renderRail();
 if (lastSidebarApp && apps.some((a) => a.id === lastSidebarApp)) openApp(lastSidebarApp);

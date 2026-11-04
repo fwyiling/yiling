@@ -5,12 +5,13 @@
 (() => {
   if (window.top !== window) return;
   const A = 'var(--sc-accent, #fa1e4e)';
+  // colours follow the home-page theme (set as CSS variables by theme.js)
   const PALETTE = {
-    base: `color-mix(in srgb, ${A} 5%, rgb(10 6 18 / .86))`,
-    raised: `color-mix(in srgb, ${A} 9%, #150c24)`,
-    raised2: `color-mix(in srgb, ${A} 15%, #1e1232)`,
-    border: `color-mix(in srgb, ${A} 38%, #2a1a40)`,
-    link: `color-mix(in srgb, ${A} 45%, #fff)`,
+    base: 'color-mix(in srgb, var(--sc-base) 88%, transparent)',
+    raised: 'var(--sc-mantle)',
+    raised2: 'var(--sc-surface)',
+    border: 'var(--sc-border)',
+    link: 'var(--sc-link)',
   };
   const RGB = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/;
   const parse = (c) => { const m = RGB.exec(c || ''); return m && [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]]; };
@@ -36,7 +37,7 @@
     if (bi && bi !== 'none' && bi.includes('gradient')) {
       const nb = bi.replace(new RegExp(RGB.source, 'g'), (m, r, g, b, a) => {
         const c = [+r, +g, +b];
-        return neutral(c) && lum(c) >= 14 && lum(c) < 45 ? `rgba(10, 6, 18${a !== undefined ? ', ' + a : ''})` : m;
+        return neutral(c) && lum(c) >= 14 && lum(c) < 45 ? `color-mix(in srgb, var(--sc-base) ${a !== undefined ? Math.round(a * 100) : 100}%, transparent)` : m;
       });
       if (nb !== bi) set(el, 'background-image', nb);
     }

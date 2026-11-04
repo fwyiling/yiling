@@ -124,6 +124,24 @@ $('learnReset').onclick = async () => { await send({ type: 'learn-reset' }); $('
   paint();
 }
 
+// hotkeys: click a keycap, then press the new key (Esc cancels, Backspace turns it off)
+document.querySelectorAll('[data-hot]').forEach((btn) => {
+  const key = btn.dataset.hot;
+  const show = () => { btn.textContent = settings[key] || 'off'; };
+  show();
+  btn.onclick = () => {
+    btn.classList.add('listening'); btn.textContent = 'press a key…';
+    const onKey = async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      removeEventListener('keydown', onKey, true);
+      btn.classList.remove('listening');
+      if (e.key !== 'Escape') await save({ [key]: e.key === 'Backspace' ? '' : e.key.length === 1 ? e.key : settings[key] });
+      show();
+    };
+    addEventListener('keydown', onKey, true);
+  };
+});
+
 // ---- custom CSS ----
 if (host) {
   $('host').textContent = host;
