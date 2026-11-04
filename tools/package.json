@@ -10,6 +10,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ghostery/urlfilter2dnr": "^2.1.0"
+    "@duckduckgo/autoconsent": "^17.4.0",
+    "@ghostery/urlfilter2dnr": "^2.1.0",
+    "esbuild": "^0.28.2"
   }
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Client",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -120,6 +120,18 @@
       "js": [
         "content/recolor.js"
       ]
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/cookies.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
     }
   ],
   "icons": {

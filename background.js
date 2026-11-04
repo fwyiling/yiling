@@ -1,6 +1,7 @@
 // Shield Client – service worker
 import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
+import { filterCompactRules, evalSnippets } from './lib/vendor/autoconsent.esm.js';
 import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, mangaDexDiagnose } from './lib/mangadex.js';
 
 
@@ -291,6 +292,45 @@ async function ytData(videoId) {
   return out;
 }
 
+// ---- cookie banners: DuckDuckGo autoconsent (MPL-2.0) – background half ----
+let acRules = null;
+async function acCompactRules() {
+  if (!acRules) acRules = await (await fetch(chrome.runtime.getURL('rules/autoconsent-compact.json'))).json();
+  return acRules;
+}
+async function handleAutoconsent(msg, sender) {
+  const tabId = sender.tab?.id, frameId = sender.frameId ?? 0;
+  if (tabId == null) return;
+  const send = (m) => chrome.tabs.sendMessage(tabId, { ...m, __ac: true }, { frameId }).catch(() => {});
+  if (msg.type === 'init') {
+    const s = await getSettings();
+    const url = sender.url || `${sender.origin}/`;
+    let host = '';
+    try { host = new URL(sender.tab?.url || url).hostname.replace(/^www\./, ''); } catch {}
+    const enabled = s.cookieReject !== false && !(s.allowlist || []).includes(host);
+    send({
+      type: 'initResp',
+      rules: { autoconsent: [], compact: filterCompactRules(await acCompactRules(), { url, mainFrame: frameId === 0 }) },
+      config: {
+        enabled, autoAction: 'optOut', disabledCmps: [], enablePrehide: true, enableCosmeticRules: true,
+        enableHeuristicDetection: true, enablePopupMutationObserver: true, heuristicMode: 'tier1', detectRetries: 20,
+        isMainWorld: false, prehideTimeout: 2000, performanceLoggingEnabled: false,
+        logs: { lifecycle: false, rulesteps: false, detectionsteps: false, evals: false, errors: false, messages: false, waits: false },
+      },
+    });
+  } else if (msg.type === 'eval') {
+    let result = false;
+    const fn = evalSnippets[msg.snippetId];
+    if (fn) {
+      try { const [r] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, world: 'MAIN', func: fn }); result = r?.result; } catch {}
+    }
+    send({ type: 'evalResp', id: msg.id, result });
+  } else if (msg.type === 'optOutResult' && msg.result) {
+    const { cookieStats = 0 } = await chrome.storage.local.get('cookieStats');
+    chrome.storage.local.set({ cookieStats: cookieStats + 1 });
+  }
+}
+
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -324,6 +364,7 @@ async function toggleListEntry(key, host, on) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg && msg.__ac) { handleAutoconsent(msg, sender); return; }
   const tabId = msg.tabId ?? sender.tab?.id;
   const run = {
     'update-malware-list': () => updateMalwareList(),

@@ -97,6 +97,10 @@ if (malwareDomains.length) $('mal').textContent = `Stops ${malwareDomains.length
 $('reskinChrome').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('setup/theme.html') });
 $('customizeHome').onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('newtab/newtab.html#customize') });
 
+chrome.storage.local.get('cookieStats').then(({ cookieStats }) => {
+  if (cookieStats) $('cookieInfo').textContent = `Clicks "Reject all" on cookie banners for you – ${cookieStats.toLocaleString()} rejected so far.`;
+});
+
 // ---- custom CSS ----
 if (host) {
   $('host').textContent = host;

@@ -49,6 +49,11 @@ To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the n
 - YouTube changes its markup often; ad-skip selectors in `content/youtube.js` may need updates.
 - Only download content you have the right to keep offline.
 
+## Rebuilding the cookie script
+```bash
+cd tools && npm install && npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
+```
+
 ## Updating filter lists
 ```bash
 git clone --depth 1 https://github.com/easylist/easylist /tmp/easylist
@@ -68,4 +73,5 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [mue](https://github.com/mue/mue) (BSD-3) – structure of the home page widgets/settings.
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
 - [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
+- [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner auto-reject engine + rules, vendored in `lib/vendor/`.
 - [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.

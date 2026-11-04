@@ -1,0 +1,8 @@
+// Cookie-banner auto-reject, powered by DuckDuckGo's autoconsent (MPL-2.0).
+// Runs in every frame; the background script supplies the rules and handles "eval" steps.
+import AutoConsent from '../../lib/vendor/autoconsent.esm.js';
+
+const consent = new AutoConsent((msg) => chrome.runtime.sendMessage({ ...msg, __ac: true }).catch(() => {}));
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.__ac) consent.receiveMessageCallback(msg);
+});
