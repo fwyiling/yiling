@@ -1,0 +1,13 @@
+:root { --accent: #fa1e4e; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; font: 15px system-ui, sans-serif; color: #fff; background: #0e0e12 center / cover fixed no-repeat; }
+body::before { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: -1; }
+main { max-width: 760px; margin: 0 auto; padding: 14vh 16px 40px; text-align: center; }
+#clock { font-size: 72px; font-weight: 200; letter-spacing: -.02em; margin-bottom: 24px; }
+#search input { width: 100%; padding: 14px 20px; border-radius: 28px; border: 2px solid transparent; background: rgba(255,255,255,.12); color: #fff; font: inherit; outline: none; backdrop-filter: blur(8px); }
+#search input:focus { border-color: var(--accent); box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); }
+#dial { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px; margin-top: 40px; }
+#dial a { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px; border-radius: 14px; background: rgba(255,255,255,.08); color: #fff; text-decoration: none; font-size: 12px; transition: .15s; }
+#dial a:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); transform: translateY(-2px); }
+#dial img { width: 32px; height: 32px; border-radius: 8px; }
+#dial span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

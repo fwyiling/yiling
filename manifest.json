@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Shield Client",
+  "version": "0.1.0",
+  "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
+  "permissions": [
+    "declarativeNetRequest", "storage", "scripting", "downloads",
+    "cookies", "privacy", "notifications", "alarms", "tabs", "topSites", "favicon"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup/popup.html", "default_title": "Shield Client" },
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "ads", "enabled": true, "path": "rules/ads.json" }
+    ]
+  },
+  "chrome_url_overrides": { "newtab": "newtab/newtab.html" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/theme.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content/youtube.js"],
+      "css": ["content/youtube.css"],
+      "run_at": "document_start"
+    }
+  ]
+}

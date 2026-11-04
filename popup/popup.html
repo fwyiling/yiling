@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>Shield Client</h1>
+
+  <section>
+    <h2>Blocking</h2>
+    <label><input type="checkbox" data-key="adBlock"> Block ads &amp; trackers</label>
+    <label><input type="checkbox" data-key="malware"> Block malicious domains <small id="mal"></small></label>
+  </section>
+
+  <section>
+    <h2>Privacy</h2>
+    <label><input type="checkbox" data-key="blockTpCookies"> Block third-party cookies</label>
+    <label><input type="checkbox" data-key="cleanTrackerCookies"> Remove tracker cookies</label>
+    <label><input type="checkbox" data-key="referrerPolicy"> Trim cross-site referrer</label>
+    <label><input type="checkbox" data-key="webrtc"> Prevent WebRTC IP leak</label>
+    <label><input type="checkbox" data-key="downloadGuard"> Confirm risky downloads (.exe, .js, …)</label>
+  </section>
+
+  <section>
+    <h2>YouTube</h2>
+    <label><input type="checkbox" data-key="ytAds"> Skip video ads</label>
+    <label><input type="checkbox" data-key="ytHideShorts"> Hide Shorts</label>
+    <label>Default speed
+      <select data-key="ytSpeed" data-num>
+        <option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option>
+      </select></label>
+    <label>Volume boost
+      <select data-key="ytBoost" data-num>
+        <option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option>
+      </select></label>
+  </section>
+
+  <section>
+    <h2>Appearance</h2>
+    <label>Accent color <input type="color" data-key="accent"></label>
+    <label><input type="checkbox" data-key="accentPages"> Tint scrollbars &amp; selection</label>
+    <label><input type="checkbox" data-key="forceDark"> Dark mode on every site</label>
+    <label>New-tab wallpaper URL <input type="text" data-key="wallpaper" placeholder="https://…" style="flex:1;min-width:0"></label>
+    <label>Sleep idle tabs
+      <select data-key="tabSleepMin" data-num>
+        <option value="0">Off</option><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option>
+      </select></label>
+    <div><small>Custom CSS for <b id="host"></b></small>
+      <textarea id="css" rows="4" spellcheck="false" placeholder="body { font-family: Georgia; }"></textarea>
+      <button id="saveCss">Save CSS</button></div>
+  </section>
+
+  <section>
+    <h2>Download this page</h2>
+    <div id="scan">Scanning…</div>
+    <div class="row">
+      <button id="dlImages" hidden></button>
+      <button id="dlEpub" hidden></button>
+      <button id="dlTxt" hidden></button>
+    </div>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
