@@ -9,7 +9,9 @@ GX-style customization, and a manga/novel downloader.
 ## Features
 - **Blocking (on before any page loads):** EasyList + EasyPrivacy (~57k rules), a built-in domain list, and the abuse.ch
   URLhaus malware feed. Known-dangerous sites show a warning page instead of loading. Pause blocking per site from the popup or dock.
-- **YouTube:** auto-skip ads, hide Shorts, default speed, volume boost up to 300%.
+- **YouTube:** ads are removed from YouTube's player data before the player reads them (the uBlock Origin Lite approach),
+  so the video itself is never interrupted; YouTube's playback endpoints are never blocked. Plus hide Shorts, default speed,
+  volume boost up to 300%.
 - **Privacy:** block third-party cookies, delete tracker cookies, trim referrers, stop WebRTC IP leaks, confirm risky downloads.
 - **Downloader – chapter or whole series:**
   - **MangaDex** uses the official API: pick English / 中文 (简体) / 中文 (繁體) / any language, the whole series or a range,
@@ -56,7 +58,8 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [@ghostery/urlfilter2dnr](https://github.com/ghostery/urlfilter2dnr) (GPL-3.0) – build-time converter to DNR (`tools/`, not shipped).
 - [Comics-Manga-Downloader-Extension](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension) (MIT) – image
   validation and retry/backoff approach in `downloader/downloader.js`.
-- Design reference for MV3 blocking: uBlock Origin Lite (uAssets).
+- Design reference for MV3 blocking and YouTube ad removal: uBlock Origin Lite / uAssets (approach only; own code).
+- [Yui007/mangadex-extension](https://github.com/Yui007/mangadex-extension) (MIT) – reference for MangaDex API usage.
 - [mue](https://github.com/mue/mue) (BSD-3) – structure of the home page widgets/settings.
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
 - [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.

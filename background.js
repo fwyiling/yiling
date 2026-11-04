@@ -11,6 +11,8 @@ const RISKY_EXT = [
 ];
 const REFERRER_RULE_ID = 100000;
 const ALLOW_RULE_ID = 100001;
+// YouTube's own playback/telemetry endpoints: blocking them can stall the player.
+const YT_ALLOW_IDS = [100003, 100004];
 const ALLOW_PRIORITY = 2 ** 30;      // beats every ad rule
 const MALWARE_PRIORITY = 2 ** 30 + 1; // ...but malware is blocked even on paused sites
 
@@ -71,7 +73,18 @@ async function apply(changed) {
     });
   }
 
-  if (!changed) chrome.declarativeNetRequest.setExtensionActionOptions?.({ displayActionCountAsBadgeText: true });
+  if (!changed) {
+    chrome.declarativeNetRequest.setExtensionActionOptions?.({ displayActionCountAsBadgeText: true });
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: YT_ALLOW_IDS,
+      addRules: [
+        { id: YT_ALLOW_IDS[0], priority: ALLOW_PRIORITY - 1, action: { type: 'allow' },
+          condition: { requestDomains: ['googlevideo.com', 'ytimg.com', 'youtube-nocookie.com'] } },
+        { id: YT_ALLOW_IDS[1], priority: ALLOW_PRIORITY - 1, action: { type: 'allow' },
+          condition: { regexFilter: '^https://(www|m|music)\\.youtube\\.com/(youtubei/|generate_204|api/stats/(qoe|watchtime|playback))' } },
+      ],
+    });
+  }
   if (has('accent')) chrome.action.setBadgeBackgroundColor({ color: s.accent || '#fa1e4e' });
 
   if (has(...PRIVACY_KEYS)) {
