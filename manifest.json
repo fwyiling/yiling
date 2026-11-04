@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Client",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -20,7 +20,8 @@
     "webRequest",
     "browsingData",
     "sidePanel",
-    "contentSettings"
+    "contentSettings",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"

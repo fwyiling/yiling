@@ -101,6 +101,12 @@ chrome.storage.local.get('cookieStats').then(({ cookieStats }) => {
   if (cookieStats) $('cookieInfo').textContent = `Clicks "Reject all" on cookie banners for you – ${cookieStats.toLocaleString()} rejected so far.`;
 });
 
+// protection summary
+chrome.storage.local.get(['popupStats', 'cookieStats', 'cleanStats', 'learned']).then((v) => {
+  const n = (x) => (x || 0).toLocaleString();
+  $('stPop').textContent = n(v.popupStats); $('stCookie').textContent = n(v.cookieStats);
+  $('stTrack').textContent = n(v.learned?.blocked?.length); $('stClean').textContent = n(v.cleanStats);
+});
 // sidebar
 $('openSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id }); window.close(); };
 // learned trackers

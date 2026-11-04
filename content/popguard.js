@@ -41,7 +41,7 @@
     clearTimeout(timer); timer = setTimeout(() => box.classList.remove('show'), 6000);
   }
   addEventListener('message', (e) => {
-    if (e.source === window && e.data?.source === 'shield-client' && e.data.type === 'popup-blocked') toast(e.data.url, e.data.why);
+    if (e.source === window && e.data?.source === 'shield-client' && e.data.type === 'popup-blocked') { toast(e.data.url, e.data.why); safeSend({ type: 'popup-blocked' }); }
   });
   chrome.runtime.onMessage.addListener((m) => { if (m?.type === 'show-popup-toast') toast(m.url, m.why); });
 })();

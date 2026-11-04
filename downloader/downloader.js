@@ -16,7 +16,7 @@ if (!job) { $('series').textContent = 'This download has expired. Start it again
 
 const isImages = job.kind === 'images';
 const isMD = job.source === 'mangadex';
-if (isMD) useMangaDexTab(await chrome.tabs.get(job.sourceTabId).then((t) => t.id, () => null));
+if (isMD) useMangaDexTab(Number.isInteger(job.sourceTabId) ? await chrome.tabs.get(job.sourceTabId).then((t) => t.id, () => null) : null);
 if (!isMD) {
   // make sure the page the user is on is always downloadable on its own
   const here = { url: job.url.replace(/#.*$/, ''), num: 0, label: job.title };

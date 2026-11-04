@@ -470,6 +470,19 @@ function openSidebarFor(which, windowId) {
   const open = windowId != null ? chrome.sidePanel.open({ windowId }) : Promise.reject(new Error('no window'));
   return open.catch(() => chrome.tabs.create({ url: chrome.runtime.getURL('sidebar/sidebar.html') }));
 }
+// right-click → open a link (or the current page) in the sidebar
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'sc-sidebar-link', title: 'Open link in sidebar', contexts: ['link'] });
+    chrome.contextMenus.create({ id: 'sc-sidebar-page', title: 'Open this page in sidebar', contexts: ['page'] });
+  });
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  const url = info.menuItemId === 'sc-sidebar-link' ? info.linkUrl : info.pageUrl;
+  if (!url || tab?.windowId == null) return;
+  chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {}); // must happen right away (user gesture)
+  chrome.storage.local.set({ sidebarPeek: { url, t: Date.now() } });
+});
 chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
 });
@@ -508,6 +521,7 @@ async function judgePopup(newTab, url) {
   if (!(await popupGuardOn(p.source))) return;
   chrome.tabs.remove(newTab).catch(() => {});
   chrome.tabs.sendMessage(p.source, { type: 'show-popup-toast', url, why: 'pop-up tab' }, { frameId: 0 }).catch(() => {});
+  bump('popupStats');
   recentPopupBlock.set(p.source, Date.now());
 }
 const recentPopupBlock = new Map();
@@ -535,6 +549,7 @@ chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId, url, trans
   tabTopSite.set(tabId, before);
   chrome.tabs.goBack(tabId).catch(() => {});
   setTimeout(() => chrome.tabs.sendMessage(tabId, { type: 'show-popup-toast', url, why: 'redirect' }, { frameId: 0 }).catch(() => {}), 1200);
+  bump('popupStats');
 });
 chrome.tabs.onRemoved.addListener((id) => { lastClicks.delete(id); tabTopSite.delete(id); recentPopupBlock.delete(id); });
 
@@ -566,6 +581,8 @@ async function drFetch(url) {
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
   return { b64: btoa(bin), type };
 }
+
+async function bump(key) { const v = (await chrome.storage.local.get(key))[key] || 0; await chrome.storage.local.set({ [key]: v + 1 }); }
 
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
@@ -613,6 +630,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'float-app': () => chrome.windows.create({ url: msg.url, type: 'popup', width: msg.width || 480, height: msg.height || 760, focused: true }),
     'hotkey': () => openSidebarFor(msg.which, sender.tab?.windowId),
     'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
+    'popup-blocked': () => bump('popupStats'),
     'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },
     'learn-reset': async () => { learn = { seen: {}, blocked: [] }; await chrome.storage.local.set({ learned: learn }); await applyLearnedRule(); },
     'learn-stats': async () => { const l = await loadLearn(); return { blocked: l.blocked.length, watching: Object.keys(l.seen).length, list: l.blocked.slice(-30) }; },

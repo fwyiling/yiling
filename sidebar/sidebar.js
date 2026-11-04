@@ -52,7 +52,7 @@ function renderRail() {
     const img = new Image(); img.src = fav(app.url); img.alt = '';
     img.onerror = () => img.replaceWith(Object.assign(document.createElement('span'), { className: 'ltr', textContent: app.name[0] }));
     const x = Object.assign(document.createElement('span'), { className: 'x', textContent: '✕', title: 'Remove' });
-    x.onclick = async (e) => { e.stopPropagation(); apps = apps.filter((a) => a.id !== app.id); await chrome.storage.sync.set({ sidebarApps: apps }); frames.get(app.id)?.remove(); frames.delete(app.id); renderRail(); };
+    x.onclick = async (e) => { e.stopPropagation(); apps = apps.filter((a) => a.id !== app.id); await chrome.storage.sync.set({ sidebarApps: apps.filter((a) => !a.temp) }); frames.get(app.id)?.remove(); frames.delete(app.id); renderRail(); };
     b.append(img, x);
     b.onclick = () => openApp(app.id);
     rail.append(b);
@@ -97,10 +97,21 @@ $('addForm').onsubmit = async (e) => {
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   const app = { id: 'c' + Date.now().toString(36), name: $('addName').value.trim(), url };
   apps = [...apps, app];
-  await chrome.storage.sync.set({ sidebarApps: apps });
+  await chrome.storage.sync.set({ sidebarApps: apps.filter((a) => !a.temp) });
   $('addName').value = $('addUrl').value = '';
   renderRail(); openApp(app.id);
 };
 
+// right-click → "Open link in sidebar": a temporary app at the top of the rail
+async function peek(url) {
+  if (!url) return;
+  apps = apps.filter((a) => a.id !== 'peek');
+  apps.unshift({ id: 'peek', name: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'Link'; } })(), url, temp: true });
+  frames.get('peek')?.remove(); frames.delete('peek');
+  renderRail(); openApp('peek');
+}
+chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.sidebarPeek?.newValue) peek(c.sidebarPeek.newValue.url); });
+const { sidebarPeek } = await chrome.storage.local.get('sidebarPeek');
 renderRail();
-if (lastSidebarApp && apps.some((a) => a.id === lastSidebarApp)) openApp(lastSidebarApp);
+if (sidebarPeek && Date.now() - sidebarPeek.t < 15000) peek(sidebarPeek.url);
+else if (lastSidebarApp && apps.some((a) => a.id === lastSidebarApp)) openApp(lastSidebarApp);

@@ -1,89 +1,89 @@
 # Shield Client
 
-Chrome (Manifest V3) extension: ad blocking, YouTube extras, privacy/malware protection,
-GX-style customization, and a manga/novel downloader.
+A Chrome (Manifest V3) extension that turns Chrome into a privacy-first, Opera GX-style client:
+ad and tracker blocking, YouTube extras, manga/novel downloads, sidebar apps, and a custom home page.
 
-## Install
-`chrome://extensions` → enable **Developer mode** → **Load unpacked** → select this folder.
+## Install / update
+1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick this folder.
+2. To update: `git pull`, then click reload ↻ on Shield Client (the popup shows the version, e.g. v0.14.0) and refresh open tabs.
 
-## Features
-- **Blocking (on before any page loads):** EasyList + EasyPrivacy (~57k rules), a built-in domain list, and the abuse.ch
-  URLhaus malware feed. Known-dangerous sites show a warning page instead of loading. Pause blocking per site from the popup or dock.
-- **YouTube:** ads are removed from YouTube's player data before the player reads them (the uBlock Origin Lite approach),
-  so the video itself is never interrupted; YouTube's playback endpoints are never blocked. Plus hide Shorts, default speed,
-  volume boost up to 300%.
-- **YouTube, built in:** speed / screenshot / Shield buttons in YouTube's own control bar and a native-style menu
-  (skip ads, SponsorBlock, dislikes, loop, end cards, Shorts, volume boost, preferred quality).
-  SponsorBlock auto-skips sponsor reads with segments drawn on the progress bar; Return YouTube Dislike shows dislikes.
-- **Privacy:** block third-party cookies, delete tracker cookies, trim referrers, stop WebRTC IP leaks, confirm risky downloads.
-- **Downloader – chapter or whole series:**
-  - **MangaDex** uses the official API: pick English / 中文 (简体) / 中文 (繁體) / any language, the whole series or a range,
-    optional data-saver. Rate limits are respected.
-  - **Other manga / manhwa / novel sites:** finds the chapter list on the page, then fetches each chapter
-    (falls back to loading it in a background tab for JavaScript readers).
-  - **Easy to read:** manga → a folder with a `Read <series>.html` you double-click (chapter menu, ← → keys, remembers your place),
-    or `.cbz` per chapter. Novels → one `.html` book, `.epub`, or `.txt`. Saved in `Downloads/Shield Client/<series>/`.
-- **Home page:** Cyber/gamer theme (neon HUD clock, glitch, scanlines, animated synthwave grid) or clean glass.
-  Backgrounds: synthwave, SFW anime wallpapers (wallhaven.cc), Bing daily, photos, gradients, color, link, or upload.
-  Clock/greeting, search engine picker, editable drag-to-reorder shortcuts, weather, quote, notes, to-do, fonts, glass,
-  corner roundness, export/import. Open the ⚙ button.
-- **Web skins:** cyber look on Google Search and YouTube (neon accent, dark synthwave backdrop, glowing progress bar).
-  Toggle in the popup → Style. Skins live in `skins/` – plain CSS, easy to tweak.
-- **Pop-up blocker (strict):** blocks pop-ups/pop-unders opened without a real click, invisible click-trap links, and pages that
-  jump to another site after a click that wasn't on a link. Logins/payments allowed; every block has "Open anyway".
-- **Learning tracker blocker:** third parties that set cookies on 3+ different sites get blocked (Privacy Badger-style).
-- **Clean up on close:** a site's cookies & storage are deleted 30 s after its last tab closes, except sites you keep (Cookie AutoDelete-style).
-- **Auto-load next chapter:** on manga & novel sites the next chapter is appended as you scroll (Pagetual-style).
-- **Sidebar apps:** Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch or your own sites in Chrome's side panel
-  (zoom per app so desktop sites fit; pop out as a floating window). Open with `]`, Alt+Shift+S or the popup.
-- **Client dock:** floating button on every site with quick toggles and Download.
-- **Tab sleeper**, accent color everywhere, per-site custom CSS.
+## Shortcuts
+| Key | What it does |
+| --- | --- |
+| `]` (when you're not typing) | Open sidebar apps – change it in popup → Style |
+| `Alt+Shift+S` | Open sidebar apps (change at `chrome://extensions/shortcuts`) |
+| `/` on the new tab page | Focus the search box |
+| Right-click a link → **Open link in sidebar** | Peek at a link next to the page you're on |
+| YouTube: scroll on the speed button | Fine-tune playback speed |
 
-## Chrome theme (tab strip, toolbar, address bar)
-If your tab strip is still brown/grey, you haven't loaded a theme yet – that colour is Chrome's own.
-Extensions can't restyle Chrome's own bars, so matching **themes** are in `themes/` (red, cyan, violet, matrix green).
-Load one the same way: `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red`.
-Make your own colours by editing `tools/make-themes.py` and running `python3 tools/make-themes.py`.
+## Protection (all on before a page even loads)
+- **Ads & trackers:** EasyList + EasyPrivacy compiled to Chrome rules (~57k), plus a built-in domain list. Pause per site from the popup or dock.
+- **Dangerous sites:** abuse.ch URLhaus malware feed (refreshed every 12 h, retried after 5 min on failure) – known malware/scam sites show a warning page instead of loading.
+- **Pop-ups & redirects (strict):** blocks pop-ups/pop-unders opened without a real click, invisible click-trap links, self-opened ad tabs, and pages that jump to another site after a click that wasn't on a link. Logins/payments are allowed; every block shows **Open anyway**.
+- **Cookie banners:** auto-rejected on thousands of sites (DuckDuckGo autoconsent rules).
+- **Learning tracker blocker:** a third party that sets cookies on 3+ different sites gets blocked (Privacy Badger-style). Same-company domains and essential services are never blocked.
+- **Clean up on close (opt-in):** a site's cookies & storage are deleted 30 s after its last tab closes, except sites on your keep list (pre-filled with your most-visited sites).
+- **Privacy:** third-party cookies blocked, tracker cookies deleted, WebRTC IP leak prevention, confirm risky downloads (.exe, .js, .bat …).
+- The popup shows a summary: pop-ups blocked, cookie banners rejected, trackers learned, sites cleaned.
 
-To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the new tab page: **right-click the bar → Hide footer**.
+## YouTube
+- Ads are removed from YouTube's player data before the player reads them (the uBlock Origin Lite approach), so the video is never interrupted; YouTube's playback requests are never blocked; the "ad blockers not allowed" popup is closed.
+- Native-looking player buttons: **speed** (click / scroll), **screenshot** (PNG), and a **Shield menu** with skip ads, SponsorBlock, dislikes, loop, hide end-screen cards, hide Shorts, volume boost (up to 300%) and preferred quality.
+- **SponsorBlock** auto-skips sponsor reads, self-promos and "subscribe" reminders (segments shown on the progress bar, with Undo). **Return YouTube Dislike** shows dislike counts.
+
+## Manga, manhwa & novels
+- **Download a chapter or the whole series** (popup → Save, or the floating dock).
+  - **MangaDex** uses the official API through your open MangaDex tab: pick English / 中文 (简体) / 中文 (繁體) / any language, a range, optional data-saver. **Test MangaDex connection** in the Save tab shows which step fails.
+  - **Other sites:** finds the chapter list on the page and fetches each chapter (loads JavaScript readers in a background tab).
+  - **Easy to read:** manga → a folder with a `Read <series>.html` you double-click (chapter menu, ← → keys, remembers your place) or `.cbz` per chapter; novels → one `.html` book, `.epub` or `.txt`. Saved in `Downloads/Shield Client/<series>/`.
+- **Auto-load next chapter:** on manga & novel sites the next chapter appears as you scroll (falls back to a big "Next chapter" button on JavaScript-only readers).
+
+## Look & feel
+- **Home page (new tab):** **Chrome+** (default – Chrome's own layout in tones of your Chrome colour, so it blends in), **Cyber/gamer** (neon HUD, synthwave) or **Clean glass**. Backgrounds (theme colour, synthwave, anime wallpapers, Bing daily, photos, gradients, upload…), clock & greeting, search engine picker, editable shortcuts, weather, quote, notes, to-do, fonts – all under **Customize**.
+- **Google & YouTube skins** follow the home-page theme (calm Chrome+ tones by default, neon in Cyber mode).
+- **Dark mode on every site** – Dark Reader engine (images keep their colours), with "No dark mode here" in the dock.
+- **Floating dock** on every site: pause protection here, dark mode, accent, download chapter/series, YouTube shortcuts.
+- Accent colour everywhere, per-site custom CSS, tab sleeper (frees RAM).
+
+## Sidebar apps
+Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch – or add any site with **+**.
+Apps stay loaded while you switch (chats stay connected, music keeps playing). **Fit / − / +** zoom desktop sites
+(e.g. Discord) so they fit the panel, **⧉** pops an app out into a floating window, **↗** opens it in a tab.
+Drag the panel's left edge to make it wider.
+
+## Chrome's own bars
+- **Bottom bar on the new tab page** ("Shield Client" link + "Customise Chrome"): Chrome draws it. **Right-click it → Hide footer.**
+- **Tab strip / address bar / bookmarks bar:** only a Chrome *theme* can restyle them. Matching themes are in `themes/`
+  (red, cyan, violet, matrix): `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red` (the theme folder itself).
+  Popup → Style → **Reskin Chrome's top bar & footer** walks you through it. Make your own with `python3 tools/make-themes.py`.
 
 ## Console messages
 `net::ERR_BLOCKED_BY_CLIENT` lines in DevTools are Shield Client blocking ads/trackers – expected with any blocker.
 
-## Limits
-- An extension can't sandbox your OS; it reduces exposure (blocklists, download prompts) but isn't antivirus.
-- It can't restyle Chrome's own toolbar/tabs (that needs a separate Chrome *theme*).
-- YouTube changes its markup often; ad-skip selectors in `content/youtube.js` may need updates.
-- Only download content you have the right to keep offline.
-
-## Rebuilding bundled scripts
+## Building bundled parts
 ```bash
 cd tools && npm install
 npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
 npx esbuild ../content/src/autonext.js --bundle --format=iife --outfile=../content/autonext.js
 node build-darkmode.mjs
+# filter lists:
+git clone --depth 1 https://github.com/easylist/easylist /tmp/easylist && node build-rules.mjs /tmp/easylist
 ```
 
-## Updating filter lists
-```bash
-git clone --depth 1 https://github.com/easylist/easylist /tmp/easylist
-cd tools && npm install && node build-rules.mjs /tmp/easylist
-```
+## Limits
+- An extension can't sandbox your OS; it reduces exposure (blocklists, warning page, download prompts) but isn't antivirus.
+- YouTube and Google change their pages often; skins and player buttons may need occasional updates.
+- Some sites refuse to run inside the sidebar – use ⧉ or ↗ for those.
+- Only download content you have the right to keep offline.
 
 ## Credits / references
-- [EasyList / EasyPrivacy](https://github.com/easylist/easylist) – filter lists (GPLv3 / CC BY-SA 3.0).
-- [@ghostery/urlfilter2dnr](https://github.com/ghostery/urlfilter2dnr) (GPL-3.0) – build-time converter to DNR (`tools/`, not shipped).
-- [Comics-Manga-Downloader-Extension](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension) (MIT) – image
-  validation and retry/backoff approach in `downloader/downloader.js`.
-- Design reference for MV3 blocking and YouTube ad removal: uBlock Origin Lite / uAssets (approach only; own code).
+- [EasyList / EasyPrivacy](https://github.com/easylist/easylist) – filter lists (GPLv3 / CC BY-SA 3.0); converted with [@ghostery/urlfilter2dnr](https://github.com/ghostery/urlfilter2dnr) (build-time only).
+- [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner engine + rules, vendored in `lib/vendor/`.
+- [Dark Reader](https://github.com/darkreader/darkreader) (MIT) – dark-mode engine, bundled into `content/darkmode.js`.
+- [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map in `skins/google.css`.
 - [YouTube-Enhancer/extension](https://github.com/YouTube-Enhancer/extension) (MIT) – approach for native-looking player buttons/menus.
-- [SponsorBlock](https://sponsor.ajay.app) – segment data (CC BY-NC-SA 4.0), privacy-preserving hash lookup.
-- [Return YouTube Dislike](https://returnyoutubedislike.com) – dislike counts API.
-- [Yui007/mangadex-extension](https://github.com/Yui007/mangadex-extension) (MIT) – reference for MangaDex API usage.
-- [mue](https://github.com/mue/mue) (BSD-3) – structure of the home page widgets/settings.
-- [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
-- [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
-- [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner auto-reject engine + rules, vendored in `lib/vendor/`.
-- Pagetual, Privacy Badger, Cookie AutoDelete, Popup Blocker (strict) – behaviour references (own code).
-- [Dark Reader](https://github.com/darkreader/darkreader) (MIT) – dark-mode engine, bundled into `content/darkmode.js` (`node tools/build-darkmode.mjs`).
-- [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.
+- [SponsorBlock](https://sponsor.ajay.app) – segment data (CC BY-NC-SA 4.0), privacy-preserving hash lookup. [Return YouTube Dislike](https://returnyoutubedislike.com) – dislike counts.
+- [Comics-Manga-Downloader-Extension](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension) (MIT) – image validation/retry approach.
+- [Yui007/mangadex-extension](https://github.com/Yui007/mangadex-extension) (MIT) and the [MangaDex API](https://api.mangadex.org/docs/) – MangaDex downloads.
+- [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach. [mue](https://github.com/mue/mue) (BSD-3) – home-page widget structure.
+- uBlock Origin Lite, Privacy Badger, Cookie AutoDelete, Pagetual, Popup Blocker (strict), Opera GX – behaviour references (own code).
