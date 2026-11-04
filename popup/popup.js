@@ -116,8 +116,7 @@ chrome.storage.local.get(['popupStats', 'cookieStats', 'cleanStats', 'learned'])
     b.onclick = () => { try { localStorage.setItem('scStartPage', b.value); } catch {} document.querySelectorAll('#startSeg button').forEach((x) => x.classList.toggle('on', x === b)); };
   });
 }
-$('openAnime').onclick = () => { chrome.tabs.create({ url: chrome.runtime.getURL('anime/anime.html') }); window.close(); };
-$('openLibrary').onclick = () => { chrome.tabs.create({ url: chrome.runtime.getURL('library/library.html') }); window.close(); };
+$('openAniManga').onclick = async () => { await send({ type: 'open-animanga' }); window.close(); };
 $('openSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); await chrome.sidePanel.open({ windowId: w.id }); window.close(); };
 // learned trackers
 send({ type: 'learn-stats' }).then((r) => { if (r?.ok && r.result.blocked) $('learnInfo').textContent = `Blocks companies that follow you across 3+ sites – ${r.result.blocked} learned so far.`; });

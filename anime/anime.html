@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Syndicates · Anime</title>
+  <title>Ani Manga · Anime</title>
   <link rel="stylesheet" href="anime.css">
 </head>
 <body>
   <header class="top">
-    <div class="brand"><img src="../icons/icon48.png" alt="" width="34" height="34"><b>Anime</b></div>
+    <div class="brand"><img src="../icons/icon48.png" alt="" width="34" height="34"><b>Ani Manga</b></div>
+    <nav class="am-switch" aria-label="Ani Manga sections"><a class="on" aria-current="page">Anime</a><a href="../library/library.html">Manga</a></nav>
     <nav id="tabs">
       <button data-tab="discover" class="on">Discover</button>
       <button data-tab="schedule">Schedule</button>
@@ -18,7 +19,7 @@
   </header>
   <main id="view"></main>
   <div id="drawer" hidden><div class="scrim"></div><article class="sheet" id="sheet"></article></div>
-  <footer class="credit">Data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a> · watch on the official services linked on each show</footer>
+  <footer class="credit">Show data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a> · episodes from <a href="https://hianime.com" target="_blank" rel="noopener">HiAnime</a> · official services are linked on each show</footer>
   <script type="module" src="anime.js"></script>
 </body>
 </html>

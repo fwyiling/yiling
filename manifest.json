@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Syndicates Client",
-  "version": "0.17.1",
-  "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
+  "version": "0.18.0",
+  "description": "Ad blocking, YouTube extras, privacy/malware protection, and Ani Manga: anime tracking, in-client watching and anime/manga downloads.",
   "permissions": [
     "declarativeNetRequest",
     "storage",
@@ -234,6 +234,12 @@
         "default": "Alt+Shift+H"
       },
       "description": "Go to the Syndicates home page"
+    },
+    "open-animanga": {
+      "suggested_key": {
+        "default": "Alt+Shift+M"
+      },
+      "description": "Open Ani Manga (anime & manga)"
     }
   }
 }

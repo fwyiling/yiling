@@ -77,6 +77,7 @@
         ${yt ? tile('ytads', 'Skip ads', s.ytAds ? 'On' : 'Off', s.ytAds)
              : tile('save', 'Download', /mangadex\.org$/.test(location.hostname) ? 'MangaDex series' : 'Chapter or series', false)}
       </div>
+      <button class="btn ghost" data-act="animanga">Ani Manga · anime &amp; manga</button>
       <div class="out"></div>
       <div class="foot">
         <button class="link" data-act="hide">Hide on this site</button>
@@ -120,6 +121,7 @@
       case 'ytads': await chrome.storage.sync.set({ ytAds: !s.ytAds }); return;
       case 'save': saveChapter(); return;
       case 'settings': send({ type: 'open-settings' }); return;
+      case 'animanga': open = false; send({ type: 'open-animanga' }); break;
       case 'hide': await send({ type: 'hide-dock-here', host }); return;
       case 'darkhere': {
         const ex = new Set(s.darkExclude || []);

@@ -1,194 +1,264 @@
+// Ani Manga player: plays HiAnime episodes in the client and downloads them (single or queued).
 import { fetchSources, watchUrl } from '../lib/hianime.js';
 
-const p = new URLSearchParams(location.search);
-const slug = p.get('slug') || '';
-const animeTitle = p.get('anime') || 'Anime';
-const episodeIds = JSON.parse(p.get('ids') || '[]');  // [{id, number, title, filler}]
-let currentIdx = parseInt(p.get('idx') || '0', 10);
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pad = (n) => String(n).padStart(2, '0');
+// Chrome's downloads API only accepts plain ASCII file names (same rules as the manga downloader).
+const safe = (s, fallback = 'Untitled') => {
+  let t = String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '')
+    .replace(/[\\/:*?"<>|~]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[.\s-]+|[.\s]+$/g, '').slice(0, 80).replace(/[.\s-]+$/, '');
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(t)) t = '_' + t;
+  return t || fallback;
+};
 
 const { accent } = await chrome.storage.sync.get('accent');
 if (accent) document.documentElement.style.setProperty('--a', accent);
 
-const $ = id => document.getElementById(id);
-const video = $('video');
-const overlay = $('overlay');
-const msg = $('msg');
+const key = new URLSearchParams(location.search).get('s');
+const { [key]: job } = key ? await chrome.storage.session.get(key) : {};
+const me = await chrome.tabs.getCurrent();
+const video = $('video'), overlay = $('overlay'), msg = $('msg');
 
-$('animeTitle').textContent = animeTitle;
-
-// ---- HLS player (hls.js from CDN) ----
-const HLS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js';
-let hlsInstance = null;
-
-async function loadHls() {
-  if (window.Hls) return;
-  await new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = HLS_CDN; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
+function fail(text) {
+  overlay.classList.remove('hidden');
+  msg.textContent = text;
+}
+if (!job?.episodes?.length) {
+  fail('This player link has expired. Open the show again from Ani Manga.');
+  await new Promise(() => {}); // stop here quietly
 }
 
-// ---- episode chips ----
+const { slug, anime, episodes } = job;
+let currentIdx = Math.min(Math.max(job.idx || 0, 0), episodes.length - 1);
+$('animeTitle').textContent = anime;
+
+// ---------- stream resolution ----------
+async function resolveStream(ep) {
+  try {
+    const s = await fetchSources(ep.id);
+    await chrome.runtime.sendMessage({ type: 'am-stream-headers', tabId: me.id, referer: s.referer });
+    return s;
+  } catch (direct) {
+    msg.textContent = 'Starting HiAnime’s player in the background…';
+    const r = await chrome.runtime.sendMessage({ type: 'am-capture-stream', url: watchUrl(slug, ep.id), tabId: me.id });
+    if (!r?.ok) throw new Error(`${direct.message}; fallback: ${r?.error || 'no answer'}`);
+    return r.result;
+  }
+}
+
+// ---------- HLS download (shared by single download and the queue) ----------
+async function fetchText(u) {
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(`playlist HTTP ${r.status}`);
+  return r.text();
+}
+async function mediaPlaylist(url) {
+  let text = await fetchText(url);
+  if (text.includes('#EXT-X-STREAM-INF')) { // master playlist: take the highest-quality variant
+    const lines = text.split('\n').map((l) => l.trim());
+    let best = null, bw = -1;
+    lines.forEach((l, i) => {
+      const m = /^#EXT-X-STREAM-INF:.*?BANDWIDTH=(\d+)/.exec(l);
+      const next = m && lines.slice(i + 1).find((x) => x && !x.startsWith('#'));
+      if (next && +m[1] > bw) { bw = +m[1]; best = next; }
+    });
+    if (!best) throw new Error('empty master playlist');
+    url = new URL(best, url).href;
+    text = await fetchText(url);
+  }
+  return { url, text };
+}
+function parseSegments(text, base) {
+  const segs = [];
+  let keyInfo = null, init = null, seq = +(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(text)?.[1] || 0);
+  for (const raw of text.split('\n')) {
+    const l = raw.trim();
+    if (l.startsWith('#EXT-X-KEY')) {
+      const method = /METHOD=([^,]+)/.exec(l)?.[1];
+      if (method === 'NONE') keyInfo = null;
+      else if (method === 'AES-128') keyInfo = { uri: new URL(/URI="([^"]+)"/.exec(l)[1], base).href, iv: /IV=0x([0-9a-f]+)/i.exec(l)?.[1] || null };
+      else throw new Error(`unsupported stream encryption (${method})`);
+    } else if (l.startsWith('#EXT-X-MAP')) {
+      init = new URL(/URI="([^"]+)"/.exec(l)[1], base).href;
+    } else if (l && !l.startsWith('#')) {
+      segs.push({ url: new URL(l, base).href, key: keyInfo, seq: seq++ });
+    }
+  }
+  return { segs, init };
+}
+async function fetchBuf(u, label) {
+  for (let t = 0; ; t++) {
+    try {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.arrayBuffer();
+    } catch (e) {
+      if (t >= 2) throw new Error(`${label} failed: ${e.message}`);
+      await sleep(800 * (t + 1));
+    }
+  }
+}
+async function downloadEpisode(ep, stream, onProgress) {
+  const { url, text } = await mediaPlaylist(stream.m3u8);
+  const { segs, init } = parseSegments(text, url);
+  if (!segs.length) throw new Error('no video segments in playlist');
+  const keys = new Map();
+  const cryptoKey = (uri) => {
+    if (!keys.has(uri)) keys.set(uri, fetchBuf(uri, 'key').then((b) => crypto.subtle.importKey('raw', b, 'AES-CBC', false, ['decrypt'])));
+    return keys.get(uri);
+  };
+  const ivFor = (s) => {
+    const iv = new Uint8Array(16);
+    if (s.key.iv) { const h = s.key.iv.padStart(32, '0'); for (let i = 0; i < 16; i++) iv[i] = parseInt(h.substr(i * 2, 2), 16); }
+    else new DataView(iv.buffer).setUint32(12, s.seq);
+    return iv;
+  };
+  const parts = new Array(segs.length);
+  let next = 0, done = 0;
+  const worker = async () => {
+    while (next < segs.length) {
+      const i = next++, s = segs[i];
+      let buf = await fetchBuf(s.url, `segment ${i + 1}`);
+      if (s.key) buf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: ivFor(s) }, await cryptoKey(s.key.uri), buf);
+      parts[i] = buf;
+      onProgress(++done, segs.length);
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  if (init) parts.unshift(await fetchBuf(init, 'init segment'));
+  const ext = init ? 'mp4' : 'ts';
+  const blobUrl = URL.createObjectURL(new Blob(parts, { type: init ? 'video/mp4' : 'video/mp2t' }));
+  const show = safe(anime, 'Anime');
+  const id = await chrome.downloads.download({ url: blobUrl, filename: `Ani Manga/${show}/${show} - Episode ${pad(ep.number)}.${ext}`, conflictAction: 'uniquify' });
+  const revoke = (d) => {
+    if (d.id === id && d.state && d.state.current !== 'in_progress') { URL.revokeObjectURL(blobUrl); chrome.downloads.onChanged.removeListener(revoke); }
+  };
+  chrome.downloads.onChanged.addListener(revoke);
+}
+
+// ---------- watch mode ----------
+let hls = null, currentStream = null, loadSeq = 0;
+
 function renderEpList() {
-  const list = $('epList');
-  list.replaceChildren();
-  episodeIds.forEach((ep, i) => {
+  $('epList').replaceChildren(...episodes.map((ep, i) => {
     const chip = document.createElement('button');
     chip.className = 'ep-chip' + (ep.filler ? ' filler' : '') + (i === currentIdx ? ' active' : '');
     chip.title = ep.title;
-    chip.innerHTML = `<span class="ep-num">${ep.number}</span>`;
+    chip.textContent = ep.number;
     chip.onclick = () => loadEpisode(i);
-    list.append(chip);
-  });
+    return chip;
+  }));
 }
-
 function updateNav() {
+  const ep = episodes[currentIdx];
   $('prevBtn').disabled = currentIdx <= 0;
-  $('nextBtn').disabled = currentIdx >= episodeIds.length - 1;
-  const ep = episodeIds[currentIdx];
-  if (ep) $('epLabel').textContent = `Episode ${ep.number}${ep.title && ep.title !== `Episode ${ep.number}` ? ` · ${ep.title}` : ''}`;
-  document.title = `${animeTitle} · Ep ${ep?.number ?? ''} · Syndicates`;
+  $('nextBtn').disabled = currentIdx >= episodes.length - 1;
+  $('epLabel').textContent = `Episode ${ep.number}${ep.title && ep.title !== `Episode ${ep.number}` ? ` · ${ep.title}` : ''}`;
+  document.title = `${anime} · Ep ${ep.number} · Ani Manga`;
 }
-
-$('prevBtn').onclick = () => loadEpisode(currentIdx - 1);
-$('nextBtn').onclick = () => loadEpisode(currentIdx + 1);
-
-// ---- load episode ----
-let currentM3u8 = null;
-let currentTracks = [];
-
+async function addTracks(tracks) {
+  video.querySelectorAll('track').forEach((t) => { if (t.src.startsWith('blob:')) URL.revokeObjectURL(t.src); t.remove(); });
+  for (const t of tracks || []) {
+    if (!t.file || t.kind === 'thumbnails') continue;
+    try { // load the text through the extension: <track> can't fetch cross-site files itself
+      const r = await fetch(t.file);
+      if (!r.ok) continue;
+      const el = Object.assign(document.createElement('track'), { kind: 'subtitles', label: t.label || 'Subtitles', srclang: 'en', src: URL.createObjectURL(await r.blob()) });
+      if (t.default || /english/i.test(t.label || '')) el.default = true;
+      video.append(el);
+    } catch {}
+  }
+}
 async function loadEpisode(idx) {
-  if (idx < 0 || idx >= episodeIds.length) return;
+  if (idx < 0 || idx >= episodes.length) return;
+  const mine = ++loadSeq;
   currentIdx = idx;
-  currentM3u8 = null;
-  currentTracks = [];
-
-  const ep = episodeIds[idx];
+  currentStream = null;
+  $('dlBtn').disabled = true;
   updateNav();
   renderEpList();
-
+  history.replaceState(null, '', `?s=${encodeURIComponent(key)}&ep=${episodes[idx].number}`);
+  chrome.storage.session.set({ [key]: { ...job, idx } });
   overlay.classList.remove('hidden');
-  msg.textContent = 'Fetching stream…';
+  msg.textContent = 'Finding a stream…';
   $('fallbackBtn').hidden = true;
-
-  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
-  video.src = '';
-
+  if (hls) { hls.destroy(); hls = null; }
+  video.removeAttribute('src'); video.load();
   try {
-    await loadHls();
-    const { m3u8, tracks } = await fetchSources(ep.id);
-    currentM3u8 = m3u8;
-    currentTracks = tracks;
-
-    if (Hls.isSupported()) {
-      hlsInstance = new Hls({ enableWorker: false, maxBufferLength: 30 });
-      hlsInstance.loadSource(m3u8);
-      hlsInstance.attachMedia(video);
-      hlsInstance.once(Hls.Events.MANIFEST_PARSED, () => {
-        overlay.classList.add('hidden');
-        video.play().catch(() => {});
-      });
-      hlsInstance.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          overlay.classList.remove('hidden');
-          msg.textContent = `Playback error: ${data.details}`;
-          $('fallbackBtn').hidden = false;
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = m3u8;
-      video.addEventListener('loadedmetadata', () => { overlay.classList.add('hidden'); video.play().catch(() => {}); }, { once: true });
+    const stream = await resolveStream(episodes[idx]);
+    if (mine !== loadSeq) return; // another episode was picked meanwhile
+    currentStream = stream;
+    $('dlBtn').disabled = false;
+    if (window.Hls?.isSupported()) {
+      hls = new Hls({ maxBufferLength: 30 });
+      hls.loadSource(stream.m3u8);
+      hls.attachMedia(video);
+      hls.once(Hls.Events.MANIFEST_PARSED, () => { overlay.classList.add('hidden'); video.play().catch(() => {}); });
+      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) { fail(`Playback error (${d.details}). Try again or open it on HiAnime.`); $('fallbackBtn').hidden = false; } });
     } else {
-      throw new Error('HLS not supported in this browser');
+      throw new Error('this browser cannot play HLS video');
     }
-
-    // Add subtitle tracks
-    for (const t of tracks) {
-      if (!t.file || t.kind === 'thumbnails') continue;
-      const track = document.createElement('track');
-      track.src = t.file; track.kind = t.kind || 'subtitles';
-      track.label = t.label || 'Sub'; track.srclang = t.srclang || 'en';
-      if (t.default) track.default = true;
-      video.append(track);
-    }
+    addTracks(stream.tracks);
   } catch (e) {
-    overlay.classList.remove('hidden');
-    msg.textContent = `Could not load stream: ${e.message}`;
+    if (mine !== loadSeq) return;
+    fail(`Couldn’t load this episode: ${e.message}`);
     $('fallbackBtn').hidden = false;
   }
 }
-
-// Fallback: open hianime.com directly
-$('fallbackBtn').onclick = () => {
-  const ep = episodeIds[currentIdx];
-  chrome.tabs.create({ url: watchUrl(slug, ep?.number ?? 1) });
-};
-
-// ---- download ----
-let dlProgress = null;
-
+video.addEventListener('ended', () => { if (currentIdx < episodes.length - 1) loadEpisode(currentIdx + 1); });
+$('prevBtn').onclick = () => loadEpisode(currentIdx - 1);
+$('nextBtn').onclick = () => loadEpisode(currentIdx + 1);
+$('fallbackBtn').onclick = () => chrome.tabs.create({ url: watchUrl(slug, episodes[currentIdx].id) });
 $('dlBtn').onclick = async () => {
-  if (!currentM3u8) { alert('Load an episode first.'); return; }
-  const ep = episodeIds[currentIdx];
-  const btn = $('dlBtn');
+  if (!currentStream) return;
+  const btn = $('dlBtn'), bar = $('dlProgress'), ep = episodes[currentIdx];
   btn.disabled = true;
-
-  if (!dlProgress) {
-    dlProgress = document.createElement('div');
-    dlProgress.id = 'dlProgress';
-    $('stage').append(dlProgress);
-  }
-  dlProgress.style.width = '0';
-
   try {
-    const r = await fetch(currentM3u8);
-    if (!r.ok) throw new Error(`M3U8 fetch failed (${r.status})`);
-    const playlist = await r.text();
-
-    const baseUrl = currentM3u8.substring(0, currentM3u8.lastIndexOf('/') + 1);
-    const segs = playlist.split('\n')
-      .map(l => l.trim()).filter(l => l && !l.startsWith('#'))
-      .map(l => /^https?:\/\//.test(l) ? l : baseUrl + l);
-
-    const chunks = [];
-    let done = 0;
-    for (const seg of segs) {
-      btn.textContent = `⬇ ${done}/${segs.length}`;
-      dlProgress.style.width = `${(done / segs.length) * 100}%`;
-      const sr = await fetch(seg);
-      if (!sr.ok) throw new Error(`Segment failed (${sr.status})`);
-      chunks.push(await sr.arrayBuffer());
-      done++;
-    }
-    dlProgress.style.width = '100%';
-
-    const blob = new Blob(chunks, { type: 'video/mp2t' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${animeTitle} - Episode ${ep?.number ?? currentIdx + 1}.ts`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    await downloadEpisode(ep, currentStream, (d, n) => { btn.textContent = `⬇ ${Math.round((d / n) * 100)}%`; bar.style.width = `${(d / n) * 100}%`; });
+    btn.textContent = '✓ Saved';
+    await sleep(2500);
   } catch (e) {
     alert(`Download failed: ${e.message}`);
   } finally {
-    btn.textContent = '⬇ Download';
-    btn.disabled = false;
-    dlProgress.style.width = '0';
+    btn.textContent = '⬇ Download episode';
+    btn.disabled = !currentStream;
+    bar.style.width = '0';
   }
 };
 
-// ---- auto-download mode (opened with ?autodownload=1) ----
-const autoDownload = p.get('autodownload') === '1';
-if (autoDownload) {
-  // After stream loads, trigger download automatically
-  video.addEventListener('loadedmetadata', () => {
-    setTimeout(() => $('dlBtn').click(), 500);
-  }, { once: true });
+// ---------- download queue mode ----------
+async function runQueue(indices) {
+  $('stage').hidden = true; $('epRow').hidden = true; $('watchActions').hidden = true;
+  $('queue').hidden = false;
+  $('epLabel').textContent = `Downloading ${indices.length} episode${indices.length === 1 ? '' : 's'}`;
+  document.title = `Downloading · ${anime} · Ani Manga`;
+  const rows = indices.map((i) => {
+    const ep = episodes[i];
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="n"></span><span class="tt"></span><span class="st">Waiting</span><div class="bar2"><i></i></div>';
+    li.querySelector('.n').textContent = `Ep ${ep.number}`;
+    li.querySelector('.tt').textContent = ep.title;
+    $('queueList').append(li);
+    return li;
+  });
+  let ok = 0;
+  for (let k = 0; k < indices.length; k++) {
+    const ep = episodes[indices[k]], li = rows[k], st = li.querySelector('.st'), bar = li.querySelector('.bar2 i');
+    li.className = 'active';
+    li.scrollIntoView({ block: 'nearest' });
+    $('queueHead').textContent = `Downloading ${k + 1} of ${indices.length}`;
+    try {
+      st.textContent = 'Finding stream…';
+      const stream = await resolveStream(ep);
+      await downloadEpisode(ep, stream, (d, n) => { st.textContent = `${Math.round((d / n) * 100)}%`; bar.style.width = `${(d / n) * 100}%`; });
+      li.className = 'done'; st.textContent = 'Saved ✓'; ok++;
+    } catch (e) {
+      li.className = 'failed'; st.textContent = e.message; st.title = e.message;
+    }
+  }
+  $('queueHead').textContent = `Finished · ${ok} of ${indices.length} saved`;
 }
 
-// ---- init ----
-renderEpList();
-if (episodeIds.length) loadEpisode(currentIdx);
-else { overlay.classList.remove('hidden'); msg.textContent = 'No episodes found.'; }
+if (job.mode === 'download') runQueue(job.queue?.length ? job.queue : episodes.map((_, i) => i));
+else { renderEpList(); loadEpisode(currentIdx); }

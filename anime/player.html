@@ -3,30 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Syndicates · Player</title>
+  <title>Ani Manga · Player</title>
   <link rel="stylesheet" href="player.css">
+  <script src="../lib/vendor/hls.min.js"></script>
 </head>
 <body>
   <header class="bar">
-    <a class="back" href="anime.html">← Anime</a>
+    <a class="back" href="anime.html">← Ani Manga</a>
     <div class="meta">
       <b id="animeTitle"></b>
       <span id="epLabel"></span>
     </div>
-    <div class="hdr-actions">
-      <button id="prevBtn" title="Previous episode" disabled>◀</button>
-      <button id="nextBtn" title="Next episode" disabled>▶</button>
-      <button id="dlBtn">⬇ Download</button>
+    <div class="hdr-actions" id="watchActions">
+      <button id="prevBtn" title="Previous episode" disabled>◀ Prev</button>
+      <button id="nextBtn" title="Next episode" disabled>Next ▶</button>
+      <button id="dlBtn" disabled>⬇ Download episode</button>
     </div>
   </header>
 
   <div id="stage">
-    <video id="video" controls></video>
+    <video id="video" controls playsinline></video>
+    <div id="dlProgress"></div>
     <div id="overlay">
       <p id="msg">Loading…</p>
       <button id="fallbackBtn" hidden>Open on HiAnime ↗</button>
     </div>
   </div>
+
+  <section id="queue" hidden>
+    <h2 id="queueHead">Downloads</h2>
+    <p class="hint">Keep this tab open until every episode is saved. Files go to your Downloads folder under <b>Ani Manga</b>.</p>
+    <ol id="queueList"></ol>
+  </section>
 
   <div id="epRow">
     <div id="epList"></div>

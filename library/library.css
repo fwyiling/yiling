@@ -6,6 +6,10 @@ header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
 header img { border-radius: 10px; }
 .kicker { color: var(--a); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
 h1 { margin: 0; font-size: 26px; }
+.am-switch { margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 11px; border: 1px solid var(--l); }
+.am-switch a { padding: 6px 14px; border-radius: 8px; text-decoration: none; font-weight: 700; color: var(--m); cursor: pointer; }
+.am-switch a:hover { color: var(--t); }
+.am-switch a.on { background: var(--a); color: #fff; cursor: default; }
 button, select, input { font: inherit; color: inherit; }
 button { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--l); background: var(--p2); cursor: pointer; font-weight: 600; }
 button:hover { border-color: var(--a); }

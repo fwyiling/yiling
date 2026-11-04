@@ -134,6 +134,11 @@ select.field { appearance: none; cursor: pointer; background-image: linear-gradi
 .sidebar-btn { display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); margin: 0 16px 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
 .sidebar-btn:hover { border-color: var(--accent); }
 .sidebar-btn svg { width: 18px; height: 18px; color: var(--accent); }
+.animanga-btn { padding: 11px 12px; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); text-align: left; }
+.animanga-btn svg { width: 22px; height: 22px; flex: none; }
+.animanga-btn span { display: grid; }
+.animanga-btn b { font-size: 14px; }
+.animanga-btn small { color: var(--muted, #9a9aab); font-weight: 400; font-size: 12px; }
 .keycap { min-width: 44px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); border-bottom-width: 3px; background: var(--panel-2); color: var(--text); font: 700 15px ui-monospace, Consolas, monospace; cursor: pointer; }
 .keycap.listening { border-color: var(--accent); color: var(--accent); font: 600 11px system-ui, sans-serif; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }

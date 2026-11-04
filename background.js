@@ -233,6 +233,89 @@ async function mangaDexHeaderRules() {
 }
 mangaDexHeaderRules();
 
+// ---- Ani Manga: HiAnime requests ----
+// fetch() can't set Referer, and HiAnime / its video hosts refuse requests without one.
+const AM_RULE = 100040;
+const AM_TAB_RULE_BASE = 200000; // + tabId: per-player-tab Referer for the stream's own CDN
+const AM_EMBED_HOSTS = ['megacloud.tv', 'megacloud.blog', 'megacloud.club', 'rapid-cloud.co'];
+chrome.declarativeNetRequest.updateSessionRules({
+  removeRuleIds: [AM_RULE, AM_RULE + 1],
+  addRules: [
+    { id: AM_RULE, priority: 5, condition: { requestDomains: ['hianime.com'], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://hianime.com/' }] } },
+    { id: AM_RULE + 1, priority: 5, condition: { requestDomains: AM_EMBED_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://hianime.com/' }] } },
+  ],
+}).catch((e) => console.warn('ani manga rules', e));
+
+const amRuleId = (tabId) => AM_TAB_RULE_BASE + (tabId % 100000);
+async function amStreamHeaders(tabId, referer) {
+  if (tabId == null || !referer) return;
+  const origin = new URL(referer).origin;
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [amRuleId(tabId)],
+    addRules: [{
+      id: amRuleId(tabId), priority: 6,
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: referer }, { header: 'Origin', operation: 'set', value: origin }] },
+      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: ['hianime.com', 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
+    }],
+  });
+}
+chrome.tabs.onRemoved.addListener((tabId) => chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [amRuleId(tabId)] }).catch(() => {}));
+
+// Fallback when a stream can't be resolved directly: let HiAnime's own player start in a hidden,
+// muted tab and pick up the playlist address it requests. Survives changes to their encryption.
+const amCaptures = new Map(); // hidden tabId -> { resolve, timer, m3u8, referer, tracks }
+function amFinish(tabId) {
+  const c = amCaptures.get(tabId);
+  if (!c) return;
+  amCaptures.delete(tabId);
+  clearTimeout(c.timer);
+  chrome.tabs.remove(tabId).catch(() => {});
+  c.resolve({ m3u8: c.m3u8, referer: c.referer, tracks: c.tracks });
+}
+chrome.webRequest.onBeforeRequest.addListener((d) => {
+  const c = amCaptures.get(d.tabId);
+  if (!c) return;
+  const path = d.url.split(/[?#]/)[0];
+  if (/\.vtt$/i.test(path) && !/thumbnails?/i.test(path) && !c.tracks.some((t) => t.file === d.url)) {
+    c.tracks.push({ file: d.url, label: decodeURIComponent(path.split('/').pop().replace(/\.vtt$/i, '')), kind: 'captions' });
+  }
+  if (!c.m3u8 && /\.m3u8$/i.test(path)) {
+    c.m3u8 = d.url;
+    c.referer = d.initiator && d.initiator !== 'null' ? `${d.initiator}/` : 'https://hianime.com/';
+    setTimeout(() => amFinish(d.tabId), 1500); // give subtitle files a moment to show up
+  }
+}, { urls: ['<all_urls>'], types: ['xmlhttprequest', 'media', 'other'] });
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const c = amCaptures.get(tabId);
+  if (c) { amCaptures.delete(tabId); clearTimeout(c.timer); c.reject(new Error('The HiAnime tab was closed')); }
+});
+async function amCaptureStream(url, playerTabId) {
+  if (!/^https:\/\/hianime\.com\/watch\//.test(url)) throw new Error('Not a HiAnime watch link');
+  const tab = await chrome.tabs.create({ url, active: false });
+  chrome.tabs.update(tab.id, { muted: true }).catch(() => {});
+  const found = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      amCaptures.delete(tab.id);
+      chrome.tabs.remove(tab.id).catch(() => {});
+      reject(new Error("HiAnime's player didn't start in time"));
+    }, 25000);
+    amCaptures.set(tab.id, { resolve, reject, timer, m3u8: null, referer: null, tracks: [] });
+  });
+  await amStreamHeaders(playerTabId, found.referer);
+  return found;
+}
+
+async function openAniManga(from) {
+  const anime = chrome.runtime.getURL('anime/anime.html');
+  const manga = chrome.runtime.getURL('library/library.html');
+  const tabs = await chrome.tabs.query({ windowId: from?.windowId ?? chrome.windows.WINDOW_ID_CURRENT });
+  const open = tabs.find((t) => { const u = t.url || t.pendingUrl || ''; return u.startsWith(anime) || u.startsWith(manga); });
+  if (open) return chrome.tabs.update(open.id, { active: true });
+  return chrome.tabs.create({ url: anime, windowId: from?.windowId, index: from ? from.index + 1 : undefined });
+}
+
 // ---- lifecycle ----
 chrome.runtime.onInstalled.addListener(async () => {
   // after an update, point the side panel at the fresh files (an open panel must be reopened once)
@@ -506,6 +589,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
   if (cmd === 'open-home') openHome(tab);
+  if (cmd === 'open-animanga') openAniManga(tab);
 });
 async function sidebarAllow(url) {
   // keep logins working inside the panel even with third-party cookies blocked
@@ -660,6 +744,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'yt-data': () => ytData(msg.videoId),
     'md-diagnose': async () => mangaDexDiagnose((await chrome.tabs.get(tabId)).url, tabId),
     'download': () => startJob(buildJob(msg.page, msg.kind, msg.preset)),
+    'open-animanga': () => openAniManga(sender.tab),
+    'am-capture-stream': () => amCaptureStream(msg.url, msg.tabId),
+    'am-stream-headers': () => amStreamHeaders(msg.tabId, msg.referer),
     'set-paused': () => toggleListEntry('allowlist', msg.host, msg.paused),
     'hide-dock-here': () => toggleListEntry('dockHiddenOn', msg.host, true),
     'open-settings': () => chrome.action.openPopup().catch(() =>

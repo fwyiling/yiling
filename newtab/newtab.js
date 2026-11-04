@@ -474,6 +474,7 @@ $('btnNotes').onclick = () => togglePop('popNotes');
 $('btnTodo').onclick = () => togglePop('popTodo');
 $('btnSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); chrome.sidePanel.open({ windowId: w.id }); };
 $('btnZen').onclick = () => set({ zen: !s.zen });
+$('btnAniManga').onclick = () => { location.href = chrome.runtime.getURL('anime/anime.html'); };
 
 // ---- dashboard: Today (to-dos) + Timetable ----
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -576,6 +577,13 @@ async function renderShelves() {
   const fmtIn = (t) => { const d = t - now; return d <= 0 ? 'airing now' : d < 3600 ? `in ${Math.round(d / 60)} min` : `in ${Math.round(d / 3600)} h`; };
   box.replaceChildren(...[
     shelf('Continue reading', reading.map((e) => ({ title: e.series, sub: `Ch. ${e.lastNum}${e.total ? ` of ${e.total}` : ''}`, cover: e.cover, href: e.url })), 'library/library.html'),
+    // Ani Manga stays reachable from here even before anything is in your lists
+    !reading.length && !airing.length && (() => {
+      const sec = document.createElement('div'); sec.className = 'shelf';
+      sec.innerHTML = '<div class="shelf-h"><span>Ani Manga</span><a>Open →</a></div>';
+      sec.querySelector('a').href = chrome.runtime.getURL('anime/anime.html');
+      return sec;
+    })(),
     shelf('Airing today', airing.map((a) => ({ title: a.title, sub: `Ep ${a.next.episode} · ${fmtIn(a.next.airingAt)}`, cover: a.cover, href: chrome.runtime.getURL(`anime/anime.html#${a.id}`) })), 'anime/anime.html'),
   ].filter(Boolean));
 }
