@@ -49,12 +49,12 @@
       },
       {
         "id": "easylist",
-        "enabled": false,
+        "enabled": true,
         "path": "rules/easylist.json"
       },
       {
         "id": "easyprivacy",
-        "enabled": false,
+        "enabled": true,
         "path": "rules/easyprivacy.json"
       }
     ]
@@ -72,7 +72,9 @@
         "content/popguard-main.js"
       ],
       "run_at": "document_start",
-      "world": "MAIN"
+      "world": "MAIN",
+      "all_frames": true,
+      "match_about_blank": true
     },
     {
       "matches": [

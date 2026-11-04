@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { convertWithAdguard } from '@ghostery/urlfilter2dnr';
+import { compact } from './compact-rules.mjs';
 
 const src = process.argv[2];
 if (!src) { console.error('usage: node build-rules.mjs <easylist clone>'); process.exit(1); }
@@ -16,7 +17,7 @@ const SETS = {
                 'easyprivacy/easyprivacy_trackingservers.txt', 'easyprivacy/easyprivacy_specific.txt',
                 'easyprivacy/easyprivacy_allowlist.txt'],
 };
-const MAX_RULES = 100000; // Chrome enables >30k static rules only if the browser-wide pool has room (checked at runtime)
+const MAX_RULES = 30000;  // Chrome's guaranteed static-rule budget; compacting keeps the lists well under it
 const MAX_REGEX = 500;    // Chrome allows 1000 regex rules total
 
 for (const [name, files] of Object.entries(SETS)) {
@@ -31,9 +32,9 @@ for (const [name, files] of Object.entries(SETS)) {
   for (const r of rules) {
     if (r.condition?.regexFilter && ++regex > MAX_REGEX) continue;
     if (r.action?.type === 'redirect') continue; // needs web_accessible_resources
-    if (kept.length >= MAX_RULES) break;
-    kept.push({ ...r, id: kept.length + 1 });
+    kept.push(r);
   }
-  fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify(kept));
-  console.log(`${name}: ${lines.length} filters -> ${rules.length} rules, kept ${kept.length} (${regex} regex), ${errors.length} errors, ${limitations.length} limitations`);
+  const final = compact(kept).slice(0, MAX_RULES);
+  fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify(final));
+  console.log(`${name}: ${lines.length} filters -> ${rules.length} rules, kept ${final.length} after merging (${regex} regex), ${errors.length} errors, ${limitations.length} limitations`);
 }

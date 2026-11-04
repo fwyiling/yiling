@@ -9,9 +9,13 @@ import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, manga
 
 const MALWARE_FEED = 'https://urlhaus.abuse.ch/downloads/hostfile/';
 const RISKY_EXT = [
-  'exe', 'msi', 'scr', 'bat', 'cmd', 'com', 'pif', 'ps1', 'vbs', 'vbe', 'js', 'jse', 'wsf',
-  'hta', 'jar', 'lnk', 'reg', 'dll', 'apk', 'dmg', 'pkg', 'sh', 'iso', 'cpl', 'msc',
+  'exe', 'msi', 'msix', 'msixbundle', 'appx', 'appxbundle', 'scr', 'bat', 'cmd', 'com', 'pif', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh',
+  'hta', 'jar', 'lnk', 'url', 'scf', 'reg', 'inf', 'dll', 'cpl', 'msc', 'chm', 'xll', 'iqy', 'settingcontent-ms', 'application', 'gadget',
+  'docm', 'xlsm', 'pptm', 'dotm', 'xlam', // Office files with macros
+  'iso', 'img', 'vhd', 'vhdx', // disk images (used to slip past Windows' download warnings)
+  'apk', 'dmg', 'pkg', 'sh', 'command',
 ];
+const RISKY_MIME = /^application\/(x-msdownload|x-ms-installer|x-msi|x-dosexec|vnd\.microsoft\.portable-executable|java-archive|x-sh|vnd\.android\.package-archive|x-apple-diskimage)/i;
 const REFERRER_RULE_ID = 100000;
 const ALLOW_RULE_ID = 100001;
 // YouTube's own playback/telemetry endpoints: blocking them can stall the player.
@@ -161,48 +165,55 @@ chrome.cookies.onChanged.addListener(async ({ cookie, removed }) => {
   for (let i = 0; i < parts.length - 1; i++) {
     if (set.has(parts.slice(i).join('.'))) {
       const url = `http${cookie.secure ? 's' : ''}://${host}${cookie.path}`;
-      chrome.cookies.remove({ url, name: cookie.name, storeId: cookie.storeId });
+      chrome.cookies.remove({ url, name: cookie.name, storeId: cookie.storeId, ...(cookie.partitionKey ? { partitionKey: cookie.partitionKey } : {}) }).catch(() => {});
       return;
     }
   }
 });
 
 // ---- risky download guard ----
-const pendingDownloads = new Map();
-chrome.downloads.onCreated.addListener(async (item) => {
+// The service worker can be asleep by the time you answer, so the download id lives in the
+// notification id ("dl-<id>"), not in memory. Files are checked again once their real name is
+// known: servers can name a file only in the response (URL /download?id=1 -> setup.exe).
+const riskyExt = (name) => { const ext = (name || '').split(/[?#]/)[0].split(/[\\/]/).pop().split('.').pop().toLowerCase(); return RISKY_EXT.includes(ext) ? ext : null; };
+const askedDownloads = new Set();
+async function guardDownload(item) {
   const s = await getSettings();
-  if (!s.downloadGuard) return;
-  if (item.byExtensionId === chrome.runtime.id) return; // our own downloader
-  const name = (item.filename || item.finalUrl || item.url || '').split(/[?#]/)[0];
-  const ext = name.split('.').pop().toLowerCase();
-  if (!RISKY_EXT.includes(ext)) return;
+  if (!s.downloadGuard || item.byExtensionId === chrome.runtime.id || askedDownloads.has(item.id)) return; // our own downloader
+  if (item.state && item.state !== 'in_progress') return;
+  const ext = riskyExt(item.filename) || riskyExt(item.finalUrl) || riskyExt(item.url) || (RISKY_MIME.test(item.mime || '') ? 'program' : null);
+  if (!ext) return;
+  askedDownloads.add(item.id);
   await chrome.downloads.pause(item.id).catch(() => {});
-  const nid = `dl-${item.id}`;
-  pendingDownloads.set(nid, item.id);
-  chrome.notifications.create(nid, {
+  chrome.notifications.create(`dl-${item.id}`, {
     type: 'basic',
     iconUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
-    title: `Risky file: .${ext}`,
-    message: `${item.finalUrl || item.url}\nThis file type can run code on your computer.`,
+    title: ext === 'program' ? 'Risky file: a program' : `Risky file: .${ext}`,
+    message: `${(item.filename || '').split(/[\\/]/).pop() || item.finalUrl || item.url}\nThis file type can run code on your computer.`,
     buttons: [{ title: 'Block' }, { title: 'Allow' }],
     requireInteraction: true,
   });
+}
+chrome.downloads.onCreated.addListener(guardDownload);
+chrome.downloads.onChanged.addListener(async (d) => {
+  if (!d.filename?.current && !d.mime?.current) return;
+  const [item] = await chrome.downloads.search({ id: d.id }).catch(() => []);
+  if (item) guardDownload(item);
 });
-
+const downloadOf = (nid) => (/^dl-(\d+)$/.exec(nid) ? Number(nid.slice(3)) : null);
+const answered = new Set();
 chrome.notifications.onButtonClicked.addListener(async (nid, btn) => {
-  const id = pendingDownloads.get(nid);
-  if (id === undefined) return;
-  pendingDownloads.delete(nid);
+  const id = downloadOf(nid);
+  if (id == null) return;
+  answered.add(nid);
   if (btn === 1) await chrome.downloads.resume(id).catch(() => {});
-  else { await chrome.downloads.cancel(id).catch(() => {}); await chrome.downloads.erase({ id }); }
+  else { await chrome.downloads.cancel(id).catch(() => {}); await chrome.downloads.erase({ id }).catch(() => {}); }
   chrome.notifications.clear(nid);
 });
 chrome.notifications.onClosed.addListener(async (nid) => {
-  const id = pendingDownloads.get(nid);
-  if (id !== undefined) { // dismissed without choice -> block
-    pendingDownloads.delete(nid);
-    await chrome.downloads.cancel(id).catch(() => {});
-  }
+  const id = downloadOf(nid);
+  if (id == null || answered.delete(nid)) return;
+  await chrome.downloads.cancel(id).catch(() => {}); // dismissed without a choice -> block
 });
 
 // ---- MangaDex: the API refuses (403) requests whose Origin is chrome-extension://…
@@ -373,11 +384,12 @@ chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`nav_${tabId}`));
 
-let allowSeq = 900000;
 async function allowOnce(host) {
-  // session rule: lives until Chrome restarts
+  // session rule: lives until Chrome restarts. The next free id comes from the rules themselves –
+  // a counter in memory restarts whenever the service worker does and would collide.
+  const used = (await chrome.declarativeNetRequest.getSessionRules()).map((r) => r.id).filter((id) => id >= 900000 && id < 1000000);
   await chrome.declarativeNetRequest.updateSessionRules({
-    addRules: [{ id: allowSeq++, priority: MALWARE_PRIORITY + 1, action: { type: 'allowAllRequests' },
+    addRules: [{ id: used.length ? Math.max(...used) + 1 : 900000, priority: MALWARE_PRIORITY + 1, action: { type: 'allowAllRequests' },
       condition: { requestDomains: [host], resourceTypes: ['main_frame', 'sub_frame'] } }],
   });
 }
@@ -561,13 +573,16 @@ chrome.webRequest.onHeadersReceived.addListener((d) => {
   if (seen.includes(first)) return;
   seen.push(first);
   if (seen.length > 10) seen.shift();
+  const keys = Object.keys(learn.seen);
+  if (keys.length > 4000) for (const k of keys.slice(0, keys.length - 3000)) if (!learn.blocked.includes(k)) delete learn.seen[k]; // forget the oldest
   if (seen.length >= LEARN_THRESHOLD && !learn.blocked.includes(third)) { learn.blocked.push(third); applyLearnedRule(); }
   learnSoon();
 }, { urls: ['<all_urls>'], types: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'ping', 'other'] }, ['responseHeaders', 'extraHeaders']);
 getSettings().then(() => loadLearn());
 
 // ---- sidebar apps: let sites load inside the side panel ----
-// Side-panel frames have no tab (tabId -1): strip only their "don't embed me" headers.
+// Side-panel frames have no tab (tabId -1). Only frames our own panel opens (initiator = the
+// extension) lose their "don't embed me" headers; iframes inside those sites keep theirs.
 const SIDEBAR_RULE = 100030;
 chrome.declarativeNetRequest.updateSessionRules({
   removeRuleIds: [SIDEBAR_RULE],
@@ -578,7 +593,7 @@ chrome.declarativeNetRequest.updateSessionRules({
       { header: 'content-security-policy', operation: 'remove' },
       { header: 'cross-origin-opener-policy', operation: 'remove' },
     ] },
-    condition: { tabIds: [chrome.tabs.TAB_ID_NONE], resourceTypes: ['sub_frame'] },
+    condition: { tabIds: [chrome.tabs.TAB_ID_NONE], resourceTypes: ['sub_frame'], initiatorDomains: [chrome.runtime.id] },
   }],
 }).catch((e) => console.warn('sidebar rule', e));
 chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
@@ -643,7 +658,10 @@ async function judgePopup(newTab, url) {
   const target = siteOf(url);
   if (!target) return; // about:blank – wait for the real address
   pendingPopups.delete(newTab);
-  const src = tabTopSite.get(p.source);
+  let src = tabTopSite.get(p.source);
+  if (!src) { // the service worker restarted and forgot: ask the opener tab where it is
+    try { src = siteOf((await chrome.tabs.get(p.source)).url || ''); if (src) tabTopSite.set(p.source, src); } catch {}
+  }
   let host = ''; try { host = new URL(url).hostname; } catch {}
   if (!src || target === src || OK_POPUP_HOST.test(host) || userWanted(p.source, target)) return;
   if (!(await popupGuardOn(p.source))) return;
@@ -698,11 +716,26 @@ async function syncDarkScript(on) {
     await chrome.scripting.unregisterContentScripts({ ids: have.map((x) => x.id) }).catch(() => {});
   }
 }
-async function drFetch(url) {
-  const r = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(10000) });
+// Dark mode fetches a page's cross-site stylesheets and images through here and hands the result
+// back to that page, so a page must not be able to use it to read other things: only stylesheets,
+// images and fonts, and nothing on your own network unless the page itself is on it.
+const PRIVATE_HOST = /^(localhost|.*\.localhost|.*\.local|.*\.internal|.*\.lan|.*\.home\.arpa|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[?::1?\]?|\[?f[cd][0-9a-f]{2}:.*|\[?fe80:.*)$/i;
+async function drFetch(url, pageUrl) {
+  let u, page;
+  try { u = new URL(url); } catch { throw new Error('bad url'); }
+  try { page = new URL(pageUrl || ''); } catch {}
+  if (!/^https?:$/.test(u.protocol)) throw new Error('not http');
+  if (PRIVATE_HOST.test(u.hostname) && !(page && PRIVATE_HOST.test(page.hostname))) throw new Error('local address');
+  const r = await fetch(u.href, { credentials: 'omit', redirect: 'follow', signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
-  const type = r.headers.get('content-type') || '';
-  if (/^(text\/|application\/(json|javascript|xml))|css|svg/.test(type)) return { text: await r.text(), type };
+  if (PRIVATE_HOST.test(new URL(r.url).hostname) && !(page && PRIVATE_HOST.test(page.hostname))) throw new Error('local address');
+  const type = (r.headers.get('content-type') || '').toLowerCase();
+  if (/^text\/css|^text\/plain/.test(type) || (!type && /\.css(\?|$)/i.test(u.pathname))) {
+    const text = await r.text();
+    if (text.length > 5e6) throw new Error('too large');
+    return { text, type: type || 'text/css' };
+  }
+  if (!/^(image\/|font\/|application\/(font|x-font|vnd\.ms-fontobject))/.test(type)) throw new Error('not a stylesheet, image or font');
   const buf = new Uint8Array(await r.arrayBuffer());
   if (buf.length > 3e6) throw new Error('too large');
   let bin = '';
@@ -752,14 +785,18 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
     'allow-once': () => allowOnce(msg.host),
-    'dr-fetch': () => drFetch(msg.url),
+    'dr-fetch': () => drFetch(msg.url, sender.tab?.url || sender.url),
     'sidebar-allow': () => sidebarAllow(msg.url),
     'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
     'float-app': () => chrome.windows.create({ url: msg.url, type: 'popup', width: msg.width || 480, height: msg.height || 760, focused: true }),
     'hotkey': () => (msg.which === 'home' ? openHome(sender.tab) : openSidebarFor(msg.which, sender.tab?.windowId)),
     'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
     'popup-blocked': () => bump('popupStats'),
-    'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },
+    'open-anyway': () => {
+      if (!/^https?:\/\//i.test(msg.url || '')) throw new Error('only web pages can be opened'); // a page can fake the toast's message
+      if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true });
+      return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined });
+    },
     'learn-reset': async () => { learn = { seen: {}, blocked: [] }; await chrome.storage.local.set({ learned: learn }); await applyLearnedRule(); },
     'learn-stats': async () => { const l = await loadLearn(); return { blocked: l.blocked.length, watching: Object.keys(l.seen).length, list: l.blocked.slice(-30) }; },
     'keep-site': async () => { const s = await getSettings(); const k = new Set(s.keepSites || []); msg.keep ? k.add(msg.site) : k.delete(msg.site); await chrome.storage.sync.set({ keepSites: [...k] }); },
@@ -776,6 +813,6 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html?tab=1') })),
   }[msg?.type];
   if (!run) return;
-  Promise.resolve(run()).then((r) => reply({ ok: true, result: r }), (e) => reply({ ok: false, error: e.message }));
+  Promise.resolve().then(run).then((r) => reply({ ok: true, result: r }), (e) => reply({ ok: false, error: e?.message || String(e) })); // sync throws become replies too
   return true;
 });
