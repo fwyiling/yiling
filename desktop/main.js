@@ -10,6 +10,13 @@ const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+// keep the last warnings and errors for "Copy diagnostics"
+const recentLog = [];
+for (const level of ['warn', 'error']) {
+  const orig = console[level].bind(console);
+  console[level] = (...a) => { recentLog.push(`[${level}] ${a.map(String).join(' ')}`); if (recentLog.length > 40) recentLog.shift(); orig(...a); };
+}
+const attachResults = new Map(); // display id -> result of joining the desktop layer
 // Chromium stops drawing windows it thinks are covered and shows them white. A window behind the
 // desktop icons always looks covered, so that check has to be off for the wallpaper to render.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
@@ -46,6 +53,7 @@ function buildWallpapers() {
         w.showInactive();
         const rect = screen.dipToScreenRect(null, d.bounds); // physical pixels for Win32
         const r = win32.attachToDesktop(w, rect);
+        attachResults.set(d.id, r);
         if (!r.ok) { // couldn't join the desktop layer: show as a normal window kept at the back
           console.warn('wallpaper attach failed:', r.reason);
           w.setBounds(d.bounds); w.setIgnoreMouseEvents(true);
@@ -205,6 +213,17 @@ function applySettings(patch) {
   return next;
 }
 
+// ---------- diagnostics ----------
+function diagnostics() {
+  const os = require('os');
+  return {
+    app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
+    win32: win32.status(),
+    displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
+    paused, dock: !!dockWin, log: recentLog.slice(-20),
+  };
+}
+
 // ---------- IPC ----------
 const httpOnly = (u) => { try { return /^https?:$/.test(new URL(u).protocol); } catch { return false; } };
 function wireIpc() {
@@ -229,6 +248,7 @@ function wireIpc() {
     return r.canceled ? '' : r.filePaths[0];
   });
   ipcMain.handle('home:toggle', (_e, show) => toggleHome(show));
+  ipcMain.handle('diagnostics', () => diagnostics());
   ipcMain.handle('taskbar:get', () => taskbar.read());
   ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
   ipcMain.handle('lock:apply', () => applyLockScreen());
@@ -293,7 +313,9 @@ app.whenReady().then(() => {
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
   if (store.get().dock.on) setDock(true);
-  if (!fs.existsSync(store.file)) openSettings(); // first run: show what can be customized
+  if (!fs.existsSync(store.file) && !process.argv.includes('--smoke')) openSettings(); // first run: show what can be customized
+  // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
+  if (process.argv.includes('--smoke')) setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
 });
 app.on('second-instance', () => openSettings());
 app.on('before-quit', () => {

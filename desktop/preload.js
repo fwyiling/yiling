@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('sd', {
   focusWindow: (hwnd) => ipcRenderer.invoke('window:focus', hwnd),
   exeIcon: (exe) => ipcRenderer.invoke('exe-icon', exe),
   pinTarget: (p) => ipcRenderer.invoke('pin-target', p),
+  diagnostics: () => ipcRenderer.invoke('diagnostics'),
   onWindows: on('windows'),
   onSettings: on('settings'),
   onPause: on('pause'),

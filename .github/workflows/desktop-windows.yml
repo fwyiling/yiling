@@ -1,0 +1,53 @@
+# Tests Syndicates Desktop on real Windows and builds the installer + portable .exe.
+name: Syndicates Desktop (Windows)
+on:
+  push:
+    branches: [syndicates-desktop]
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Win32 bindings parse (fake DLLs)
+        run: node test/win32-bindings.test.js
+      - name: Win32 bindings on real Windows
+        run: node test/win32-real.smoke.js
+      - name: Wallpaper shows behind the desktop icons
+        run: npx electron test/electron-smoke.js
+      - name: App starts and runs for 15 seconds
+        shell: pwsh
+        run: |
+          $out = npx electron . --smoke 2>&1 | Out-String
+          Write-Output $out
+          if ($out -notmatch 'SMOKE ') { throw 'the app did not finish its smoke run' }
+          if ($out -match 'A JavaScript error occurred|Uncaught') { throw 'the app hit an error' }
+      - name: Build installer and portable exe
+        run: npx electron-builder --win portable nsis --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload the Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Syndicates-Desktop-Windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+      - name: Upload the desktop screenshot from the test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-desktop-screenshot
+          path: desktop/smoke-desktop.png
+          if-no-files-found: ignore

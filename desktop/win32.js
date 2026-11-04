@@ -8,10 +8,17 @@
 //    our window becomes a *layered* child of Progman, placed directly below the icons.
 // The layout is detected from the window tree, not the Windows version.
 const isWin = process.platform === 'win32';
-let u = null;
+let u = null, setupError = null;
 
+// Builds the bindings once. If anything fails it stays off (and says why) instead of retrying:
+// a retry would re-register the same koffi types and throw "Duplicate type name".
 function load() {
-  if (u || !isWin) return u;
+  if (u || !isWin || setupError) return u;
+  try { u = bind(); } catch (e) { setupError = e; console.error('[win32] setup failed:', e.message); }
+  return u;
+}
+function bind() {
+  let u;
   const koffi = require('koffi');
   const user32 = koffi.load('user32.dll');
   const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
@@ -34,7 +41,8 @@ function load() {
     GetClassNameW: user32.func('int __stdcall GetClassNameW(intptr_t hwnd, uint16_t *buf, int max)'),
     PostMessageW: user32.func('bool __stdcall PostMessageW(intptr_t hwnd, uint msg, uintptr_t wp, intptr_t lp)'),
     // taskbar, wallpaper and the dock's window list
-    SendMessageTimeoutStr: user32.func('SendMessageTimeoutW', 'intptr_t __stdcall SendMessageTimeoutStr(intptr_t hwnd, uint msg, uintptr_t wp, str16 lp, uint flags, uint timeout, _Out_ uintptr_t *result)'),
+    // the same Win32 function again, with the last-but-two parameter as a string (koffi: convention, symbol, result, params)
+    SendMessageTimeoutStr: user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'str16', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]),
     SystemParametersInfoW: user32.func('bool __stdcall SystemParametersInfoW(uint action, uint param, str16 value, uint flags)'),
     IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hwnd)'),
     IsIconic: user32.func('bool __stdcall IsIconic(intptr_t hwnd)'),
@@ -59,6 +67,10 @@ function load() {
   });
   return u;
 }
+/** Run a Win32 helper without ever letting an error escape into the app (timers call these). */
+const safe = (name, fn, fallback) => (...args) => {
+  try { return fn(...args); } catch (e) { console.error(`[win32] ${name} failed:`, e.message); return typeof fallback === 'function' ? fallback(e) : fallback; }
+};
 
 const GWL_STYLE = -16, GWL_EXSTYLE = -20;
 const WS_CHILD = 0x40000000, WS_POPUP = 0x80000000, WS_CAPTION = 0x00C00000, WS_THICKFRAME = 0x00040000;
@@ -231,4 +243,18 @@ function focusWindow(hwnd) {
   if (!u.SetForegroundWindow(hwnd)) u.SwitchToThisWindow(hwnd, true);
 }
 
-module.exports = { isWin, attachToDesktop, fullscreenAppRunning, setDesktopIcons, setWindowsWallpaper, taskbarAutoHide, setTaskbarAutoHide, refreshTaskbar, reserveEdge, releaseEdge, listWindows, focusWindow };
+module.exports = {
+  isWin,
+  status: () => ({ ready: !!load(), error: setupError?.message || '' }),
+  attachToDesktop: safe('attachToDesktop', attachToDesktop, (e) => ({ ok: false, reason: e.message })),
+  fullscreenAppRunning: safe('fullscreenAppRunning', fullscreenAppRunning, false),
+  setDesktopIcons: safe('setDesktopIcons', setDesktopIcons, false),
+  setWindowsWallpaper: safe('setWindowsWallpaper', setWindowsWallpaper, false),
+  taskbarAutoHide: safe('taskbarAutoHide', taskbarAutoHide, false),
+  setTaskbarAutoHide: safe('setTaskbarAutoHide', setTaskbarAutoHide, false),
+  refreshTaskbar: safe('refreshTaskbar', refreshTaskbar),
+  reserveEdge: safe('reserveEdge', reserveEdge, null),
+  releaseEdge: safe('releaseEdge', releaseEdge),
+  listWindows: safe('listWindows', listWindows, []),
+  focusWindow: safe('focusWindow', focusWindow),
+};

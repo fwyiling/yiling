@@ -127,6 +127,12 @@ hotkey.onclick = () => {
   addEventListener('keydown', onKey, true);
 };
 $('clearPins').onclick = () => save({ home: { pins: [] } });
+$('diag').onclick = async () => {
+  const d = await sd.diagnostics();
+  await navigator.clipboard.writeText(JSON.stringify(d, null, 2)).catch(() => {});
+  const w = d.displays.map((x) => x.wallpaper).filter(Boolean);
+  $('diagNote').textContent = `Copied. Windows helpers: ${d.win32.ready ? 'ready' : d.win32.error || 'off'} · wallpaper: ${w.length ? w.map((r) => (r.ok ? (r.raised ? 'attached (24H2 layout)' : 'attached') : r.reason)).join(', ') : 'not attached'}`;
+};
 $('openHome').onclick = () => sd.toggleHome(true);
 
 // ---------- segmented choices stored in settings: data-seg="dock.style" ----------
