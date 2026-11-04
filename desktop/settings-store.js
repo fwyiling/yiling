@@ -10,6 +10,7 @@ const DEFAULTS = {
     intensity: 0.8,           // 0 .. 1  (how much colour/motion)
     parallax: true,           // drift with the mouse
     audio: false,             // pulse with the music playing on the PC
+    dayCycle: false,          // tint the colours by time of day
     colors: ['#5e7d9c', '#a7afb8', '#2b3a4d'],
     file: '',                 // image / video path for those scenes
     url: '',                  // web page for the "web" scene

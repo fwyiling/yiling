@@ -4,6 +4,20 @@ import { createScene } from './scenes.js';
 import { startAudio, stopAudio, levels } from './audio.js';
 import { greeting, quoteOfTheHour, fmtTime, fmtDate } from './common.js';
 
+// Time-of-day tint: keyframes by hour (tint colour, how much of it, extra darkness), blended smoothly.
+const DAY = [[0, '#0b1a3a', 0.45, 0.18], [5, '#1d2450', 0.4, 0.12], [7, '#ff9a8b', 0.3, 0], [10, '#ffffff', 0, 0],
+  [16, '#ffffff', 0, 0], [18.5, '#ff7a3d', 0.35, 0.02], [20, '#5b3a8c', 0.38, 0.08], [22, '#0b1a3a', 0.45, 0.16], [24, '#0b1a3a', 0.45, 0.18]];
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const toHex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const lerp = (a, b, t) => a + (b - a) * t;
+export function dayTint(colors, date = new Date()) {
+  const h = date.getHours() + date.getMinutes() / 60;
+  const i = DAY.findIndex((k, j) => h >= k[0] && h < DAY[j + 1][0]);
+  const [a, b] = [DAY[i], DAY[i + 1]], t = (h - a[0]) / (b[0] - a[0]);
+  const tint = hex(a[1]).map((v, k) => lerp(v, hex(b[1])[k], t)), amt = lerp(a[2], b[2], t), dark = lerp(a[3], b[3], t);
+  return { colors: colors.map((c) => toHex(hex(c).map((v, k) => lerp(v, tint[k], amt)))), dark };
+}
+
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
 export function mountWallpaper(root, settings, { preview = false, sd = window.sd } = {}) {
@@ -21,14 +35,15 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   // ---------- background ----------
   function applyBackground() {
     const w = s.wallpaper;
-    root.style.setProperty('--dim', w.dim);
+    const tint = w.dayCycle ? dayTint(w.colors) : { colors: w.colors, dark: 0 };
+    root.style.setProperty('--dim', Math.min(0.85, w.dim + tint.dark));
     const animated = !['image', 'video', 'web'].includes(w.scene);
     canvas.hidden = !animated;
     // music-reactive: the wallpaper itself listens; the small preview in Customize never does
     const wantAudio = !preview && (w.audio || w.scene === 'visualizer');
     if (wantAudio) startAudio(); else if (!preview) stopAudio();
     if (animated) {
-      const opts = { ...w, colors: w.colors, fps: preview ? 30 : s.general.fps, levels: wantAudio ? levels : null };
+      const opts = { ...w, colors: tint.colors, fps: preview ? 30 : s.general.fps, levels: wantAudio ? levels : null };
       if (!scene) scene = createScene(canvas, opts); else scene.set(opts);
     } else { scene?.destroy(); scene = null; }
     const key = animated ? '' : `${w.scene}|${w.file}|${w.url}|${w.fileStamp || ''}`;
@@ -129,11 +144,12 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const clockT = setInterval(() => tick(false), 1000);
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
+  const dayT = setInterval(() => { if (s.wallpaper.dayCycle) applyBackground(); }, 5 * 60e3);
   return {
     update,
     widgets,
     pause(p) { scene?.pause(p); media.querySelector('video')?.[p ? 'pause' : 'play']?.(); root.classList.toggle('paused', p); },
     pointer(x, y) { scene?.pointer(x, y); root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
-    destroy() { clearInterval(clockT); clearInterval(statsT); clearInterval(weatherT); scene?.destroy(); root.replaceChildren(); },
+    destroy() { clearInterval(clockT); clearInterval(statsT); clearInterval(weatherT); clearInterval(dayT); scene?.destroy(); root.replaceChildren(); },
   };
 }
