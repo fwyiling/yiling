@@ -125,7 +125,7 @@ async function openSheet(id) {
     paint();
 
     // HiAnime section — load asynchronously so the sheet shows instantly
-    if (hiAnimeOn) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native]);
+    if (hiAnimeOn) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native], m.idMal);
   } catch (e) { sh.innerHTML = `<button class="close">✕</button><p class="empty" style="padding:30px">${esc(e.message)}</p>`; }
   sh.querySelector('.close').onclick = closeSheet;
 }
@@ -137,26 +137,29 @@ async function openPlayer(job) {
   chrome.tabs.create({ url: chrome.runtime.getURL(`anime/player.html?s=${encodeURIComponent(key)}`) });
 }
 
-async function loadHiAnimeSection(container, animeTitle, titles) {
+async function loadHiAnimeSection(container, animeTitle, titles, malId) {
   container.innerHTML = '<h2>Watch &amp; download</h2><p class="empty hi-loading">Looking for this show on HiAnime…</p>';
   let match, episodes;
   try {
-    match = await findAnime(titles);
+    match = await findAnime({ malId, titles });
     if (!match) { container.innerHTML = `<h2>Watch &amp; download</h2><p class="empty">Couldn’t find “${esc(animeTitle)}” on HiAnime.</p>`; return; }
-    episodes = await fetchEpisodes(match.id);
+    episodes = await fetchEpisodes(match);
     if (!episodes.length) { container.innerHTML = '<h2>Watch &amp; download</h2><p class="empty">HiAnime has no episodes for this show yet.</p>'; return; }
   } catch (e) { container.innerHTML = `<h2>Watch &amp; download</h2><p class="empty">HiAnime isn’t reachable right now (${esc(e.message)}).</p>`; return; }
 
-  const eps = episodes.map(({ id, number, title, filler }) => ({ id, number, title, filler }));
-  const base = { slug: match.slug, anime: animeTitle, episodes: eps };
-  const watch = (idx) => openPlayer({ ...base, mode: 'watch', idx });
-  const download = (queue) => openPlayer({ ...base, mode: 'download', queue });
+  const eps = episodes;
+  const hasDub = eps.some((ep) => ep.dub.length);
+  const lang = () => wrap.querySelector('.hi-lang')?.value || 'sub';
+  const base = { anime: animeTitle, episodes: eps };
+  const watch = (idx) => openPlayer({ ...base, mode: 'watch', idx, lang: lang() });
+  const download = (queue) => openPlayer({ ...base, mode: 'download', queue, lang: lang() });
 
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <h2>Watch &amp; download <small class="hi-match"></small></h2>
     <div class="hi-toolbar">
       <span class="hi-count">${eps.length} episode${eps.length !== 1 ? 's' : ''}</span>
+      ${hasDub ? '<select class="hi-lang" title="Subtitled or dubbed"><option value="sub">Sub</option><option value="dub">Dub</option></select>' : ''}
       <button class="hi-play">▶ Play from Ep ${eps[0].number}</button>
       <label>Ep <select class="hi-from"></select></label><label>to <select class="hi-to"></select></label>
       <button class="hi-dl-range">⬇ Download range</button>
@@ -181,7 +184,7 @@ async function loadHiAnimeSection(container, animeTitle, titles) {
     const row = document.createElement('div');
     row.className = 'hi-ep' + (ep.filler ? ' filler' : '');
     row.innerHTML = `<span class="hi-num">${ep.number}</span><span class="hi-title"></span><div class="hi-btns"><button class="hi-watch">▶ Watch</button><button class="hi-dl" title="Download this episode">⬇</button></div>`;
-    row.querySelector('.hi-title').textContent = ep.filler ? `${ep.title} (filler)` : ep.title;
+    row.querySelector('.hi-title').textContent = [ep.title, ep.filler && '(filler)', ep.dub.length && '· dub'].filter(Boolean).join(' ');
     row.querySelector('.hi-watch').onclick = () => watch(i);
     row.querySelector('.hi-dl').onclick = () => download([i]);
     grid.append(row);

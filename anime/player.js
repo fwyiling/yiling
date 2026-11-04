@@ -1,5 +1,5 @@
 // Ani Manga player: plays HiAnime episodes in the client and downloads them (single or queued).
-import { fetchSources, watchUrl } from '../lib/hianime.js';
+import { watchUrl, isPlaylist, isVideoFile } from '../lib/hianime.js';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,22 +29,34 @@ if (!job?.episodes?.length) {
   await new Promise(() => {}); // stop here quietly
 }
 
-const { slug, anime, episodes } = job;
+const { anime, episodes } = job;
+let lang = job.lang || 'sub';
 let currentIdx = Math.min(Math.max(job.idx || 0, 0), episodes.length - 1);
 $('animeTitle').textContent = anime;
 
 // ---------- stream resolution ----------
+// Each episode lists one or more players (sub and/or dub). A link straight to a video is used as is;
+// an embedded player is opened in a hidden tab so the background can pick up the video it loads.
 async function resolveStream(ep) {
-  try {
-    const s = await fetchSources(ep.id);
-    await chrome.runtime.sendMessage({ type: 'am-stream-headers', tabId: me.id, referer: s.referer });
-    return s;
-  } catch (direct) {
-    msg.textContent = 'Starting HiAnime’s player in the background…';
-    const r = await chrome.runtime.sendMessage({ type: 'am-capture-stream', url: watchUrl(slug, ep.id), tabId: me.id });
-    if (!r?.ok) throw new Error(`${direct.message}; fallback: ${r?.error || 'no answer'}`);
-    return r.result;
+  const links = [...(lang === 'dub' ? ep.dub : ep.sub), ...(lang === 'dub' ? ep.sub : ep.dub)];
+  const site = 'https://hianimes.se/';
+  const errors = [];
+  for (const url of links) {
+    if (isPlaylist(url) || isVideoFile(url)) {
+      await chrome.runtime.sendMessage({ type: 'am-stream-headers', tabId: me.id, referer: site });
+      return isPlaylist(url) ? { m3u8: url, tracks: [] } : { file: url, tracks: [] };
+    }
+    msg.textContent = 'Starting the episode’s player in the background…';
+    const r = await chrome.runtime.sendMessage({ type: 'am-capture-stream', url, tabId: me.id });
+    if (r?.ok && (r.result.m3u8 || r.result.file)) return r.result;
+    errors.push(r?.error || 'no answer');
   }
+  if (ep.slug) { // last resort: the episode's page on the site itself
+    const r = await chrome.runtime.sendMessage({ type: 'am-capture-stream', url: watchUrl(ep), tabId: me.id });
+    if (r?.ok && (r.result.m3u8 || r.result.file)) return r.result;
+    errors.push(r?.error || 'no answer');
+  }
+  throw new Error(errors.length ? errors[errors.length - 1] : 'this episode has no player yet');
 }
 
 // ---------- HLS download (shared by single download and the queue) ----------
@@ -99,7 +111,31 @@ async function fetchBuf(u, label) {
     }
   }
 }
+async function saveBlob(blob, ep, ext) {
+  const blobUrl = URL.createObjectURL(blob);
+  const show = safe(anime, 'Anime');
+  const id = await chrome.downloads.download({ url: blobUrl, filename: `Ani Manga/${show}/${show} - Episode ${pad(ep.number)}${lang === 'dub' ? ' (dub)' : ''}.${ext}`, conflictAction: 'uniquify' });
+  const revoke = (d) => {
+    if (d.id === id && d.state && d.state.current !== 'in_progress') { URL.revokeObjectURL(blobUrl); chrome.downloads.onChanged.removeListener(revoke); }
+  };
+  chrome.downloads.onChanged.addListener(revoke);
+}
+async function downloadFile(ep, url, onProgress) { // a plain video file: stream it in with progress
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`video HTTP ${r.status}`);
+  const total = +r.headers.get('content-length') || 0, reader = r.body.getReader(), parts = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value); got += value.length;
+    if (total) onProgress(got, total);
+  }
+  const ext = (/\.(mp4|webm|mkv|ogg)(\?|$)/i.exec(url)?.[1] || 'mp4').toLowerCase();
+  await saveBlob(new Blob(parts, { type: r.headers.get('content-type') || 'video/mp4' }), ep, ext);
+}
 async function downloadEpisode(ep, stream, onProgress) {
+  if (!stream.m3u8) return downloadFile(ep, stream.file, onProgress);
   const { url, text } = await mediaPlaylist(stream.m3u8);
   const { segs, init } = parseSegments(text, url);
   if (!segs.length) throw new Error('no video segments in playlist');
@@ -127,14 +163,7 @@ async function downloadEpisode(ep, stream, onProgress) {
   };
   await Promise.all(Array.from({ length: 4 }, worker));
   if (init) parts.unshift(await fetchBuf(init, 'init segment'));
-  const ext = init ? 'mp4' : 'ts';
-  const blobUrl = URL.createObjectURL(new Blob(parts, { type: init ? 'video/mp4' : 'video/mp2t' }));
-  const show = safe(anime, 'Anime');
-  const id = await chrome.downloads.download({ url: blobUrl, filename: `Ani Manga/${show}/${show} - Episode ${pad(ep.number)}.${ext}`, conflictAction: 'uniquify' });
-  const revoke = (d) => {
-    if (d.id === id && d.state && d.state.current !== 'in_progress') { URL.revokeObjectURL(blobUrl); chrome.downloads.onChanged.removeListener(revoke); }
-  };
-  chrome.downloads.onChanged.addListener(revoke);
+  await saveBlob(new Blob(parts, { type: init ? 'video/mp4' : 'video/mp2t' }), ep, init ? 'mp4' : 'ts');
 }
 
 // ---------- watch mode ----------
@@ -179,7 +208,7 @@ async function loadEpisode(idx) {
   updateNav();
   renderEpList();
   history.replaceState(null, '', `?s=${encodeURIComponent(key)}&ep=${episodes[idx].number}`);
-  chrome.storage.session.set({ [key]: { ...job, idx } });
+  chrome.storage.session.set({ [key]: { ...job, idx, lang } });
   overlay.classList.remove('hidden');
   msg.textContent = 'Finding a stream…';
   $('fallbackBtn').hidden = true;
@@ -190,7 +219,11 @@ async function loadEpisode(idx) {
     if (mine !== loadSeq) return; // another episode was picked meanwhile
     currentStream = stream;
     $('dlBtn').disabled = false;
-    if (window.Hls?.isSupported()) {
+    if (stream.file) {
+      video.src = stream.file;
+      video.addEventListener('loadedmetadata', () => { if (mine === loadSeq) { overlay.classList.add('hidden'); video.play().catch(() => {}); } }, { once: true });
+      video.addEventListener('error', () => { if (mine === loadSeq && video.getAttribute('src')) { fail('This video couldn’t be played. Try again or open it on HiAnime.'); $('fallbackBtn').hidden = false; } }, { once: true });
+    } else if (window.Hls?.isSupported()) {
       hls = new Hls({ maxBufferLength: 30 });
       hls.loadSource(stream.m3u8);
       hls.attachMedia(video);
@@ -209,7 +242,14 @@ async function loadEpisode(idx) {
 video.addEventListener('ended', () => { if (currentIdx < episodes.length - 1) loadEpisode(currentIdx + 1); });
 $('prevBtn').onclick = () => loadEpisode(currentIdx - 1);
 $('nextBtn').onclick = () => loadEpisode(currentIdx + 1);
-$('fallbackBtn').onclick = () => chrome.tabs.create({ url: watchUrl(slug, episodes[currentIdx].id) });
+$('fallbackBtn').onclick = () => chrome.tabs.create({ url: watchUrl(episodes[currentIdx]) });
+if (episodes.some((ep) => ep.dub?.length)) {
+  const b = $('langBtn');
+  b.hidden = false;
+  const paint = () => { b.textContent = lang === 'dub' ? 'DUB' : 'SUB'; b.title = lang === 'dub' ? 'Playing dubbed – switch to subtitles' : 'Playing subtitled – switch to dub'; };
+  paint();
+  b.onclick = () => { lang = lang === 'dub' ? 'sub' : 'dub'; chrome.storage.session.set({ [key]: { ...job, idx: currentIdx, lang } }); paint(); loadEpisode(currentIdx); };
+}
 $('dlBtn').onclick = async () => {
   if (!currentStream) return;
   const btn = $('dlBtn'), bar = $('dlProgress'), ep = episodes[currentIdx];

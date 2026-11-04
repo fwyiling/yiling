@@ -2,7 +2,7 @@
 import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
 import { filterCompactRules, evalSnippets } from './lib/vendor/autoconsent.esm.js';
-import { HIANIME_HOST } from './lib/hianime.js';
+import { HIANIME_HOST, API_HOSTS, PLAYER_HOSTS, capturable } from './lib/hianime.js';
 import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, mangaDexDiagnose } from './lib/mangadex.js';
 
 
@@ -235,17 +235,17 @@ async function mangaDexHeaderRules() {
 mangaDexHeaderRules();
 
 // ---- Ani Manga: HiAnime requests ----
-// fetch() can't set Referer, and HiAnime / its video hosts refuse requests without one.
+// The site's API and players expect to be called from hianimes.se; fetch() can't set Referer or Origin.
 const AM_RULE = 100040;
 const AM_TAB_RULE_BASE = 200000; // + tabId: per-player-tab Referer for the stream's own CDN
-const AM_EMBED_HOSTS = ['megacloud.tv', 'megacloud.blog', 'megacloud.club', 'rapid-cloud.co'];
+const AM_SITE = `https://${HIANIME_HOST}`;
 chrome.declarativeNetRequest.updateSessionRules({
   removeRuleIds: [AM_RULE, AM_RULE + 1],
   addRules: [
-    { id: AM_RULE, priority: 5, condition: { requestDomains: [HIANIME_HOST], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
-      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `https://${HIANIME_HOST}/` }] } },
-    { id: AM_RULE + 1, priority: 5, condition: { requestDomains: AM_EMBED_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
-      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `https://${HIANIME_HOST}/` }] } },
+    { id: AM_RULE, priority: 5, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `${AM_SITE}/` }, { header: 'Origin', operation: 'set', value: AM_SITE }] } },
+    { id: AM_RULE + 1, priority: 5, condition: { requestDomains: PLAYER_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'media', 'other'] },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `${AM_SITE}/` }] } },
   ],
 }).catch((e) => console.warn('ani manga rules', e));
 
@@ -258,51 +258,62 @@ async function amStreamHeaders(tabId, referer) {
     addRules: [{
       id: amRuleId(tabId), priority: 6,
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: referer }, { header: 'Origin', operation: 'set', value: origin }] },
-      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: [HIANIME_HOST, 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
+      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: [HIANIME_HOST, ...API_HOSTS, 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
     }],
   });
 }
 chrome.tabs.onRemoved.addListener((tabId) => chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [amRuleId(tabId)] }).catch(() => {}));
 
-// Fallback when a stream can't be resolved directly: let HiAnime's own player start in a hidden,
-// muted tab and pick up the playlist address it requests. Survives changes to their encryption.
-const amCaptures = new Map(); // hidden tabId -> { resolve, timer, m3u8, referer, tracks }
+// Episodes are embedded players: open one in a hidden, muted tab, press play, and pick up the
+// video address (HLS playlist or plain video file) it requests.
+const amCaptures = new Map(); // hidden tabId -> { resolve, reject, timer, nudge, m3u8, file, referer, tracks }
 function amFinish(tabId) {
   const c = amCaptures.get(tabId);
   if (!c) return;
   amCaptures.delete(tabId);
-  clearTimeout(c.timer);
+  clearTimeout(c.timer); clearInterval(c.nudge);
   chrome.tabs.remove(tabId).catch(() => {});
-  c.resolve({ m3u8: c.m3u8, referer: c.referer, tracks: c.tracks });
+  c.resolve({ m3u8: c.m3u8, file: c.file, referer: c.referer, tracks: c.tracks });
 }
+const amRefererOf = (d) => (d.initiator && d.initiator !== 'null' ? `${d.initiator}/` : `${AM_SITE}/`);
 chrome.webRequest.onBeforeRequest.addListener((d) => {
   const c = amCaptures.get(d.tabId);
-  if (!c) return;
+  if (!c || c.m3u8) return;
   const path = d.url.split(/[?#]/)[0];
   if (/\.vtt$/i.test(path) && !/thumbnails?/i.test(path) && !c.tracks.some((t) => t.file === d.url)) {
     c.tracks.push({ file: d.url, label: decodeURIComponent(path.split('/').pop().replace(/\.vtt$/i, '')), kind: 'captions' });
   }
-  if (!c.m3u8 && /\.m3u8$/i.test(path)) {
-    c.m3u8 = d.url;
-    c.referer = d.initiator && d.initiator !== 'null' ? `${d.initiator}/` : `https://${HIANIME_HOST}/`;
+  if (/\.m3u8$/i.test(path)) {
+    c.m3u8 = d.url; c.referer = amRefererOf(d);
     setTimeout(() => amFinish(d.tabId), 1500); // give subtitle files a moment to show up
+  } else if (!c.file && (d.type === 'media' || /\.(mp4|webm|mkv)$/i.test(path)) && /^https?:/.test(d.url)) {
+    c.file = d.url; c.referer = amRefererOf(d);
+    setTimeout(() => amFinish(d.tabId), 2500); // an HLS playlist may still follow; prefer it
   }
 }, { urls: ['<all_urls>'], types: ['xmlhttprequest', 'media', 'other'] });
 chrome.tabs.onRemoved.addListener((tabId) => {
   const c = amCaptures.get(tabId);
-  if (c) { amCaptures.delete(tabId); clearTimeout(c.timer); c.reject(new Error('The HiAnime tab was closed')); }
+  if (c) { amCaptures.delete(tabId); clearTimeout(c.timer); clearInterval(c.nudge); c.reject(new Error('The video tab was closed')); }
 });
+// many embedded players only fetch the video after a click on play
+function amPressPlay() {
+  document.querySelectorAll('video').forEach((v) => { v.muted = true; v.play?.().catch(() => {}); });
+  const b = document.querySelector('.jw-icon-display, .jw-display-icon-container, .plyr__control--overlaid, .vjs-big-play-button, .art-control-play, .play-button, .btn-play, #play, button[aria-label*="play" i]');
+  if (b && !b.dataset.amPressed) { b.dataset.amPressed = '1'; b.click(); }
+}
 async function amCaptureStream(url, playerTabId) {
-  if (!url.startsWith(`https://${HIANIME_HOST}/watch/`)) throw new Error('Not a HiAnime watch link');
+  if (!capturable(url)) throw new Error(`won't open ${new URL(url).host}: not a HiAnime page or player`);
   const tab = await chrome.tabs.create({ url, active: false });
   chrome.tabs.update(tab.id, { muted: true }).catch(() => {});
   const found = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      amCaptures.delete(tab.id);
+      const c = amCaptures.get(tab.id);
+      amCaptures.delete(tab.id); clearInterval(c?.nudge);
       chrome.tabs.remove(tab.id).catch(() => {});
-      reject(new Error("HiAnime's player didn't start in time"));
-    }, 25000);
-    amCaptures.set(tab.id, { resolve, reject, timer, m3u8: null, referer: null, tracks: [] });
+      reject(new Error("the episode's player didn't start in time"));
+    }, 30000);
+    const nudge = setInterval(() => chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: amPressPlay }).catch(() => {}), 2500);
+    amCaptures.set(tab.id, { resolve, reject, timer, nudge, m3u8: null, file: null, referer: null, tracks: [] });
   });
   await amStreamHeaders(playerTabId, found.referer);
   return found;
@@ -507,7 +518,7 @@ const NEVER_BLOCK = new Set(['gstatic.com', 'googleapis.com', 'recaptcha.net', '
   'github.com', 'githubusercontent.com', 'google.com', 'apple.com', 'microsoft.com', 'microsoftonline.com', 'live.com', 'twitch.tv', 'discord.com',
   'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'steampowered.com', 'steamcommunity.com', 'hcaptcha.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com',
   // HiAnime streaming CDNs — required for in-client playback and downloads
-  HIANIME_HOST, 'megacloud.tv', 'rapid-cloud.co', 'allanime.day', 'embedsito.com']);
+  HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS]);
 let learn = null, learnDirty = false;
 async function loadLearn() {
   if (!learn) { const { learned } = await chrome.storage.local.get('learned'); learn = learned || { seen: {}, blocked: [] }; }
