@@ -39,6 +39,7 @@ const calls = {
   releaseEdge: () => w.releaseEdge(fakeWin),
   listWindows: () => w.listWindows([1]),
   focusWindow: () => w.focusWindow(123),
+  desktopTree: () => w.desktopTree(),
 };
 const errors = [];
 const origError = console.error;

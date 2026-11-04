@@ -146,6 +146,20 @@ function attachToDesktop(win, rect, strategy = 'auto') {
   return { ok: true, raised: layer.raised, how: full };
 }
 
+/** Progman's child windows, top to bottom, for diagnostics (which one covers the wallpaper?). */
+function desktopTree() {
+  if (!load()) return [];
+  const progman = u.FindWindowW('Progman', null);
+  const name = (h) => { const b = new Uint16Array(128); const n = u.GetClassNameW(h, b, 128); return String.fromCharCode(...b.subarray(0, n)); };
+  const info = (h) => {
+    const r = {}; u.GetWindowRect(h, r);
+    return { hwnd: Number(h), cls: name(h), visible: !!u.IsWindowVisible(h), ex: '0x' + (Number(u.GetWindowLongPtrW(h, GWL_EXSTYLE)) >>> 0).toString(16), rect: [r.left, r.top, r.right, r.bottom] };
+  };
+  const out = isNull(progman) ? [] : [{ ...info(progman), top: true }];
+  for (let h = u.GetWindow(progman, 5), i = 0; !isNull(h) && i < 50; h = u.GetWindow(h, 2), i++) out.push(info(h)); // GW_CHILD, GW_HWNDNEXT
+  return out;
+}
+
 /** True when the foreground window covers a whole monitor (a game or full-screen video). */
 function fullscreenAppRunning(displays) {
   if (!load()) return false;
@@ -270,4 +284,5 @@ module.exports = {
   releaseEdge: safe('releaseEdge', releaseEdge),
   listWindows: safe('listWindows', listWindows, []),
   focusWindow: safe('focusWindow', focusWindow),
+  desktopTree: safe('desktopTree', desktopTree, []),
 };

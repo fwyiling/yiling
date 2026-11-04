@@ -34,9 +34,17 @@ app.whenReady().then(async () => {
   if (process.platform !== 'win32') { console.log('skipped: not Windows'); return app.exit(0); }
   const d = screen.getPrimaryDisplay();
   console.log('win32:', JSON.stringify(win32.status()), '| display:', JSON.stringify(d.bounds), 'scale', d.scaleFactor);
+  { // control: an ordinary window on top. If even this is not seen, the screen capture itself is broken.
+    const c = new BrowserWindow({ ...d.bounds, frame: false, show: false, backgroundColor: '#ff00ff' });
+    await c.loadURL('data:text/html,<body style="margin:0;background:%23ff00ff"></body>');
+    c.showInactive(); await new Promise((res) => setTimeout(res, 1500));
+    console.log(`CONTROL plain window on top: visible=${Math.round((await magentaShare(d)).share * 100)}%`);
+    c.destroy(); await new Promise((res) => setTimeout(res, 800));
+  }
   if (process.argv.includes('--compare')) { // try every way of joining the 24H2 desktop and report each
     for (const strategy of win32.RAISED_STRATEGIES) {
       const t = await tryAttach(d, strategy);
+      if (strategy === win32.RAISED_STRATEGIES[0]) console.log('TREE', JSON.stringify(win32.desktopTree()));
       console.log(`COMPARE ${strategy.padEnd(28)} attach=${JSON.stringify(t.r)} visible=${Math.round(t.share * 100)}%`);
       fs.writeFileSync(path.join(__dirname, '..', `smoke-${strategy}.png`), t.img.toPNG());
       t.w.destroy();
