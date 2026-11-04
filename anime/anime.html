@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syndicates · Anime</title>
+  <link rel="stylesheet" href="anime.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="../icons/icon48.png" alt="" width="34" height="34"><b>Anime</b></div>
+    <nav id="tabs">
+      <button data-tab="discover" class="on">Discover</button>
+      <button data-tab="schedule">Schedule</button>
+      <button data-tab="list">My list</button>
+    </nav>
+    <input id="q" placeholder="Search anime…" autocomplete="off">
+  </header>
+  <main id="view"></main>
+  <div id="drawer" hidden><div class="scrim"></div><article class="sheet" id="sheet"></article></div>
+  <footer class="credit">Data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a> · watch on the official services linked on each show</footer>
+  <script type="module" src="anime.js"></script>
+</body>
+</html>

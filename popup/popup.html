@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syndicates Client</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="../icons/icon48.png" alt="" width="28" height="28">
+      <div>
+        <div class="name">Syndicates Client <span class="ver" id="ver"></span></div>
+        <div class="site" id="site">—</div>
+      </div>
+    </div>
+    <label class="switch big" title="Protection on this site">
+      <input type="checkbox" id="siteOn"><span></span>
+    </label>
+  </header>
+
+  <button class="sidebar-btn" id="openSidebar" title="Open sidebar apps">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 4v16" stroke="currentColor" stroke-width="2"/></svg>
+    Sidebar apps</button>
+  <button class="sidebar-btn" id="openLibrary" title="Search MangaDex and mass-download your list">
+    <svg viewBox="0 0 24 24"><path d="M4 5h5v14H4zM10 5h5v14h-5zM16 6l4-1 2 13-4 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    Manga library · search &amp; mass download</button>
+  <button class="sidebar-btn" id="openAnime" title="Seasonal anime, airing schedule and your watch list (AniList)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9v5l4-2.5z" fill="currentColor"/><path d="M8 21h8" stroke="currentColor" stroke-width="2"/></svg>
+    Anime tracker · schedule &amp; where to watch</button>
+  <div class="status" id="status">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z"/></svg>
+    <span id="statusText">You're protected on this site</span>
+  </div>
+
+  <nav>
+    <button data-tab="protect" class="on">
+      <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z"/></svg>Protect</button>
+    <button data-tab="youtube">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm6 3v6l5-3-5-3Z"/></svg>YouTube</button>
+    <button data-tab="style">
+      <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.8 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8Zm-5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>Style</button>
+    <button data-tab="save">
+      <svg viewBox="0 0 24 24"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Save</button>
+  </nav>
+
+  <main>
+    <!-- PROTECT -->
+    <section data-panel="protect" class="on">
+      <div class="stats" id="stats">
+        <div><b id="stPop">0</b><small>pop-ups blocked</small></div>
+        <div><b id="stCookie">0</b><small>cookie banners</small></div>
+        <div><b id="stTrack">0</b><small>trackers learned</small></div>
+        <div><b id="stClean">0</b><small>sites cleaned</small></div>
+      </div>
+      <h2>Blocking</h2>
+      <div class="card">
+        <label class="row"><div><b>Block ads &amp; trackers</b><small>Removes ads and stops sites following you around.</small></div>
+          <span class="switch"><input type="checkbox" data-key="adBlock"><span></span></span></label>
+        <label class="row"><div><b>Block dangerous sites</b><small id="mal">Stops known malware and scam domains from loading.</small></div>
+          <span class="switch"><input type="checkbox" data-key="malware"><span></span></span></label>
+        <label class="row"><div><b>Block pop-ups &amp; redirects</b><small>Stops sites opening ad tabs or jumping to another site when you click.</small></div>
+          <span class="switch"><input type="checkbox" data-key="popupBlock"><span></span></span></label>
+        <label class="row"><div><b>Reject cookie pop-ups</b><small id="cookieInfo">Clicks "Reject all" on cookie banners for you.</small></div>
+          <span class="switch"><input type="checkbox" data-key="cookieReject"><span></span></span></label>
+        <label class="row"><div><b>Ask before risky downloads</b><small>Pauses .exe, .bat, .js and other files that can run on your PC.</small></div>
+          <span class="switch"><input type="checkbox" data-key="downloadGuard"><span></span></span></label>
+      </div>
+      <h2>Privacy</h2>
+      <div class="card">
+        <label class="row"><div><b>Block third-party cookies</b><small>Other companies can't set cookies while you browse.</small></div>
+          <span class="switch"><input type="checkbox" data-key="blockTpCookies"><span></span></span></label>
+        <label class="row"><div><b>Learn &amp; block trackers</b><small id="learnInfo">Blocks companies that follow you across 3+ sites.</small></div>
+          <span class="switch"><input type="checkbox" data-key="learnTrackers"><span></span></span></label>
+        <label class="row"><div><b>Clean up when I close a site</b><small>Deletes a site's cookies &amp; storage when its last tab closes – except sites you keep.</small></div>
+          <span class="switch"><input type="checkbox" data-key="autoClean"><span></span></span></label>
+        <label class="row"><div><b>Delete tracker cookies</b><small>Wipes cookies from known tracking companies.</small></div>
+          <span class="switch"><input type="checkbox" data-key="cleanTrackerCookies"><span></span></span></label>
+        <label class="row"><div><b>Hide your real IP from WebRTC</b><small>Stops video-call tech leaking your IP (useful with a VPN).</small></div>
+          <span class="switch"><input type="checkbox" data-key="webrtc"><span></span></span></label>
+      </div>
+      <div class="btnrow">
+        <button class="btn ghost" id="keepSite" hidden>Keep this site's logins</button>
+        <button class="btn ghost" id="learnReset">Reset learned trackers</button>
+      </div>
+      <div class="paused" id="pausedWrap" hidden>
+        <h2>Paused sites</h2>
+        <div class="chips" id="paused"></div>
+      </div>
+    </section>
+
+    <!-- YOUTUBE -->
+    <section data-panel="youtube">
+      <h2>Watching</h2>
+      <div class="card">
+        <label class="row"><div><b>Skip video ads</b><small>Jumps past ads automatically and mutes them.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytAds"><span></span></span></label>
+        <label class="row"><div><b>Skip sponsors</b><small>SponsorBlock: skips sponsor reads, self-promos and "subscribe" reminders.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytSponsor"><span></span></span></label>
+        <label class="row"><div><b>Show dislikes</b><small>Brings back the dislike count (Return YouTube Dislike).</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytDislikes"><span></span></span></label>
+        <label class="row"><div><b>Hide Shorts</b><small>Removes Shorts from home, search and the sidebar.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytHideShorts"><span></span></span></label>
+        <label class="row"><div><b>Hide end-screen cards</b><small>No more video tiles covering the last seconds.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytEndCards"><span></span></span></label>
+        <label class="row"><div><b>Player buttons</b><small>Speed, screenshot and a Syndicates menu in YouTube's control bar.</small></div>
+          <span class="switch"><input type="checkbox" data-key="ytButtons"><span></span></span></label>
+      </div>
+      <h2>Preferred quality</h2>
+      <select class="field" data-key="ytQuality">
+        <option value="auto">Auto (YouTube decides)</option><option value="hd720">720p</option><option value="hd1080">1080p</option>
+        <option value="hd1440">1440p</option><option value="hd2160">4K</option><option value="highres">Best available</option>
+      </select>
+      <h2>Playback speed</h2>
+      <div class="seg" data-seg="ytSpeed">
+        <button value="1">1×</button><button value="1.25">1.25×</button><button value="1.5">1.5×</button><button value="1.75">1.75×</button><button value="2">2×</button>
+      </div>
+      <h2>Volume boost</h2>
+      <div class="seg" data-seg="ytBoost">
+        <button value="1">Off</button><button value="1.5">150%</button><button value="2">200%</button><button value="3">300%</button>
+      </div>
+    </section>
+
+    <!-- STYLE -->
+    <section data-panel="style">
+      <h2>Accent color</h2>
+      <div class="swatches" id="swatches">
+        <label class="custom" title="Pick any color"><input type="color" data-key="accent"><span>+</span></label>
+      </div>
+      <div class="card">
+        <label class="row"><div><b>Client dock on every site</b><small>A small button in the corner of every page with quick controls.</small></div>
+          <span class="switch"><input type="checkbox" data-key="dock"><span></span></span></label>
+        <label class="row"><div><b>Cyber skin on Google &amp; YouTube</b><small>Neon look on search results and YouTube, matching your home page.</small></div>
+          <span class="switch"><input type="checkbox" data-key="webSkin"><span></span></span></label>
+        <label class="row"><div><b>Dark mode everywhere</b><small>Smart dark mode for every website (Dark Reader engine) – images keep their colours.</small></div>
+          <span class="switch"><input type="checkbox" data-key="forceDark"><span></span></span></label>
+        <label class="row"><div><b>Accent on websites</b><small>Colors scrollbars and highlighted text with your accent.</small></div>
+          <span class="switch"><input type="checkbox" data-key="accentPages"><span></span></span></label>
+      </div>
+      <h2>Shortcuts (when you're not typing)</h2>
+      <div class="card">
+        <div class="row"><div><b>Open sidebar apps</b><small>Press a key on any page.</small></div><button class="keycap" data-hot="hotSidebar"></button></div>
+        <div class="row"><div><b>Open Syndicates home</b><small>To-dos, timetable &amp; shortcuts.</small></div><button class="keycap" data-hot="hotHome"></button></div>
+      </div>
+      <h2>New tab opens</h2>
+      <div class="seg" id="startSeg"><button value="syndicates">Syndicates page</button><button value="google">Google (customised)</button></div>
+      <h2>Home page</h2>
+      <button class="btn ghost" id="customizeHome">Customize home page →</button>
+      <button class="btn" id="reskinChrome">Reskin Chrome's top bar &amp; footer →</button>
+      <h2>Put idle tabs to sleep</h2>
+      <div class="seg" data-seg="tabSleepMin">
+        <button value="0">Never</button><button value="5">5m</button><button value="15">15m</button><button value="30">30m</button><button value="60">1h</button>
+      </div>
+      <details>
+        <summary>Custom CSS for <b id="host">this site</b></summary>
+        <textarea id="css" rows="5" spellcheck="false" placeholder="body { font-family: Georgia; }"></textarea>
+        <button class="btn ghost" id="saveCss">Save CSS</button>
+      </details>
+    </section>
+
+    <!-- SAVE -->
+    <section data-panel="save">
+      <div class="empty" id="scan">
+        <div class="spinner"></div>
+        <p>Looking for a chapter on this page…</p>
+      </div>
+      <div class="found" id="found" hidden>
+        <div class="title" id="foundTitle"></div>
+        <div class="sub" id="foundSub"></div>
+        <div id="dlButtons"></div>
+      </div>
+      <div id="mdDiag" hidden>
+        <button class="btn ghost" id="mdTest">Test MangaDex connection</button>
+        <ul class="diag" id="mdSteps"></ul>
+        <button class="btn ghost" id="mdCopy" hidden>Copy report</button>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <label class="row"><div><b>Auto-load next chapter</b><small>On manga &amp; novel sites the next chapter appears as you reach the bottom.</small></div>
+          <span class="switch"><input type="checkbox" data-key="autoNext"><span></span></span></label>
+      </div>
+      <h2>MangaDex language</h2>
+      <select class="field" id="mdLangs">
+        <option value="en,zh,zh-hk">English first, then Chinese</option>
+        <option value="zh,zh-hk,en">中文 (简体) first</option>
+        <option value="zh-hk,zh,en">中文 (繁體) first</option>
+      </select>
+      <p class="tip">You can switch language and pick chapters on the next screen. On other manga sites, scroll to the end of the chapter first so every page loads.</p>
+    </section>
+  </main>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

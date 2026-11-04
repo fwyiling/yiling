@@ -1,0 +1,38 @@
+/* Syndicates Client – cyber skin for YouTube. Active only while <html> has .sc-skin */
+html.sc-skin {
+
+  --yt-spec-call-to-action: var(--sc-a) !important;
+  --yt-spec-brand-button-background: var(--sc-a) !important;
+  --yt-spec-static-brand-red: var(--sc-a) !important;
+  --yt-brand-youtube-red: var(--sc-a) !important;
+  --yt-spec-red-indicator: var(--sc-a) !important;
+  --yt-spec-themed-blue: var(--sc-a) !important;
+  scrollbar-color: var(--sc-a) transparent;
+}
+html.sc-skin[dark] {
+  --yt-spec-base-background: var(--sc-base) !important;
+  --yt-spec-general-background-a: var(--sc-base) !important;
+  --yt-spec-general-background-b: var(--sc-mantle) !important;
+  --yt-spec-raised-background: var(--sc-surface) !important;
+  --yt-spec-menu-background: var(--sc-surface) !important;
+  --yt-spec-badge-chip-background: color-mix(in srgb, var(--sc-a) 14%, var(--sc-surface)) !important;
+}
+html.sc-skin[dark] ytd-app {
+  background: radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--sc-a) 16%, transparent), transparent 60%), var(--sc-base) !important;
+}
+html.sc-skin[dark] #masthead-container #background { background: color-mix(in srgb, var(--sc-base) 78%, transparent) !important; backdrop-filter: blur(14px); }
+html.sc-skin[dark] #masthead-container { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--sc-a) 45%, transparent); }
+/* player progress bar */
+html.sc-skin .ytp-play-progress, html.sc-skin .ytp-swatch-background-color { background: var(--sc-a) !important; box-shadow: 0 0 10px var(--sc-a); }
+html.sc-skin .ytp-scrubber-button { background: var(--sc-a) !important; box-shadow: 0 0 10px var(--sc-a); }
+html.sc-skin .ytp-volume-slider-handle, html.sc-skin .ytp-volume-slider-handle::before { background: var(--sc-a) !important; }
+/* thumbnails glow on hover */
+html.sc-skin ytd-thumbnail, html.sc-skin yt-thumbnail-view-model { transition: box-shadow .2s, transform .2s; border-radius: 12px; }
+html.sc-skin ytd-rich-item-renderer:hover ytd-thumbnail, html.sc-skin ytd-rich-item-renderer:hover yt-thumbnail-view-model,
+html.sc-skin ytd-compact-video-renderer:hover ytd-thumbnail {
+  box-shadow: 0 0 0 2px var(--sc-a), 0 0 26px color-mix(in srgb, var(--sc-a) 55%, transparent);
+}
+/* selected chip ("All", "Music"…) */
+html.sc-skin[dark] yt-chip-cloud-chip-renderer[selected] #chip-container,
+html.sc-skin[dark] yt-chip-cloud-chip-renderer[aria-selected="true"] { background: var(--sc-a) !important; color: #fff !important; }
+html.sc-skin ::selection { background: var(--sc-a); color: #fff; }

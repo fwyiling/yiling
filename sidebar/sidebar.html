@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syndicates Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <nav id="rail"></nav>
+  <section id="stage">
+    <header id="bar">
+      <span id="appName">Pick an app</span>
+      <span class="sp"></span>
+      <div class="zoom" id="zoomBox" hidden>
+        <button id="zoomOut" title="Smaller (fit more)">−</button>
+        <button id="zoomFit" title="Fit the whole site into the sidebar">Fit</button>
+        <button id="zoomIn" title="Bigger">+</button>
+      </div>
+      <button id="float" title="Open as a floating window">⧉</button>
+      <button id="reload" title="Reload">⟳</button>
+      <button id="popout" title="Open in a tab">↗</button>
+    </header>
+    <div id="frames">
+      <div id="welcome">
+        <h2>Sidebar apps</h2>
+        <p>Pick an app on the left. It stays open next to any page – your music keeps playing and chats stay connected while you browse.</p>
+        <p class="hint">Desktop sites like Discord are zoomed to fit – use − / + / Fit at the top, drag the panel's left edge to make it wider, or ⧉ to pop the app out into its own floating window.</p>
+        <p class="hint">Some sites ask you to log in once inside the sidebar.</p>
+      </div>
+    </div>
+  </section>
+  <dialog id="addDlg">
+    <form method="dialog" id="addForm">
+      <h3>Add an app</h3>
+      <label>Name <input id="addName" required maxlength="24" placeholder="e.g. Telegram"></label>
+      <label>Link <input id="addUrl" required placeholder="web.telegram.org"></label>
+      <div class="row"><button value="cancel" formnovalidate>Cancel</button><button value="ok" class="pri">Add</button></div>
+    </form>
+  </dialog>
+  <script type="module" src="sidebar.js"></script>
+</body>
+</html>

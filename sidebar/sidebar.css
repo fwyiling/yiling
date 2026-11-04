@@ -1,0 +1,40 @@
+:root { --bg: #131016; --rail: #0d0b10; --panel: #1b1720; --line: #2a2430; --text: #eee9f4; --muted: #9b93a6; --a: #fa1e4e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+body { display: flex; }
+#rail { width: 56px; flex: none; background: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; overflow-y: auto; border-right: 1px solid var(--line); }
+#rail button { position: relative; width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--panel); cursor: pointer; display: grid; place-items: center; transition: border-radius .15s, background .15s; }
+#rail button img { width: 22px; height: 22px; border-radius: 5px; }
+#rail button .ltr { font: 700 15px system-ui; color: var(--text); }
+#rail button:hover { border-radius: 14px; background: #2a2430; }
+#rail button.on { background: color-mix(in srgb, var(--a) 30%, var(--panel)); border-radius: 14px; }
+#rail button.on::before { content: ""; position: absolute; left: -8px; top: 9px; bottom: 9px; width: 4px; border-radius: 0 4px 4px 0; background: var(--a); }
+#rail .sep { width: 28px; height: 1px; background: var(--line); margin: 4px 0; }
+#rail .add { color: var(--muted); font-size: 20px; background: transparent; border: 1px dashed var(--line); }
+#rail button .x { position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; border-radius: 50%; background: #3a3342; color: #fff; font-size: 10px; line-height: 16px; display: none; }
+#rail button:hover .x { display: block; }
+#stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#bar { height: 40px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line); font-weight: 600; }
+#bar .sp { flex: 1; }
+#bar button { width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; }
+#bar button:hover { background: var(--panel); color: var(--text); }
+#frames { flex: 1; position: relative; }
+#frames { overflow: hidden; }
+#frames iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; background: #fff; display: none; transform-origin: 0 0; }
+#frames iframe.on { display: block; }
+#welcome { padding: 28px 20px; color: var(--muted); }
+#welcome h2 { color: var(--text); margin: 0 0 8px; font-size: 18px; }
+.hint { font-size: 12px; }
+dialog { border: 0; border-radius: 14px; background: var(--panel); color: var(--text); padding: 18px; width: min(300px, 90vw); }
+dialog::backdrop { background: #0008; }
+dialog h3 { margin: 0 0 10px; }
+dialog label { display: grid; gap: 4px; margin-bottom: 10px; color: var(--muted); }
+dialog input { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+dialog .row { display: flex; justify-content: flex-end; gap: 8px; }
+dialog button { padding: 7px 14px; border-radius: 8px; border: 0; background: #2a2430; color: var(--text); cursor: pointer; font: inherit; }
+dialog .pri { background: var(--a); color: #fff; font-weight: 600; }
+#rail { scrollbar-width: none; }
+.zoom { display: flex; align-items: center; gap: 2px; margin-right: 4px; padding: 2px; border-radius: 9px; background: var(--panel); }
+.zoom button { width: auto !important; min-width: 26px; height: 26px !important; padding: 0 6px; font-size: 13px !important; font-weight: 700; }
+.zoom button.on { background: var(--a) !important; color: #fff !important; }
+.zoom span { color: var(--muted); font-size: 11px; min-width: 34px; text-align: center; }

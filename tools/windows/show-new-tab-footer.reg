@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+; Syndicates Client - undo hide-new-tab-footer.reg (Chrome's bottom bar comes back)
+
+[HKEY_CURRENT_USER\Software\Policies\Google\Chrome]
+"NTPFooterExtensionAttributionEnabled"=-

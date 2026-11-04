@@ -1,0 +1,110 @@
+{
+  "manifest_version": 3,
+  "version": "1.0",
+  "name": "Syndicates Cyber \u00b7 Cyan",
+  "description": "Futuristic tab strip, toolbar and address bar for Syndicates Client.",
+  "theme": {
+    "images": {
+      "theme_frame": "images/frame.png",
+      "theme_toolbar": "images/toolbar.png"
+    },
+    "colors": {
+      "frame": [
+        4,
+        10,
+        20
+      ],
+      "frame_inactive": [
+        2,
+        7,
+        14
+      ],
+      "frame_incognito": [
+        2,
+        6,
+        12
+      ],
+      "frame_incognito_inactive": [
+        2,
+        5,
+        10
+      ],
+      "toolbar": [
+        19,
+        24,
+        34
+      ],
+      "toolbar_text": [
+        240,
+        240,
+        248
+      ],
+      "toolbar_button_icon": [
+        63,
+        228,
+        255
+      ],
+      "tab_text": [
+        255,
+        255,
+        255
+      ],
+      "tab_background_text": [
+        140,
+        239,
+        255
+      ],
+      "tab_background_text_inactive": [
+        150,
+        150,
+        165
+      ],
+      "bookmark_text": [
+        178,
+        244,
+        255
+      ],
+      "omnibox_background": [
+        3,
+        35,
+        48
+      ],
+      "omnibox_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_background": [
+        5,
+        1,
+        10
+      ],
+      "ntp_text": [
+        255,
+        255,
+        255
+      ],
+      "ntp_link": [
+        0,
+        220,
+        255
+      ],
+      "button_background": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "tints": {
+      "buttons": [
+        -1,
+        -1,
+        -1
+      ]
+    },
+    "properties": {
+      "ntp_background_alignment": "bottom"
+    }
+  }
+}

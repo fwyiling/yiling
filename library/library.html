@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Syndicates · Manga library</title>
+  <link rel="stylesheet" href="library.css">
+</head>
+<body>
+  <main>
+    <header>
+      <img src="../icons/icon48.png" alt="" width="40" height="40">
+      <div><div class="kicker">Syndicates Client</div><h1>Manga library</h1></div>
+    </header>
+
+    <section class="search">
+      <input id="q" placeholder="Search MangaDex – e.g. Solo Leveling, 全职高手, One Piece" autocomplete="off">
+    </section>
+    <div id="results" class="results" hidden></div>
+    <h2 class="sec">Your download list</h2>
+    <section class="add">
+      <input id="addUrl" placeholder="Paste a MangaDex title, chapter or list link…" autocomplete="off">
+      <button id="addBtn" class="pri">Add</button>
+    </section>
+    <p class="hint">Tip: on any MangaDex page, open the Syndicates popup → <b>Save</b> → <b>Add to library</b>. Lists import every series in them.</p>
+
+    <section class="bar">
+      <div class="left">
+        <button id="dlNew" class="pri">Download new chapters</button>
+        <button id="dlAll">Download everything</button>
+      </div>
+      <div class="right">
+        <label>Format <select id="fmt"><option value="reader">Easy reader</option><option value="cbz">Comic files (.cbz)</option></select></label>
+        <label class="chk"><input type="checkbox" id="saver"> Smaller files</label>
+      </div>
+    </section>
+
+    <div id="status" class="status" hidden></div>
+    <div id="grid" class="grid"></div>
+    <p id="empty" class="empty" hidden>Your library is empty. Add a series above.</p>
+  </main>
+  <script type="module" src="library.js"></script>
+</body>
+</html>

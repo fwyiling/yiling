@@ -1,0 +1,50 @@
+/* Ad slots and promos */
+ytd-ad-slot-renderer,
+ytd-in-feed-ad-layout-renderer,
+ytd-banner-promo-renderer,
+ytd-statement-banner-renderer,
+ytd-promoted-sparkles-web-renderer,
+ytd-display-ad-renderer,
+ytd-companion-slot-renderer,
+ytd-player-legacy-desktop-watch-ads-renderer,
+#player-ads,
+#masthead-ad,
+.ytp-ad-overlay-container,
+.ytp-ad-module,
+.video-ads {
+  display: none !important;
+}
+
+/* Shorts (toggled by html.sc-hide-shorts) */
+html.sc-hide-shorts ytd-reel-shelf-renderer,
+html.sc-hide-shorts ytd-rich-shelf-renderer[is-shorts],
+html.sc-hide-shorts ytd-guide-entry-renderer:has(a[title="Shorts"]),
+html.sc-hide-shorts ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+html.sc-hide-shorts ytd-video-renderer:has(a[href^="/shorts/"]),
+html.sc-hide-shorts ytd-grid-video-renderer:has(a[href^="/shorts/"]),
+html.sc-hide-shorts ytd-rich-item-renderer:has(a[href^="/shorts/"]) {
+  display: none !important;
+}
+
+/* ---- Syndicates Client player extras (native ytp-* classes do most of the styling) ---- */
+#sc-yt-controls { display: flex; align-items: center; height: 100%; }
+.sc-yt-btn { display: inline-flex !important; align-items: center; justify-content: center; }
+#sc-yt-speed { width: auto !important; min-width: 48px; padding: 0 6px !important; }
+.sc-yt-speed-label { font: 600 13px/1 "YouTube Sans", Roboto, Arial, sans-serif; color: #fff; letter-spacing: .02em; }
+#sc-yt-menu { position: absolute; right: 12px; bottom: 60px; width: 300px; z-index: 70; border-radius: 12px; background: rgba(28, 28, 28, .92); text-shadow: 0 0 2px rgba(0, 0, 0, .5); overflow: hidden; }
+#sc-yt-menu .ytp-panel { position: static; width: 100%; }
+#sc-yt-menu .ytp-panel-menu { padding: 6px 0; }
+#sc-yt-menu .sc-yt-head { padding: 12px 15px 6px; font: 500 13px Roboto, Arial, sans-serif; color: #eee; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+#sc-yt-menu .ytp-menuitem { cursor: pointer; }
+#sc-yt-menu .ytp-menuitem-content { color: #ddd; }
+#sc-yt-segs { position: absolute; inset: 0; pointer-events: none; z-index: 33; }
+#sc-yt-segs > div { position: absolute; top: 0; bottom: 0; opacity: .85; }
+#sc-yt-toast {
+  position: absolute; left: 12px; bottom: 64px; z-index: 72; display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; border-radius: 8px; background: rgba(28, 28, 28, .9); color: #fff;
+  font: 500 14px Roboto, Arial, sans-serif; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; pointer-events: none;
+}
+#sc-yt-toast.show { opacity: 1; transform: none; pointer-events: auto; }
+#sc-yt-toast button { background: none; border: 0; color: #3ea6ff; font: 600 14px Roboto, Arial, sans-serif; cursor: pointer; padding: 0; }
+.sc-yt-has-dislikes { width: auto !important; padding: 0 16px 0 12px !important; gap: 6px; }
+html.sc-hide-endcards .ytp-ce-element, html.sc-hide-endcards .ytp-ce-covering-overlay { display: none !important; }

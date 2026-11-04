@@ -1,0 +1,239 @@
+{
+  "manifest_version": 3,
+  "name": "Syndicates Client",
+  "version": "0.17.1",
+  "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
+  "permissions": [
+    "declarativeNetRequest",
+    "storage",
+    "scripting",
+    "downloads",
+    "downloads.open",
+    "cookies",
+    "privacy",
+    "notifications",
+    "alarms",
+    "tabs",
+    "topSites",
+    "favicon",
+    "webNavigation",
+    "unlimitedStorage",
+    "webRequest",
+    "browsingData",
+    "sidePanel",
+    "contentSettings",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Syndicates Client",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ads",
+        "enabled": true,
+        "path": "rules/ads.json"
+      },
+      {
+        "id": "easylist",
+        "enabled": false,
+        "path": "rules/easylist.json"
+      },
+      {
+        "id": "easyprivacy",
+        "enabled": false,
+        "path": "rules/easyprivacy.json"
+      }
+    ]
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab/newtab.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/popguard-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*"
+      ],
+      "js": [
+        "content/yt-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/theme.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content/youtube.js",
+        "content/yt-features.js"
+      ],
+      "css": [
+        "content/youtube.css",
+        "skins/youtube.css"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/dock.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://www.google.ca/search*",
+        "*://www.google.co.uk/",
+        "*://www.google.co.uk/?*",
+        "*://www.google.co.uk/search*",
+        "*://www.google.co.uk/webhp*",
+        "*://www.google.com.au/search*",
+        "*://www.google.com.hk/search*",
+        "*://www.google.com.sg/search*",
+        "*://www.google.com.tw/search*",
+        "*://www.google.com/",
+        "*://www.google.com/?*",
+        "*://www.google.com/search*",
+        "*://www.google.com/webhp*"
+      ],
+      "css": [
+        "skins/google.css"
+      ],
+      "run_at": "document_start",
+      "js": [
+        "content/recolor.js"
+      ]
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/cookies.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/popguard.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/autonext.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/hotkeys.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "*://www.google.com/",
+        "*://www.google.com/?*",
+        "*://www.google.com/webhp*",
+        "*://www.google.co.uk/",
+        "*://www.google.co.uk/?*",
+        "*://www.google.co.uk/webhp*"
+      ],
+      "js": [
+        "content/google-home.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "blocked/*",
+        "icons/*",
+        "_favicon/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidebar/sidebar.html"
+  },
+  "commands": {
+    "open-sidebar": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Open the Syndicates sidebar"
+    },
+    "open-home": {
+      "suggested_key": {
+        "default": "Alt+Shift+H"
+      },
+      "description": "Go to the Syndicates home page"
+    }
+  }
+}

@@ -1,0 +1,79 @@
+/* Syndicates Client – Google Search skin. Colours come from your home-page theme:
+   Chrome+ (default) = calm tones of your Chrome colour; Cyber = neon. Active while <html> has .sc-skin */
+html.sc-skin { color-scheme: dark; }
+html.sc-skin body {
+  background: radial-gradient(1000px 480px at 85% -10%, color-mix(in srgb, var(--sc-glow) 22%, transparent), transparent 65%), var(--sc-base) !important;
+  background-attachment: fixed !important;
+}
+html.sc-skin #main, html.sc-skin #cnt, html.sc-skin #rcnt, html.sc-skin #center_col, html.sc-skin #rso,
+html.sc-skin #botstuff, html.sc-skin #fbar, html.sc-skin #sfooter, html.sc-skin .sfbg { background: transparent !important; }
+html.sc-skin #searchform { background: color-mix(in srgb, var(--sc-base) 88%, transparent) !important; backdrop-filter: blur(12px); box-shadow: inset 0 -1px 0 var(--sc-border); }
+html.sc-skin form[role="search"] textarea { caret-color: var(--sc-a); }
+html.sc-skin #rso h3, html.sc-skin #botstuff h3 { color: var(--sc-link) !important; }
+html.sc-skin #rso a:visited h3 { color: color-mix(in srgb, var(--sc-link) 70%, #b9a3ff) !important; }
+html.sc-skin { scrollbar-color: var(--sc-border) transparent; }
+html.sc-skin ::selection { background: color-mix(in srgb, var(--sc-a) 55%, transparent); color: #fff; }
+html.sc-skin mark { background: color-mix(in srgb, var(--sc-a) 30%, transparent) !important; color: inherit !important; }
+
+/* Cyber only: neon grid, glowing logo and titles */
+html.sc-skin.sc-cyber body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(color-mix(in srgb, var(--sc-a) 9%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--sc-a) 9%, transparent) 1px, transparent 1px);
+  background-size: 46px 46px; -webkit-mask: linear-gradient(transparent 30%, #000); mask: linear-gradient(transparent 30%, #000);
+}
+html.sc-skin.sc-cyber #searchform { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--sc-a) 55%, transparent); }
+html.sc-skin.sc-cyber #rso a:hover h3 { text-shadow: 0 0 10px color-mix(in srgb, var(--sc-a) 80%, transparent); }
+html.sc-skin.sc-cyber #logo svg, html.sc-skin.sc-cyber a[href^="/webhp"] svg { filter: drop-shadow(0 0 10px var(--sc-a)); }
+
+/* Google colour variables – mapping from catppuccin/userstyles (MIT) */
+html.sc-skin, html.sc-skin body {
+  --tdee01b39543f1cac: var(--sc-base) !important;
+  --uv-styles-color-primary: var(--sc-base) !important;
+  --xhUGwc: var(--sc-base) !important;
+  --EpFNW: var(--sc-mantle) !important;
+  --TSWZIb: var(--sc-mantle) !important;
+  --XKMDxc: var(--sc-mantle) !important;
+  --uv-styles-color-surface: var(--sc-crust) !important;
+  --gS5jXb: var(--sc-surface) !important;
+  --gm3-sys-color-primary: var(--sc-surface) !important;
+  --mXZkqc: var(--sc-surface) !important;
+  --t5feec22832a0fdd6: var(--sc-surface) !important;
+  --tcc8c9ef487836e2b: var(--sc-surface) !important;
+  --uv-styles-color-tertiary: var(--sc-surface) !important;
+  --COEmY: var(--sc-text) !important;
+  --YLNNHc: var(--sc-text) !important;
+  --bbQxAb: var(--sc-text) !important;
+  --t6a0469853a1a02c1: var(--sc-text) !important;
+  --t6c7325fca9d536d4: var(--sc-text) !important;
+  --t7d1a3050c2c1c0a5: var(--sc-text) !important;
+  --t9ab8d922307d428d: var(--sc-text) !important;
+  --te8f1ea4d4928be48: var(--sc-text) !important;
+  --tefdc5886c2f04483: var(--sc-text) !important;
+  --tf7148cf5018d5074: var(--sc-text) !important;
+  --uv-styles-color-icon-default: var(--sc-text) !important;
+  --uv-styles-color-icon-on-scrim: var(--sc-text) !important;
+  --uv-styles-color-icon-on-tertiary: var(--sc-text) !important;
+  --uv-styles-color-on-scrim: var(--sc-text) !important;
+  --uv-styles-color-on-tertiary: var(--sc-text) !important;
+  --uv-styles-color-text-emphasis: var(--sc-text) !important;
+  --IXoxUe: var(--sc-subtext) !important;
+  --ta884a309a24f44f4: var(--sc-subtext) !important;
+  --uv-styles-color-icon-on-secondary: var(--sc-subtext) !important;
+  --uv-styles-color-text-default: var(--sc-subtext) !important;
+  --JKqx2: var(--sc-link) !important;
+  --Nsm0ce: var(--sc-link) !important;
+  --gm3-sys-color-on-primary: var(--sc-link) !important;
+  --ta83cba65577ef850: var(--sc-link) !important;
+  --uv-styles-color-on-primary: var(--sc-link) !important;
+  --uv-styles-color-text-primary: var(--sc-link) !important;
+  --t342c96645d13ae13: var(--sc-a) !important;
+}
+
+/* Google homepage (new tabs open here): calmer, without the corner and footer clutter */
+html.sc-ghome.sc-skin [role="contentinfo"], html.sc-ghome.sc-skin .o3j99.c93Gbe, html.sc-ghome.sc-skin #gb a[href*="about.google"],
+html.sc-ghome.sc-skin #gb a[href*="store.google"], html.sc-ghome.sc-skin .uU7dJb { display: none !important; }
+html.sc-ghome.sc-skin body { background: radial-gradient(900px 520px at 50% -12%, color-mix(in srgb, var(--sc-glow) 26%, transparent), transparent 70%), var(--sc-base) !important; }
+/* paint the whole window, even below short pages (no strip at the bottom) */
+html.sc-skin { background: var(--sc-base) !important; min-height: 100%; }
+html.sc-skin body { min-height: 100vh; }
+html.sc-ghome.sc-skin body { background-attachment: fixed !important; }
