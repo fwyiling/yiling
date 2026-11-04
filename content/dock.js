@@ -80,6 +80,7 @@
       <div class="out"></div>
       <div class="foot">
         <button class="link" data-act="hide">Hide on this site</button>
+        ${s.forceDark ? `<button class="link" data-act="darkhere">${(s.darkExclude || []).includes(host) ? 'Dark mode here' : 'No dark mode here'}</button>` : ''}
         <button class="link" data-act="settings">All settings →</button>
       </div>`;
   }
@@ -120,6 +121,11 @@
       case 'save': saveChapter(); return;
       case 'settings': send({ type: 'open-settings' }); return;
       case 'hide': await send({ type: 'hide-dock-here', host }); return;
+      case 'darkhere': {
+        const ex = new Set(s.darkExclude || []);
+        ex.has(host) ? ex.delete(host) : ex.add(host);
+        await chrome.storage.sync.set({ darkExclude: [...ex] }); return;
+      }
     }
     render();
   }

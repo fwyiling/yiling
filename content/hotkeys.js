@@ -1,6 +1,7 @@
 // Single-key shortcuts that work on any page while you're not typing:
 //   ]  → sidebar apps   (change it in the popup → Style)
 (() => {
+  const safeSend = (m) => { try { const p = chrome.runtime.sendMessage(m); if (p && p.catch) p.catch(() => {}); return p || Promise.resolve(); } catch { return Promise.resolve(); } };
   if (window.top !== window) return;
   let keys = { hotSidebar: ']' };
   chrome.storage.sync.get(['hotSidebar'], (v) => { keys = { ...keys, ...Object.fromEntries(Object.entries(v).filter(([, x]) => x != null)) }; });
@@ -17,6 +18,6 @@
     const which = e.key === keys.hotSidebar ? 'sidebar' : null;
     if (!which || !e.key) return;
     e.preventDefault(); e.stopPropagation();
-    chrome.runtime.sendMessage({ type: 'hotkey', which }).catch(() => {});
+    safeSend({ type: 'hotkey', which });
   }, true);
 })();

@@ -61,6 +61,7 @@ To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the n
 cd tools && npm install
 npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
 npx esbuild ../content/src/autonext.js --bundle --format=iife --outfile=../content/autonext.js
+node build-darkmode.mjs
 ```
 
 ## Updating filter lists
@@ -84,4 +85,5 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
 - [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner auto-reject engine + rules, vendored in `lib/vendor/`.
 - Pagetual, Privacy Badger, Cookie AutoDelete, Popup Blocker (strict) – behaviour references (own code).
+- [Dark Reader](https://github.com/darkreader/darkreader) (MIT) – dark-mode engine, bundled into `content/darkmode.js` (`node tools/build-darkmode.mjs`).
 - [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.

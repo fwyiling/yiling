@@ -99,6 +99,7 @@ async function apply(changed) {
 
   if (has('malware')) await applyMalwareRules(s.malware);
   if (has('learnTrackers')) await applyLearnedRule();
+  if (has('forceDark')) await syncDarkScript(!!s.forceDark);
   if (changed && changed.includes('autoClean') && s.autoClean && !(s.keepSites || []).length) await seedKeepList();
 }
 
@@ -142,7 +143,8 @@ async function updateMalwareList() {
     await chrome.storage.local.set({ malwareDomains: unique, malwareUpdated: Date.now() });
     await applyMalwareRules((await getSettings()).malware);
   } catch (e) {
-    console.warn('malware list update failed', e);
+    console.warn('malware list update failed – retrying in 5 minutes', e?.message || e);
+    chrome.alarms.create('malware-retry', { delayInMinutes: 5 });
   }
 }
 
@@ -232,7 +234,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   await updateMalwareList();
 });
 chrome.runtime.onStartup.addListener(apply);
-chrome.alarms.onAlarm.addListener((a) => a.name === 'malware-update' && updateMalwareList());
+chrome.alarms.onAlarm.addListener((a) => (a.name === 'malware-update' || a.name === 'malware-retry') && updateMalwareList());
 chrome.storage.onChanged.addListener((c, area) => {
   if (area !== 'sync') return;
   settingsCache = null;
@@ -395,6 +397,13 @@ for (const [owner, sites] of Object.entries({
   apple: ['apple.com', 'icloud.com', 'mzstatic.com'],
   x: ['x.com', 'twitter.com', 'twimg.com'],
   reddit: ['reddit.com', 'redd.it', 'redditstatic.com', 'redditmedia.com'],
+  bilibili: ['bilibili.com', 'hdslb.com', 'biliapi.net', 'biliapi.com', 'bilivideo.com', 'bilivideo.cn', 'biligame.com', 'b23.tv'],
+  tencent: ['qq.com', 'gtimg.com', 'gtimg.cn', 'qpic.cn', 'tencent.com', 'wechat.com', 'myqcloud.com'],
+  alibaba: ['taobao.com', 'tmall.com', 'alicdn.com', 'alipay.com', 'aliyun.com', 'alibaba.com', 'aliexpress.com', 'mmstat.com'],
+  baidu: ['baidu.com', 'bdstatic.com', 'bdimg.com', 'baidupcs.com'],
+  zhihu: ['zhihu.com', 'zhimg.com'],
+  valve: ['steampowered.com', 'steamcommunity.com', 'steamstatic.com', 'steamusercontent.com'],
+  github: ['github.com', 'githubusercontent.com', 'githubassets.com'],
 })) for (const s of sites) ENTITY[s] = owner;
 const entity = (site) => ENTITY[site] || site;
 // services sites need to work: never learned as trackers
@@ -402,7 +411,7 @@ const NEVER_BLOCK = new Set(['gstatic.com', 'googleapis.com', 'recaptcha.net', '
   'akamaihd.net', 'akamaized.net', 'jsdelivr.net', 'unpkg.com', 'fastly.net', 'bootstrapcdn.com', 'fontawesome.com', 'typekit.net', 'ytimg.com',
   'googlevideo.com', 'youtube.com', 'youtube-nocookie.com', 'vimeo.com', 'vimeocdn.com', 'paypal.com', 'paypalobjects.com', 'stripe.com', 'stripe.network',
   'github.com', 'githubusercontent.com', 'google.com', 'apple.com', 'microsoft.com', 'microsoftonline.com', 'live.com', 'twitch.tv', 'discord.com',
-  'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com']);
+  'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'steampowered.com', 'steamcommunity.com', 'hcaptcha.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com']);
 let learn = null, learnDirty = false;
 async function loadLearn() {
   if (!learn) { const { learned } = await chrome.storage.local.get('learned'); learn = learned || { seen: {}, blocked: [] }; }
@@ -529,6 +538,35 @@ chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId, url, trans
 });
 chrome.tabs.onRemoved.addListener((id) => { lastClicks.delete(id); tabTopSite.delete(id); recentPopupBlock.delete(id); });
 
+// ---- dark mode everywhere (Dark Reader engine), injected only while it's on ----
+async function syncDarkScript(on) {
+  const have = await chrome.scripting.getRegisteredContentScripts({ ids: ['darkmode', 'darkmode-proxy'] }).catch(() => []);
+  if (on && !have.length) {
+    await chrome.scripting.registerContentScripts([
+      { id: 'darkmode-proxy', js: ['content/darkmode-proxy.js'], matches: ['http://*/*', 'https://*/*'], runAt: 'document_start', world: 'MAIN' },
+      { id: 'darkmode', js: ['content/darkmode.js'], matches: ['http://*/*', 'https://*/*'], runAt: 'document_start' },
+    ]).catch((e) => console.warn('dark mode', e));
+    // turn it on in tabs that are already open
+    for (const t of await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })) {
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['content/darkmode-proxy.js'], world: 'MAIN' }).catch(() => {});
+      chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['content/darkmode.js'] }).catch(() => {});
+    }
+  } else if (!on && have.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: have.map((x) => x.id) }).catch(() => {});
+  }
+}
+async function drFetch(url) {
+  const r = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const type = r.headers.get('content-type') || '';
+  if (/^(text\/|application\/(json|javascript|xml))|css|svg/.test(type)) return { text: await r.text(), type };
+  const buf = new Uint8Array(await r.arrayBuffer());
+  if (buf.length > 3e6) throw new Error('too large');
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return { b64: btoa(bin), type };
+}
+
 // ---- messages from the popup and the in-page dock ----
 async function scanTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -569,6 +607,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'scan': () => scanTab(tabId),
     'start-job': () => startJob(msg.job),
     'allow-once': () => allowOnce(msg.host),
+    'dr-fetch': () => drFetch(msg.url),
     'sidebar-allow': () => sidebarAllow(msg.url),
     'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
     'float-app': () => chrome.windows.create({ url: msg.url, type: 'popup', width: msg.width || 480, height: msg.height || 760, focused: true }),

@@ -3703,8 +3703,17 @@
   _config = /* @__PURE__ */ new WeakMap();
 
   // ../content/src/cookies.js
-  var consent = new AutoConsent((msg) => chrome.runtime.sendMessage({ ...msg, __ac: true }).catch(() => {
-  }));
+  var safeSend = (m) => {
+    try {
+      const p = chrome.runtime.sendMessage(m);
+      if (p && p.catch) p.catch(() => {
+      });
+      return p || Promise.resolve();
+    } catch {
+      return Promise.resolve();
+    }
+  };
+  var consent = new AutoConsent((msg) => safeSend({ ...msg, __ac: true }));
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.__ac) consent.receiveMessageCallback(msg);
   });

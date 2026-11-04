@@ -36,10 +36,7 @@
     const css = (s.siteCss || {})[location.hostname] || (s.siteCss || {})[location.hostname.replace(/^www\./, '')] || '';
     let out = '';
     if (s.accentPages) out += `html{scrollbar-color:${accent} transparent}::selection{background:${accent};color:#fff}`;
-    if (s.forceDark) {
-      out += 'html{filter:invert(1) hue-rotate(180deg)!important;background:#fff}'
-        + 'img,video,picture,canvas,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important}';
-    }
+    // dark mode is handled by content/darkmode.js (Dark Reader engine)
     out += css ? '\n' + css : '';
     if (!out && !style) return;
     if (!style) {

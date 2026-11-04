@@ -1,6 +1,7 @@
 // Isolated half of the pop-up guard: shows "Blocked a pop-up · Open anyway", reports your
 // clicks to the background (so it can tell real link clicks from hijacks), shares the on/off flag.
 (() => {
+  const safeSend = (m) => { try { const p = chrome.runtime.sendMessage(m); if (p && p.catch) p.catch(() => {}); return p || Promise.resolve(); } catch { return Promise.resolve(); } };
   if (window.top !== window) return;
   chrome.storage.sync.get(['popupBlock', 'allowlist'], ({ popupBlock, allowlist }) => {
     const host = location.hostname.replace(/^www\./, '');
@@ -13,7 +14,7 @@
     const el = e.target instanceof Element ? e.target : null;
     const a = el?.closest('a[href]');
     const interactive = !!el?.closest('a[href],button,input,select,label,[role=button],[role=link],[onclick],[tabindex]');
-    chrome.runtime.sendMessage({ type: 'user-click', href: a ? a.href : null, interactive }).catch(() => {});
+    safeSend({ type: 'user-click', href: a ? a.href : null, interactive });
   }, true);
 
   let box, timer;
