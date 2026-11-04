@@ -191,7 +191,7 @@
       const say = (html) => {
         bar.innerHTML = html;
       };
-      say("Shield Client \xB7 the next chapter loads automatically when you get here \u2193");
+      say("Syndicates Client \xB7 the next chapter loads automatically when you get here \u2193");
       (document.querySelector("main, article, #content, .content") || document.body).append(bar);
       const io = new IntersectionObserver((es) => {
         if (es[0].isIntersecting) load();

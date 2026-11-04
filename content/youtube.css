@@ -26,7 +26,7 @@ html.sc-hide-shorts ytd-rich-item-renderer:has(a[href^="/shorts/"]) {
   display: none !important;
 }
 
-/* ---- Shield Client player extras (native ytp-* classes do most of the styling) ---- */
+/* ---- Syndicates Client player extras (native ytp-* classes do most of the styling) ---- */
 #sc-yt-controls { display: flex; align-items: center; height: 100%; }
 .sc-yt-btn { display: inline-flex !important; align-items: center; justify-content: center; }
 #sc-yt-speed { width: auto !important; min-width: 48px; padding: 0 6px !important; }

@@ -1,4 +1,4 @@
-/* Shield Client – cyber skin for YouTube. Active only while <html> has .sc-skin */
+/* Syndicates Client – cyber skin for YouTube. Active only while <html> has .sc-skin */
 html.sc-skin {
 
   --yt-spec-call-to-action: var(--sc-a) !important;

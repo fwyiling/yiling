@@ -1,14 +1,14 @@
-"""Generate Chrome themes (tab strip, toolbar, address bar) matching Shield Client's cyber look.
+"""Generate Chrome themes (tab strip, toolbar, address bar) matching Syndicates Client's cyber look.
 Usage: python3 tools/make-themes.py   -> writes themes/<name>/ (load each as an unpacked extension)
 Edit THEMES below to make your own colors."""
 import json, math, os, random
 from PIL import Image, ImageDraw, ImageFilter
 
 THEMES = {
-    'cyber-red':    {'name': 'Shield Cyber · Red',    'accent': (250, 30, 78),  'base': (11, 6, 20),  'glow2': (140, 30, 255)},
-    'cyber-cyan':   {'name': 'Shield Cyber · Cyan',   'accent': (0, 220, 255),  'base': (4, 10, 20),  'glow2': (40, 90, 255)},
-    'cyber-violet': {'name': 'Shield Cyber · Violet', 'accent': (170, 80, 255), 'base': (10, 5, 22),  'glow2': (255, 40, 160)},
-    'cyber-green':  {'name': 'Shield Cyber · Matrix', 'accent': (40, 255, 120), 'base': (3, 12, 8),   'glow2': (0, 160, 120)},
+    'cyber-red':    {'name': 'Syndicates Cyber · Red',    'accent': (250, 30, 78),  'base': (11, 6, 20),  'glow2': (140, 30, 255)},
+    'cyber-cyan':   {'name': 'Syndicates Cyber · Cyan',   'accent': (0, 220, 255),  'base': (4, 10, 20),  'glow2': (40, 90, 255)},
+    'cyber-violet': {'name': 'Syndicates Cyber · Violet', 'accent': (170, 80, 255), 'base': (10, 5, 22),  'glow2': (255, 40, 160)},
+    'cyber-green':  {'name': 'Syndicates Cyber · Matrix', 'accent': (40, 255, 120), 'base': (3, 12, 8),   'glow2': (0, 160, 120)},
 }
 
 def mix(a, b, t): return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
@@ -55,7 +55,7 @@ for key, c in THEMES.items():
     rgb = lambda t: list(t)
     manifest = {
         'manifest_version': 3, 'version': '1.0', 'name': c['name'],
-        'description': 'Futuristic tab strip, toolbar and address bar for Shield Client.',
+        'description': 'Futuristic tab strip, toolbar and address bar for Syndicates Client.',
         'theme': {
             'images': {'theme_frame': 'images/frame.png', 'theme_toolbar': 'images/toolbar.png'},
             'colors': {

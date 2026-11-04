@@ -40,7 +40,7 @@ import { scanDocument } from '../../lib/extract.js';
     bar.id = 'sc-autonext';
     bar.style.cssText = 'margin:32px auto;max-width:720px;padding:14px 18px;border-radius:12px;background:#17121f;color:#e9e3f3;font:500 14px/1.4 system-ui,sans-serif;text-align:center;box-shadow:0 4px 20px #0005';
     const say = (html) => { bar.innerHTML = html; };
-    say('Shield Client · the next chapter loads automatically when you get here ↓');
+    say('Syndicates Client · the next chapter loads automatically when you get here ↓');
     (document.querySelector('main, article, #content, .content') || document.body).append(bar);
 
     const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) load(); }, { rootMargin: '1600px 0px' });

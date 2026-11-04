@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "version": "1.0",
-  "name": "Shield Cyber \u00b7 Red",
-  "description": "Futuristic tab strip, toolbar and address bar for Shield Client.",
+  "name": "Syndicates Cyber \u00b7 Red",
+  "description": "Futuristic tab strip, toolbar and address bar for Syndicates Client.",
   "theme": {
     "images": {
       "theme_frame": "images/frame.png",

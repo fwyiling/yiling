@@ -1,4 +1,4 @@
-// Shield Client home page – every part is configurable from the Customize drawer.
+// Syndicates Client home page – every part is configurable from the Customize drawer.
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
@@ -714,7 +714,7 @@ function renderBackup(wrap) {
   };
   const im = document.createElement('label'); im.textContent = 'Import';
   const f = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json' });
-  f.onchange = async () => { try { set({ ...DEFAULTS, ...JSON.parse(await f.files[0].text()) }); bgKey = ''; buildDrawer(); render(); } catch { alert('That file is not a Shield Client backup.'); } };
+  f.onchange = async () => { try { set({ ...DEFAULTS, ...JSON.parse(await f.files[0].text()) }); bgKey = ''; buildDrawer(); render(); } catch { alert('That file is not a Syndicates Client backup.'); } };
   im.append(f);
   const rs = Object.assign(document.createElement('button'), { textContent: 'Reset', className: 'danger' });
   rs.onclick = () => { if (confirm('Reset the home page to default settings? Your notes and to-dos will be cleared.')) { s = { ...DEFAULTS }; set({}); bgKey = ''; buildDrawer(); } };
@@ -755,7 +755,7 @@ setInterval(tick, 1000);
 async function paintHud() {
   const { adBlock = true } = await chrome.storage.sync.get('adBlock');
   $('hud').classList.toggle('off', !adBlock);
-  $('hudText').textContent = adBlock ? 'Shield online' : 'Shield offline';
+  $('hudText').textContent = adBlock ? 'Syndicates online' : 'Syndicates offline';
 }
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === 'sync' && c.adBlock) paintHud();

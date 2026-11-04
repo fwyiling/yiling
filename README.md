@@ -1,11 +1,11 @@
-# Shield Client
+# Syndicates Client
 
 A Chrome (Manifest V3) extension that turns Chrome into a privacy-first, Opera GX-style client:
 ad and tracker blocking, YouTube extras, manga/novel downloads, sidebar apps, and a custom home page.
 
 ## Install / update
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick this folder.
-2. To update: `git pull`, then click reload ↻ on Shield Client (the popup shows the version, e.g. v0.14.0) and refresh open tabs.
+2. To update: in `chrome://extensions`, check **Loaded from** on the Syndicates Client card – run `git pull` in *that* folder, click reload ↻, and refresh open tabs. The popup shows the version next to the name.
 
 ## Shortcuts
 | Key | What it does |
@@ -28,14 +28,14 @@ ad and tracker blocking, YouTube extras, manga/novel downloads, sidebar apps, an
 
 ## YouTube
 - Ads are removed from YouTube's player data before the player reads them (the uBlock Origin Lite approach), so the video is never interrupted; YouTube's playback requests are never blocked; the "ad blockers not allowed" popup is closed.
-- Native-looking player buttons: **speed** (click / scroll), **screenshot** (PNG), and a **Shield menu** with skip ads, SponsorBlock, dislikes, loop, hide end-screen cards, hide Shorts, volume boost (up to 300%) and preferred quality.
+- Native-looking player buttons: **speed** (click / scroll), **screenshot** (PNG), and a **Syndicates menu** with skip ads, SponsorBlock, dislikes, loop, hide end-screen cards, hide Shorts, volume boost (up to 300%) and preferred quality.
 - **SponsorBlock** auto-skips sponsor reads, self-promos and "subscribe" reminders (segments shown on the progress bar, with Undo). **Return YouTube Dislike** shows dislike counts.
 
 ## Manga, manhwa & novels
 - **Download a chapter or the whole series** (popup → Save, or the floating dock).
   - **MangaDex** uses the official API through your open MangaDex tab: pick English / 中文 (简体) / 中文 (繁體) / any language, a range, optional data-saver. **Test MangaDex connection** in the Save tab shows which step fails.
   - **Other sites:** finds the chapter list on the page and fetches each chapter (loads JavaScript readers in a background tab).
-  - **Easy to read:** manga → a folder with a `Read <series>.html` you double-click (chapter menu, ← → keys, remembers your place) or `.cbz` per chapter; novels → one `.html` book, `.epub` or `.txt`. Saved in `Downloads/Shield Client/<series>/`.
+  - **Easy to read:** manga → a folder with a `Read <series>.html` you double-click (chapter menu, ← → keys, remembers your place) or `.cbz` per chapter; novels → one `.html` book, `.epub` or `.txt`. Saved in `Downloads/Syndicates Client/<series>/`.
 - **Auto-load next chapter:** on manga & novel sites the next chapter appears as you scroll (falls back to a big "Next chapter" button on JavaScript-only readers).
 
 ## Look & feel
@@ -52,13 +52,16 @@ Apps stay loaded while you switch (chats stay connected, music keeps playing). *
 Drag the panel's left edge to make it wider.
 
 ## Chrome's own bars
-- **Bottom bar on the new tab page** ("Shield Client" link + "Customise Chrome"): Chrome draws it. **Right-click it → Hide footer.**
+- **Bottom bar on the new tab page** ("Syndicates Client" link + "Customise Chrome"): Chrome adds it to every extension's new tab page.
+  **Right-click it → Hide footer**, or double-click `tools\windows\hide-new-tab-footer.reg` and restart Chrome
+  (sets the official policy `NTPFooterExtensionAttributionEnabled` = off; Chrome then says "Managed by your organization" – normal).
+  Undo with `show-new-tab-footer.reg`.
 - **Tab strip / address bar / bookmarks bar:** only a Chrome *theme* can restyle them. Matching themes are in `themes/`
   (red, cyan, violet, matrix): `chrome://extensions` → **Load unpacked** → pick e.g. `themes/cyber-red` (the theme folder itself).
   Popup → Style → **Reskin Chrome's top bar & footer** walks you through it. Make your own with `python3 tools/make-themes.py`.
 
 ## Console messages
-`net::ERR_BLOCKED_BY_CLIENT` lines in DevTools are Shield Client blocking ads/trackers – expected with any blocker.
+`net::ERR_BLOCKED_BY_CLIENT` lines in DevTools are Syndicates Client blocking ads/trackers – expected with any blocker.
 
 ## Building bundled parts
 ```bash

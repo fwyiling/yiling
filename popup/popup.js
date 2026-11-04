@@ -182,7 +182,7 @@ async function runMdTest() {
     }));
     $('mdTest').disabled = false; $('mdTest').textContent = 'Test again';
     $('mdCopy').hidden = false;
-    $('mdCopy').onclick = () => navigator.clipboard.writeText(`Shield Client v${chrome.runtime.getManifest().version} MangaDex test\n` + tab.url + '\n' + steps.map((st) => `${st.ok ? 'OK ' : 'FAIL'} ${st.name}: ${st.detail} (${st.ms ?? 0}ms)`).join('\n')).then(() => ($('mdCopy').textContent = 'Copied ✓'));
+    $('mdCopy').onclick = () => navigator.clipboard.writeText(`Syndicates Client v${chrome.runtime.getManifest().version} MangaDex test\n` + tab.url + '\n' + steps.map((st) => `${st.ok ? 'OK ' : 'FAIL'} ${st.name}: ${st.detail} (${st.ms ?? 0}ms)`).join('\n')).then(() => ($('mdCopy').textContent = 'Copied ✓'));
   }
 }
 

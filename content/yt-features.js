@@ -9,7 +9,7 @@
 
   const svg = (d, vb = '0 0 24 24') => `<svg height="100%" viewBox="${vb}" width="100%" fill="#fff"><path d="${d}"/></svg>`;
   const ICON = {
-    shield: svg('M12 3 5.5 5.6v5.2c0 4.2 2.8 8 6.5 9.2 3.7-1.2 6.5-5 6.5-9.2V5.6L12 3Zm-1.2 12.3-3.1-3.1 1.1-1.1 2 2 4.6-4.6 1.1 1.1-5.7 5.7Z', '-6 -6 36 36'),
+    shield: '<svg height="100%" width="100%" viewBox="-40 -40 208 208" fill="none" stroke="#fff"><path d="M17 27H111L64 111Z" stroke-width="13"/><path d="M89 42H45L55 59H80L67 82H50" stroke-width="12"/></svg>',
     camera: svg('M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z', '-6 -6 36 36'),
   };
   const $p = () => document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -35,7 +35,7 @@
     box.id = 'sc-yt-controls';
     const speed = mkButton('sc-yt-speed', '<span class="sc-yt-speed-label">1×</span>', 'Playback speed (click to change, scroll to fine-tune)');
     const shot = mkButton('sc-yt-shot', ICON.camera, 'Screenshot (saves a PNG)');
-    const shield = mkButton('sc-yt-shield', ICON.shield, 'Shield Client');
+    const shield = mkButton('sc-yt-shield', ICON.shield, 'Syndicates Client');
     speed.onclick = () => { const v = $v(); if (!v) return; const steps = [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 0.75]; const i = steps.indexOf(v.playbackRate); v.playbackRate = steps[(i + 1) % steps.length]; };
     speed.addEventListener('wheel', (e) => { const v = $v(); if (!v) return; e.preventDefault(); v.playbackRate = Math.min(4, Math.max(0.25, Math.round((v.playbackRate + (e.deltaY < 0 ? 0.25 : -0.25)) * 100) / 100)); }, { passive: false });
     shot.onclick = screenshot;
@@ -81,7 +81,7 @@
     const menu = document.createElement('div');
     menu.id = 'sc-yt-menu';
     menu.className = 'ytp-popup ytp-settings-menu';
-    menu.innerHTML = '<div class="ytp-panel"><div class="ytp-panel-header sc-yt-head"><span>Shield Client</span></div><div class="ytp-panel-menu" role="menu"></div></div>';
+    menu.innerHTML = '<div class="ytp-panel"><div class="ytp-panel-header sc-yt-head"><span>Syndicates Client</span></div><div class="ytp-panel-menu" role="menu"></div></div>';
     const list = menu.querySelector('.ytp-panel-menu');
     for (const it of ITEMS) {
       const row = document.createElement('div');

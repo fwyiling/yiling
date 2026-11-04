@@ -1,0 +1,9 @@
+Windows Registry Editor Version 5.00
+
+; Syndicates Client - hide Chrome's bottom bar on the new tab page
+; Sets the official Chrome policy NTPFooterExtensionAttributionEnabled = false (Chrome 138+).
+; Double-click, confirm, then restart Chrome. Undo with show-new-tab-footer.reg.
+; Note: with any policy set, Chrome's menu shows "Managed by your organization" - that is normal.
+
+[HKEY_CURRENT_USER\Software\Policies\Google\Chrome]
+"NTPFooterExtensionAttributionEnabled"=dword:00000000

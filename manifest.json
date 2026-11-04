@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Shield Client",
-  "version": "0.14.0",
+  "name": "Syndicates Client",
+  "version": "0.15.0",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -32,7 +32,7 @@
   },
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Shield Client",
+    "default_title": "Syndicates Client",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -206,7 +206,7 @@
       "suggested_key": {
         "default": "Alt+Shift+S"
       },
-      "description": "Open the Shield sidebar"
+      "description": "Open the Syndicates sidebar"
     }
   }
 }

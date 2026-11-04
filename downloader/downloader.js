@@ -191,7 +191,7 @@ async function scanInTab(url) {
   }
 }
 
-// --- saving through chrome.downloads so files land in Downloads/Shield Client/<series>/ ---
+// --- saving through chrome.downloads so files land in Downloads/Syndicates Client/<series>/ ---
 let lastId = null;
 const waiters = new Map();
 chrome.downloads.onChanged.addListener((d) => {
@@ -224,7 +224,7 @@ $('start').onclick = async () => {
   $('setup').hidden = true; $('run').hidden = false;
   $('cancel').onclick = () => { cancelled = true; $('now').textContent = 'Cancelling…'; };
 
-  const base = `Shield Client/${safe(job.series)}`;
+  const base = `Syndicates Client/${safe(job.series)}`;
   const width = Math.max(3, String(picked.length).length);
   const li = picked.map((c) => {
     const el = document.createElement('li');

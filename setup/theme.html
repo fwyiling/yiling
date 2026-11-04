@@ -31,9 +31,9 @@
 </head>
 <body>
 <main>
-  <div class="k">Shield Client</div>
+  <div class="k">Syndicates Client</div>
   <h1>Reskin Chrome's top bar &amp; footer</h1>
-  <p class="sub">Chrome only lets a <b>theme</b> recolour the tab strip, address bar, bookmarks bar and the new-tab footer. Extensions can't do it themselves, so Shield Client ships matching themes. It takes 30 seconds.</p>
+  <p class="sub">Chrome only lets a <b>theme</b> recolour the tab strip, address bar, bookmarks bar and the new-tab footer. Extensions can't do it themselves, so Syndicates Client ships matching themes. It takes 30 seconds.</p>
 
   <h2>Pick a look</h2>
   <div class="themes" id="themes"></div>
@@ -43,13 +43,17 @@
     <li><div>Open the Extensions page.<br><button class="btn" id="openExt">Open chrome://extensions</button></div></li>
     <li><div>Make sure <b>Developer mode</b> (top-right switch) is on.</div></li>
     <li><div>Click <b>Load unpacked</b>.</div></li>
-    <li><div>Go into the same <b>yiling</b> folder you loaded Shield Client from, open <code class="p">themes</code>, select the folder of the look you picked (e.g. <code class="p">cyber-red</code>) and click <b>Select Folder</b>.<br>
+    <li><div>Go into the same <b>yiling</b> folder you loaded Syndicates Client from, open <code class="p">themes</code>, select the folder of the look you picked (e.g. <code class="p">cyber-red</code>) and click <b>Select Folder</b>.<br>
       <span style="color:#a9a3b8">Pick the theme folder itself, not <i>yiling</i> or <i>themes</i>.</span></div></li>
     <li><div>Chrome switches immediately: tabs, address bar and bookmarks bar turn cyber, and the footer picks up the theme colours. It shows up as a theme, not in your extension list.</div></li>
   </ol>
 
   <h2>Hide Chrome's footer completely</h2>
-  <p>On the new tab page, <b>right-click the bottom bar</b> and choose <b>Hide footer</b>.</p>
+  <p>It only appears on the new tab page (Chrome adds it to every extension's new tab page). Two ways to remove it:</p>
+  <ol>
+    <li><div><b>Right-click the bottom bar → Hide footer</b> (if your Chrome shows that option).</div></li>
+    <li><div>Or double-click <code class="p">tools\windows\hide-new-tab-footer.reg</code> in the yiling folder, confirm, and restart Chrome. It sets Chrome's official policy <code class="p">NTPFooterExtensionAttributionEnabled</code> to off, which removes the bar completely. Chrome will then show "Managed by your organization" in its menu – that's normal. Undo with <code class="p">show-new-tab-footer.reg</code>.</div></li>
+  </ol>
 
   <h2>Go back to normal</h2>
   <p>Chrome Settings → <b>Appearance</b> → <b>Theme</b> → <b>Reset to default</b>.</p>

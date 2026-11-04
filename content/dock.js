@@ -8,7 +8,7 @@
   let s = {};
   let root, shadow, panel, open = false;
 
-  const ICON = '<svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Z"/></svg>';
+  const ICON = '<svg viewBox="0 0 128 128" fill="none" stroke="currentColor" stroke-linejoin="miter"><path d="M17 27H111L64 111Z" stroke-width="13"/><path d="M89 42H45L55 59H80L67 82H50" stroke-width="12"/></svg>';
 
   const CSS = `
   :host { all: initial; }
@@ -19,7 +19,7 @@
     transition: transform .15s, opacity .2s; opacity: .55; }
   .wrap:hover .fab, .fab.open { opacity: 1; }
   .fab:hover { transform: scale(1.06); }
-  .fab svg { width: 22px; height: 22px; fill: currentColor; }
+  .fab svg { width: 24px; height: 24px; }
   .fab.paused { background: #555; }
   .panel { width: 280px; background: #15151c; color: #f2f2f5; border: 1px solid #2a2a36; border-radius: 16px; padding: 14px;
     box-shadow: 0 18px 50px #000a; font-size: 13px; line-height: 1.4; transform-origin: bottom right; animation: pop .16s ease; }
@@ -27,7 +27,7 @@
   @keyframes pop { from { opacity: 0; transform: scale(.94); } }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .head .dot { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--a); }
-  .head .dot svg { width: 17px; height: 17px; fill: #fff; }
+  .head .dot svg { width: 18px; height: 18px; color: #fff; }
   .head b { display: block; font-size: 14px; }
   .head small { color: #9a9aab; display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { margin-left: auto; background: none; border: 0; color: #9a9aab; font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
@@ -61,7 +61,7 @@
     const fab = shadow.querySelector('.fab');
     fab.classList.toggle('paused', paused() || !s.adBlock);
     fab.classList.toggle('open', open);
-    fab.title = paused() ? 'Shield Client – paused on this site' : 'Shield Client';
+    fab.title = paused() ? 'Syndicates Client – paused on this site' : 'Syndicates Client';
     if (!open) { panel.hidden = true; return; }
     panel.hidden = false;
     const yt = /(^|\.)youtube\.com$/.test(location.hostname);
@@ -133,7 +133,7 @@
   function mount() {
     root = document.createElement('shield-client-dock');
     shadow = root.attachShadow({ mode: 'closed' });
-    shadow.innerHTML = `<style>${CSS}</style><div class="wrap"><div class="panel" hidden></div><button class="fab" aria-label="Shield Client">${ICON}</button></div>`;
+    shadow.innerHTML = `<style>${CSS}</style><div class="wrap"><div class="panel" hidden></div><button class="fab" aria-label="Syndicates Client">${ICON}</button></div>`;
     panel = shadow.querySelector('.panel');
     const wrap = shadow.querySelector('.wrap');
     const fab = shadow.querySelector('.fab');

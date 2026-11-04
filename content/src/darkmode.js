@@ -11,7 +11,7 @@ setFetchMethod(async (url) => {
   return new Response(body, { headers: { 'content-type': type || 'text/css' } });
 });
 
-const SKINNED = /(^|\.)(google\.[a-z.]+|youtube\.com)$/; // these already get Shield's own dark skin
+const SKINNED = /(^|\.)(google\.[a-z.]+|youtube\.com)$/; // these already get Syndicates' own dark skin
 function apply(s) {
   const host = location.hostname.replace(/^www\./, '');
   const off = !s.forceDark || (s.darkExclude || []).includes(host) || (s.webSkin !== false && SKINNED.test(location.hostname));
