@@ -239,12 +239,16 @@ mangaDexHeaderRules();
 const AM_RULE = 100040;
 const AM_TAB_RULE_BASE = 200000; // + tabId: per-player-tab Referer for the stream's own CDN
 const AM_SITE = `https://${HIANIME_HOST}`;
+const AM_ALLOW = ALLOW_PRIORITY - 10, AM_HEADERS = ALLOW_PRIORITY - 5; // header rules must outrank the allow rule to still apply
+const AM_TAB_ALLOW_BASE = 300000, AM_CAPTURE_ALLOW_BASE = 400000;
 chrome.declarativeNetRequest.updateSessionRules({
-  removeRuleIds: [AM_RULE, AM_RULE + 1],
+  removeRuleIds: [AM_RULE, AM_RULE + 1, AM_RULE + 2],
   addRules: [
-    { id: AM_RULE, priority: 5, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
+    // the client's own blockers (ad lists, learned trackers) must never break Ani Manga; malware rules still win
+    { id: AM_RULE + 2, priority: AM_ALLOW, action: { type: 'allow' }, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS, ...PLAYER_HOSTS], initiatorDomains: [chrome.runtime.id] } },
+    { id: AM_RULE, priority: AM_HEADERS, condition: { requestDomains: [HIANIME_HOST, ...API_HOSTS], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `${AM_SITE}/` }, { header: 'Origin', operation: 'set', value: AM_SITE }] } },
-    { id: AM_RULE + 1, priority: 5, condition: { requestDomains: PLAYER_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'media', 'other'] },
+    { id: AM_RULE + 1, priority: AM_HEADERS, condition: { requestDomains: PLAYER_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'media', 'other'] },
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `${AM_SITE}/` }] } },
   ],
 }).catch((e) => console.warn('ani manga rules', e));
@@ -254,15 +258,18 @@ async function amStreamHeaders(tabId, referer) {
   if (tabId == null || !referer) return;
   const origin = new URL(referer).origin;
   await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [amRuleId(tabId)],
+    removeRuleIds: [amRuleId(tabId), AM_TAB_ALLOW_BASE + (tabId % 100000)],
     addRules: [{
-      id: amRuleId(tabId), priority: 6,
+      id: AM_TAB_ALLOW_BASE + (tabId % 100000), priority: AM_ALLOW, action: { type: 'allow' },
+      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'] },
+    }, {
+      id: amRuleId(tabId), priority: AM_HEADERS,
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: referer }, { header: 'Origin', operation: 'set', value: origin }] },
       condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: [HIANIME_HOST, ...API_HOSTS, 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
     }],
   });
 }
-chrome.tabs.onRemoved.addListener((tabId) => chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [amRuleId(tabId)] }).catch(() => {}));
+chrome.tabs.onRemoved.addListener((tabId) => chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [amRuleId(tabId), AM_TAB_ALLOW_BASE + (tabId % 100000), AM_CAPTURE_ALLOW_BASE + (tabId % 100000)] }).catch(() => {}));
 
 // Episodes are embedded players: open one in a hidden, muted tab, press play, and pick up the
 // video address (HLS playlist or plain video file) it requests.
@@ -303,8 +310,11 @@ function amPressPlay() {
 }
 async function amCaptureStream(url, playerTabId) {
   if (!capturable(url)) throw new Error(`won't open ${new URL(url).host}: not a HiAnime page or player`);
-  const tab = await chrome.tabs.create({ url, active: false });
-  chrome.tabs.update(tab.id, { muted: true }).catch(() => {});
+  // the hidden tab lets the player load untouched (ad lists often break embedded players); malware is still blocked
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  await chrome.declarativeNetRequest.updateSessionRules({ addRules: [{ id: AM_CAPTURE_ALLOW_BASE + (tab.id % 100000), priority: AM_ALLOW,
+    action: { type: 'allowAllRequests' }, condition: { tabIds: [tab.id], resourceTypes: ['main_frame', 'sub_frame'] } }] }).catch(() => {});
+  await chrome.tabs.update(tab.id, { url, muted: true });
   const found = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       const c = amCaptures.get(tab.id);
@@ -531,7 +541,7 @@ async function applyLearnedRule() {
     removeRuleIds: [LEARN_RULE_ID],
     addRules: s.learnTrackers && l.blocked.length ? [{
       id: LEARN_RULE_ID, priority: 3, action: { type: 'block' },
-      condition: { requestDomains: l.blocked.slice(0, 5000), domainType: 'thirdParty', resourceTypes: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'ping', 'media', 'other'] },
+      condition: { requestDomains: l.blocked.filter((d) => !NEVER_BLOCK.has(d)).slice(0, 5000), domainType: 'thirdParty', resourceTypes: ['script', 'image', 'xmlhttprequest', 'sub_frame', 'ping', 'media', 'other'] },
     }] : [],
   });
 }

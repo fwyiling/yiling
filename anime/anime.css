@@ -1,10 +1,10 @@
-:root { --a: #fa1e4e; --bg: #0d0b11; --p: #17141c; --p2: #201b27; --l: #2b2533; --t: #f3eff8; --m: #a49cad; }
+:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #fa1e4e; --bg: #0d0b11; --p: #17141c; --p2: #201b27; --l: #2b2533; --t: #f3eff8; --m: #a49cad; }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--t); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
 body { min-height: 100vh; background: radial-gradient(1200px 520px at 75% -12%, color-mix(in srgb, var(--a) 16%, transparent), transparent 60%), var(--bg); }
 a { color: inherit; }
 button, input { font: inherit; color: inherit; }
-.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; padding: 14px 28px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid #ffffff0d; }
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; padding: 14px 28px; min-height: 74px; box-sizing: border-box; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid #ffffff0d; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; }
 .brand img { border-radius: 9px; }
 .am-switch { display: flex; gap: 2px; padding: 3px; border-radius: 11px; border: 1px solid var(--l); }

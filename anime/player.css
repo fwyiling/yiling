@@ -1,4 +1,4 @@
-:root { --a: #fa1e4e; --bg: #0d0b11; --p: #17141c; --p2: #201b27; --l: #2b2533; --t: #f3eff8; --m: #a49cad; }
+:root { color-scheme: dark; scrollbar-width: thin; scrollbar-color: #3a3242 transparent; --a: #fa1e4e; --bg: #0d0b11; --p: #17141c; --p2: #201b27; --l: #2b2533; --t: #f3eff8; --m: #a49cad; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--t); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
 button { font: inherit; color: inherit; }

@@ -1,6 +1,6 @@
 // Syndicates anime hub: discover, airing schedule, your list, official places to watch (AniList data).
 import { trending, seasonal, search, details, schedule, byIds, titleOf, currentSeason } from '../lib/anilist.js';
-import { findAnime, fetchEpisodes } from '../lib/hianime.js';
+import { findAnime, fetchEpisodes, episodesFromMal } from '../lib/hianime.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -125,7 +125,8 @@ async function openSheet(id) {
     paint();
 
     // HiAnime section — load asynchronously so the sheet shows instantly
-    if (hiAnimeOn) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native], m.idMal);
+    if (hiAnimeOn) loadHiAnimeSection($('hiSection'), titleOf(m), [m.title?.english, m.title?.romaji, m.title?.native], m.idMal,
+      m.episodes || (m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : 0));
   } catch (e) { sh.innerHTML = `<button class="close">✕</button><p class="empty" style="padding:30px">${esc(e.message)}</p>`; }
   sh.querySelector('.close').onclick = closeSheet;
 }
@@ -137,18 +138,24 @@ async function openPlayer(job) {
   chrome.tabs.create({ url: chrome.runtime.getURL(`anime/player.html?s=${encodeURIComponent(key)}`) });
 }
 
-async function loadHiAnimeSection(container, animeTitle, titles, malId) {
+async function loadHiAnimeSection(container, animeTitle, titles, malId, aniListEpisodes) {
   container.innerHTML = '<h2>Watch &amp; download</h2><p class="empty hi-loading">Looking for this show on HiAnime…</p>';
-  let match, episodes;
+  let match, episodes, note = '';
   try {
     match = await findAnime({ malId, titles });
-    if (!match) { container.innerHTML = `<h2>Watch &amp; download</h2><p class="empty">Couldn’t find “${esc(animeTitle)}” on HiAnime.</p>`; return; }
-    episodes = await fetchEpisodes(match);
-    if (!episodes.length) { container.innerHTML = '<h2>Watch &amp; download</h2><p class="empty">HiAnime has no episodes for this show yet.</p>'; return; }
-  } catch (e) { container.innerHTML = `<h2>Watch &amp; download</h2><p class="empty">HiAnime isn’t reachable right now (${esc(e.message)}).</p>`; return; }
+    if (match) episodes = await fetchEpisodes(match);
+  } catch (e) { note = e.message; }
+  if (!episodes?.length && malId && aniListEpisodes > 0) { // site API down or show not listed: go straight to the player
+    episodes = episodesFromMal(malId, aniListEpisodes);
+    match = { title: animeTitle, direct: true };
+  }
+  if (!episodes?.length) {
+    container.innerHTML = `<h2>Watch &amp; download</h2><p class="empty">${note ? `HiAnime isn’t reachable right now (${esc(note)}).` : `Couldn’t find “${esc(animeTitle)}” on HiAnime.`}</p>`;
+    return;
+  }
 
   const eps = episodes;
-  const hasDub = eps.some((ep) => ep.dub.length);
+  const hasDub = eps.some((ep) => ep.dub.length);  // guessed lists offer dub too; the player falls back to sub
   const lang = () => wrap.querySelector('.hi-lang')?.value || 'sub';
   const base = { anime: animeTitle, episodes: eps };
   const watch = (idx) => openPlayer({ ...base, mode: 'watch', idx, lang: lang() });
@@ -166,7 +173,8 @@ async function loadHiAnimeSection(container, animeTitle, titles, malId) {
       <button class="hi-dl-all">⬇ Download all</button>
     </div>
     <div class="hi-eps"></div>`;
-  wrap.querySelector('.hi-match').textContent = `· on HiAnime as “${match.title}”`;
+  wrap.querySelector('.hi-match').textContent = match.direct ? '· straight from HiAnime’s player' : `· on HiAnime as “${match.title}”`;
+  if (note) wrap.querySelector('.hi-match').title = `HiAnime's search is down: ${note}`;
   container.replaceChildren(wrap);
 
   const from = wrap.querySelector('.hi-from'), to = wrap.querySelector('.hi-to');
@@ -184,7 +192,7 @@ async function loadHiAnimeSection(container, animeTitle, titles, malId) {
     const row = document.createElement('div');
     row.className = 'hi-ep' + (ep.filler ? ' filler' : '');
     row.innerHTML = `<span class="hi-num">${ep.number}</span><span class="hi-title"></span><div class="hi-btns"><button class="hi-watch">▶ Watch</button><button class="hi-dl" title="Download this episode">⬇</button></div>`;
-    row.querySelector('.hi-title').textContent = [ep.title, ep.filler && '(filler)', ep.dub.length && '· dub'].filter(Boolean).join(' ');
+    row.querySelector('.hi-title').textContent = [ep.title, ep.filler && '(filler)', !ep.guessed && ep.dub.length && '· dub'].filter(Boolean).join(' ');
     row.querySelector('.hi-watch').onclick = () => watch(i);
     row.querySelector('.hi-dl').onclick = () => download([i]);
     grid.append(row);

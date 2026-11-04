@@ -466,7 +466,8 @@ body.theme-chrome #shelves { width: min(760px, 94vw); }
 .shelf-row { gap: 12px; }
 
 /* hide the page scrollbar (still scrolls with wheel/touch/keys) */
-html, body { scrollbar-width: none; }
+html, body, #center { scrollbar-width: none; }
+#center::-webkit-scrollbar { display: none; }
 html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
 /* ---------- dashboard cards (Chrome+) ---------- */
 #dash { display: none; }

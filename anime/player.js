@@ -242,7 +242,7 @@ async function loadEpisode(idx) {
 video.addEventListener('ended', () => { if (currentIdx < episodes.length - 1) loadEpisode(currentIdx + 1); });
 $('prevBtn').onclick = () => loadEpisode(currentIdx - 1);
 $('nextBtn').onclick = () => loadEpisode(currentIdx + 1);
-$('fallbackBtn').onclick = () => chrome.tabs.create({ url: watchUrl(episodes[currentIdx]) });
+$('fallbackBtn').onclick = () => { const ep = episodes[currentIdx]; chrome.tabs.create({ url: ep.slug ? watchUrl(ep) : ep.sub[0] || ep.dub[0] }); };
 if (episodes.some((ep) => ep.dub?.length)) {
   const b = $('langBtn');
   b.hidden = false;
