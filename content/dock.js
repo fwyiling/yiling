@@ -8,7 +8,7 @@
   let s = {};
   let root, shadow, panel, open = false;
 
-  const ICON = '<svg viewBox="0 0 128 128" fill="none" stroke="currentColor" stroke-linejoin="miter"><path d="M17 27H111L64 111Z" stroke-width="13"/><path d="M89 42H45L55 59H80L67 82H50" stroke-width="12"/></svg>';
+  const ICON = '<svg viewBox="0 0 128 128" fill="none" stroke="currentColor" stroke-width="13"><rect x="22" y="22" width="52" height="52" rx="15"/><rect x="54" y="54" width="52" height="52" rx="15"/></svg>';
 
   const CSS = `
   :host { all: initial; }

@@ -9,7 +9,7 @@
 
   const svg = (d, vb = '0 0 24 24') => `<svg height="100%" viewBox="${vb}" width="100%" fill="#fff"><path d="${d}"/></svg>`;
   const ICON = {
-    shield: '<svg height="100%" width="100%" viewBox="-40 -40 208 208" fill="none" stroke="#fff"><path d="M17 27H111L64 111Z" stroke-width="13"/><path d="M89 42H45L55 59H80L67 82H50" stroke-width="12"/></svg>',
+    shield: '<svg height="100%" width="100%" viewBox="-40 -40 208 208" fill="none" stroke="#fff" stroke-width="13"><rect x="22" y="22" width="52" height="52" rx="15"/><rect x="54" y="54" width="52" height="52" rx="15"/></svg>',
     camera: svg('M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z', '-6 -6 36 36'),
   };
   const $p = () => document.getElementById('movie_player') || document.querySelector('.html5-video-player');
