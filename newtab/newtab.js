@@ -462,6 +462,7 @@ function togglePop(id) {
 }
 $('btnNotes').onclick = () => togglePop('popNotes');
 $('btnTodo').onclick = () => togglePop('popTodo');
+$('btnSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); chrome.sidePanel.open({ windowId: w.id }); };
 $('btnZen').onclick = () => set({ zen: !s.zen });
 
 function render() {

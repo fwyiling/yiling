@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Client",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Ad blocking, YouTube extras, privacy/malware protection, and a manga/novel downloader.",
   "permissions": [
     "declarativeNetRequest",
@@ -189,5 +189,13 @@
   ],
   "side_panel": {
     "default_path": "sidebar/sidebar.html"
+  },
+  "commands": {
+    "open-sidebar": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Open the Shield sidebar"
+    }
   }
 }

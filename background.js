@@ -455,6 +455,9 @@ chrome.declarativeNetRequest.updateSessionRules({
   }],
 }).catch((e) => console.warn('sidebar rule', e));
 chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
+chrome.commands.onCommand.addListener((cmd, tab) => {
+  if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+});
 async function sidebarAllow(url) {
   // keep logins working inside the panel even with third-party cookies blocked
   try {
