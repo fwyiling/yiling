@@ -104,7 +104,10 @@
       "css": [
         "skins/google.css"
       ],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "js": [
+        "content/recolor.js"
+      ]
     }
   ],
   "icons": {

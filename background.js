@@ -185,6 +185,28 @@ chrome.notifications.onClosed.addListener(async (nid) => {
   }
 });
 
+// ---- MangaDex: the API refuses (403) requests whose Origin is chrome-extension://…
+// so our own requests to MangaDex go out with mangadex.org as Origin/Referer.
+const MD_RULES = [100010, 100011];
+async function mangaDexHeaderRules() {
+  const action = {
+    type: 'modifyHeaders',
+    requestHeaders: [
+      { header: 'Origin', operation: 'set', value: 'https://mangadex.org' },
+      { header: 'Referer', operation: 'set', value: 'https://mangadex.org/' },
+    ],
+  };
+  const base = { requestDomains: ['mangadex.org', 'mangadex.network'], resourceTypes: ['xmlhttprequest', 'image', 'other'] };
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: MD_RULES,
+    addRules: [
+      { id: MD_RULES[0], priority: 5, action, condition: { ...base, initiatorDomains: [chrome.runtime.id] } }, // popup / downloader page
+      { id: MD_RULES[1], priority: 5, action, condition: { ...base, tabIds: [chrome.tabs.TAB_ID_NONE] } },      // service worker
+    ],
+  });
+}
+mangaDexHeaderRules();
+
 // ---- lifecycle ----
 chrome.runtime.onInstalled.addListener(async () => {
   const cur = await chrome.storage.sync.get(null);

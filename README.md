@@ -59,4 +59,5 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - Design reference for MV3 blocking: uBlock Origin Lite (uAssets).
 - [mue](https://github.com/mue/mue) (BSD-3) – structure of the home page widgets/settings.
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
+- [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
 - [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.
