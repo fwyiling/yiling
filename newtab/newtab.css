@@ -314,3 +314,97 @@ body.scanlines::after { will-change: transform; contain: strict; }
 /* still background: no extra GPU layers needed */
 body.static-bg #bg, body.static-bg #center, body.static-bg #search { will-change: auto; }
 body.static-bg #bg { contain: none; }
+
+/* =====================================================================
+   CHROME+ THEME – matches Chrome's own New Tab page (shapes, layout,
+   tonal colours from one base colour) so it blends with Chrome's UI.
+   ===================================================================== */
+#pillCustomize { display: none; }
+body.theme-chrome { --text: var(--c-text); --shadow: none; color: var(--c-text); background: var(--c-bg); font-family: var(--font); }
+body.theme-chrome #dim { display: none; }
+body.theme-chrome #bg.theme-bg {
+  background:
+    radial-gradient(900px 520px at 50% -12%, color-mix(in srgb, var(--c-glow) 30%, transparent), transparent 70%),
+    radial-gradient(700px 500px at 105% 110%, color-mix(in srgb, var(--c-glow) 16%, transparent), transparent 70%),
+    var(--c-bg) !important;
+  filter: none !important; transform: none !important;
+}
+body.theme-chrome:not(.light) #bg:not(.theme-bg) ~ #dim { display: block; }
+body.theme-chrome .glass { background: var(--c-surface2); border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; clip-path: none; }
+
+/* top-right icon buttons like Chrome's NTP (Gmail / apps / profile row) */
+body.theme-chrome #topbar { padding: 12px 16px; }
+body.theme-chrome .icon { width: 40px; height: 40px; border-radius: 50%; background: transparent; color: var(--c-text); }
+body.theme-chrome .icon:hover { background: color-mix(in srgb, var(--c-text) 10%, transparent); transform: none; }
+body.theme-chrome .icon.on { background: var(--c-primary); color: var(--c-onPrimary); }
+body.theme-chrome #hud { background: transparent; padding: 6px 10px; font-size: 12.5px; color: var(--c-muted); display: flex; letter-spacing: 0; text-transform: none; font-weight: 500; }
+body.theme-chrome #hud .dot { width: 7px; height: 7px; animation: none; box-shadow: none; }
+body.theme-chrome .chip { color: var(--c-text); text-shadow: none; border-radius: 999px; }
+
+/* centre stack: greeting, clock, search, shortcuts – sized like Chrome's logo + search box */
+body.theme-chrome #center { gap: 4px; padding-top: 70px; justify-content: flex-start; padding-top: max(70px, 18vh); }
+body.theme-chrome #greeting { font-size: 15px; font-weight: 500; color: var(--c-muted); letter-spacing: .01em; text-transform: none; }
+body.theme-chrome #greeting::before { content: none; }
+body.theme-chrome #clock { font-size: min(var(--clock), 88px); font-weight: 400; letter-spacing: -.03em; text-shadow: none; color: var(--c-text); padding: 0; }
+body.theme-chrome #clock::before, body.theme-chrome #clock::after, body.theme-chrome #time::before, body.theme-chrome #time::after { content: none !important; display: none; }
+body.theme-chrome #ampm { font-size: .3em; color: var(--c-muted); }
+body.theme-chrome #date { font-size: 14px; color: var(--c-muted); text-transform: none; letter-spacing: .01em; margin-bottom: 26px; text-shadow: none; }
+body.theme-chrome #search {
+  width: min(584px, 92vw); height: 48px; padding: 0 6px 0 16px; border-radius: 24px; margin: 0 0 30px;
+  background: var(--c-surface2); box-shadow: none; clip-path: none;
+}
+body.theme-chrome #search::before { content: none; }
+body.theme-chrome #search > svg { display: block; opacity: .75; color: var(--c-text); }
+body.theme-chrome #search:hover { background: var(--c-surface3); }
+body.theme-chrome #search:focus-within { background: var(--c-surface); box-shadow: 0 1px 6px rgba(0, 0, 0, .28), 0 0 0 1px var(--c-outline); border: 0; }
+body.theme-chrome #q { font-size: 16px; color: var(--c-text); caret-color: var(--c-primary); }
+body.theme-chrome #q::placeholder { color: var(--c-muted); }
+body.theme-chrome .engine { border-radius: 18px; height: 36px; padding: 0 14px; background: transparent; color: var(--c-muted); font-size: 13px; font-weight: 500; text-transform: none; letter-spacing: 0; clip-path: none; }
+body.theme-chrome .engine:hover { background: color-mix(in srgb, var(--c-text) 10%, transparent); box-shadow: none; color: var(--c-text); }
+
+/* shortcuts exactly like Chrome: round icon chip + label, rounded hover tile */
+body.theme-chrome #shortcuts { grid-template-columns: repeat(min(var(--cols), 5), 112px); gap: 0; }
+body.theme-chrome .tile { height: 112px; border-radius: 16px; background: transparent !important; box-shadow: none !important; clip-path: none; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--c-text); gap: 10px; }
+body.theme-chrome .tile::before { content: none !important; }
+body.theme-chrome .tile:hover { background: color-mix(in srgb, var(--c-text) 8%, transparent) !important; transform: none; }
+body.theme-chrome .tile .fav { width: 48px; height: 48px; border-radius: 50%; background: var(--c-surface2); clip-path: none; }
+body.theme-chrome .tile .fav img { width: 24px; height: 24px; }
+body.theme-chrome .tile .fav b { color: var(--c-text); }
+body.theme-chrome .tile span { text-shadow: none; max-width: 96px; }
+body.theme-chrome .tile.add { border: 0; color: var(--c-text); font: 400 13px var(--font); }
+body.theme-chrome .tile .fav.add-ic { font-size: 26px; font-weight: 300; color: var(--c-text); }
+body.theme-chrome .tile .ed button { background: var(--c-surface3); color: var(--c-text); }
+
+body.theme-chrome #quote { font-size: 13px; color: var(--c-muted); text-shadow: none; bottom: 26px; }
+body.theme-chrome #quote::before { content: none; }
+body.theme-chrome #credit { color: var(--c-muted); }
+body.theme-chrome .pop { background: var(--c-surface); color: var(--c-text); border-radius: 16px; box-shadow: 0 4px 24px rgba(0, 0, 0, .35); }
+body.theme-chrome #notes, body.theme-chrome #todoIn, body.theme-chrome #todos li { background: var(--c-surface2); border-radius: 10px; color: var(--c-text); }
+
+/* our own "Customize" pill where Chrome puts its button */
+body.theme-chrome #pillCustomize {
+  display: inline-flex; align-items: center; gap: 8px; position: fixed; right: 16px; bottom: 16px; z-index: 6;
+  height: 36px; padding: 0 16px 0 12px; border: 0; border-radius: 18px; cursor: pointer;
+  background: var(--c-surface2); color: var(--c-primary); font: 500 14px var(--font);
+}
+body.theme-chrome #pillCustomize:hover { background: var(--c-surface3); }
+body.theme-chrome #pillCustomize svg { width: 18px; height: 18px; }
+body.theme-chrome #btnCustomize { display: none; }
+
+/* drawer in the same palette */
+body.theme-chrome #drawer { background: var(--c-surface); color: var(--c-text); border-left: 0; box-shadow: -8px 0 40px rgba(0, 0, 0, .35); }
+body.theme-chrome .d-head, body.theme-chrome .sec { border-color: color-mix(in srgb, var(--c-text) 10%, transparent); }
+body.theme-chrome .d-head small, body.theme-chrome .it small, body.theme-chrome .it > .lbl em { color: var(--c-muted); }
+body.theme-chrome .it > .lbl { color: var(--c-text); }
+body.theme-chrome .sec > summary .em { background: var(--c-surface2); }
+body.theme-chrome .seg, body.theme-chrome .d-body input[type=text], body.theme-chrome .d-body select, body.theme-chrome .btns button, body.theme-chrome .btns label, body.theme-chrome .sclist div, body.theme-chrome .d-head .icon { background: var(--c-surface2); border-color: transparent; color: var(--c-text); }
+body.theme-chrome .seg button { color: var(--c-muted); }
+body.theme-chrome .seg button.on, body.theme-chrome .sw input:checked + span { background: var(--c-primary); color: var(--c-onPrimary); }
+body.theme-chrome.light .sw span { background: var(--c-outline); }
+
+/* a little cooler than stock Chrome */
+body.theme-chrome #time { background: linear-gradient(180deg, var(--c-text) 35%, color-mix(in srgb, var(--c-primary) 85%, var(--c-text))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.theme-chrome .tile { transition: background .15s, transform .15s; }
+body.theme-chrome .tile:hover { transform: translateY(-2px); }
+body.theme-chrome .tile:hover .fav { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-primary) 55%, transparent); }
+body.theme-chrome #search:focus-within { box-shadow: 0 1px 6px rgba(0, 0, 0, .28), 0 0 0 2px color-mix(in srgb, var(--c-primary) 60%, transparent); }

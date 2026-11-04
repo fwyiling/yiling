@@ -2,8 +2,8 @@
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
-  theme: 'cyber', scanlines: true, glitch: true, hud: true, animate: false, perfV: 2,
-  bgType: 'cyber', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
+  theme: 'chrome', seed: '#8a5a44', mode: 'system', scanlines: true, glitch: true, hud: true, animate: false, perfV: 3,
+  bgType: 'theme', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
   showGreeting: true, name: '', greetingText: '',
   showClock: true, clock24: false, clockSeconds: false, clockSize: 96, clockWeight: 300, showDate: true,
   showSearch: true, engine: 'google', searchWidth: 600, searchPlaceholder: '',
@@ -18,7 +18,7 @@ const DEFAULTS = {
   ],
   showWeather: false, weatherCity: '', weatherUnit: 'c',
   showQuote: true, showNotes: true, showTodo: true, notes: '', todos: [],
-  font: 'cyber', textShadow: true, glassBlur: 14, glassAlpha: 18, radius: 16, panelDark: false, layout: 'center',
+  font: 'system', textShadow: true, glassBlur: 14, glassAlpha: 18, radius: 16, panelDark: false, layout: 'center',
   zen: false,
 };
 
@@ -89,6 +89,30 @@ function set(patch, { quiet } = {}) {
 }
 
 // ================= render =================
+// ---- Chrome-style tonal palette from one base colour (like Chrome's "Customise Chrome" colours) ----
+function hexToHsl(hex) {
+  const [r, g, b] = hexRgb(hex).map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min, s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100];
+}
+const hsl = (h, s, l) => `hsl(${h.toFixed(1)} ${Math.max(0, Math.min(100, s)).toFixed(1)}% ${Math.max(0, Math.min(100, l)).toFixed(1)}%)`;
+function isDark() { return s.mode === 'dark' || (s.mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); }
+function chromePalette() {
+  const [h, sat] = hexToHsl(s.seed || '#8a5a44');
+  const c = Math.min(sat, 60);
+  return isDark()
+    ? { bg: hsl(h, c * 0.32, 8), surface: hsl(h, c * 0.3, 12), surface2: hsl(h, c * 0.3, 17), surface3: hsl(h, c * 0.32, 22),
+        outline: hsl(h, c * 0.25, 30), primary: hsl(h, Math.max(c, 45), 76), onPrimary: hsl(h, c * 0.5, 14),
+        text: hsl(h, c * 0.15, 92), muted: hsl(h, c * 0.15, 70), glow: hsl(h, Math.max(c, 50), 45) }
+    : { bg: hsl(h, c * 0.45, 97), surface: hsl(h, c * 0.45, 93), surface2: hsl(h, c * 0.4, 89), surface3: hsl(h, c * 0.4, 84),
+        outline: hsl(h, c * 0.3, 75), primary: hsl(h, Math.max(c, 50), 38), onPrimary: hsl(h, 20, 98),
+        text: hsl(h, c * 0.3, 12), muted: hsl(h, c * 0.2, 35), glow: hsl(h, Math.max(c, 55), 70) };
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (s.mode === 'system') { bgKey = ''; render(); } });
+
 function applyLook() {
   const r = document.documentElement.style;
   r.setProperty('--accent', accent);
@@ -117,6 +141,13 @@ function applyLook() {
   b.toggle('no-labels', !s.shortcutLabels);
   b.toggle('style-flat', s.shortcutStyle === 'flat');
   b.toggle('theme-cyber', s.theme === 'cyber');
+  b.toggle('theme-chrome', s.theme === 'chrome');
+  b.toggle('light', s.theme === 'chrome' && !isDark());
+  if (s.theme === 'chrome') {
+    const p = chromePalette();
+    for (const [k, v] of Object.entries(p)) r.setProperty('--c-' + k, v);
+    r.setProperty('--accent', p.primary);
+  }
   b.toggle('scanlines', s.theme === 'cyber' && s.scanlines && (s.animate || s.bgType !== 'cyber'));
   b.toggle('static-bg', !s.animate);
   b.toggle('glitch', s.glitch);
@@ -131,12 +162,19 @@ async function applyBackground() {
   bg.style.filter = s.bgBlur ? `blur(${s.bgBlur}px)` : '';
   bg.style.transform = s.bgZoom ? 'scale(1.04)' : '';
   $('dim').style.opacity = s.bgDim / 100;
-  const key = [s.bgType, s.bgGradient, s.bgColor, s.bgUrl, s.bgPhotoEvery, s.animeEvery, s.animate, s.scanlines, accent, innerWidth, innerHeight].join('|');
+  const key = [s.theme, s.seed, s.mode, isDark(), s.bgType, s.bgGradient, s.bgColor, s.bgUrl, s.bgPhotoEvery, s.animeEvery, s.animate, s.scanlines, accent, innerWidth, innerHeight].join('|');
   if (key === bgKey) return;
   bgKey = key;
   $('credit').textContent = '';
   bg.replaceChildren();
   const setImg = (url) => { bg.style.background = `#111 url("${url.replace(/"/g, '%22')}") center / cover no-repeat`; };
+  if (s.bgType === 'theme') {
+    // Chrome-style: the theme surface colour with a soft glow (drawn by CSS, no image)
+    bg.style.background = '';
+    bg.className = 'theme-bg';
+    return;
+  }
+  bg.className = '';
   if (s.bgType === 'cyber' && !s.animate) {
     // still image: drawn once, so typing never waits on animation/compositing
     bg.style.background = '#05010a';
@@ -335,7 +373,9 @@ async function renderShortcuts() {
     box.append(a);
   });
   if (editable) {
-    const add = Object.assign(document.createElement('button'), { className: 'tile add', textContent: '+', title: 'Add shortcut' });
+    const add = Object.assign(document.createElement('button'), { className: 'tile add', title: 'Add shortcut' });
+    if (s.theme === 'chrome') add.innerHTML = '<div class="fav add-ic">+</div><span>Add shortcut</span>';
+    else add.textContent = '+';
     add.onclick = () => openEditor(-1);
     box.append(add);
   }
@@ -443,7 +483,9 @@ function render() {
 // ================= customize drawer =================
 const SECTIONS = [
   { em: '⚡', title: 'Style', items: [
-    { type: 'seg', key: 'theme', label: 'Theme', options: [['cyber', 'Cyber / gamer'], ['glass', 'Clean glass']] },
+    { type: 'seg', key: 'theme', label: 'Theme', options: [['chrome', 'Chrome+'], ['cyber', 'Cyber / gamer'], ['glass', 'Clean glass']] },
+    { type: 'custom', when: () => s.theme === 'chrome', render: renderSeedPicker },
+    { type: 'seg', key: 'mode', label: 'Mode', options: [['system', 'Follow device'], ['dark', 'Dark'], ['light', 'Light']], when: () => s.theme === 'chrome' },
     { type: 'toggle', key: 'hud', label: 'HUD frame', desc: 'Corner brackets around the clock', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'glitch', label: 'Glitch effect', desc: 'Clock glitches every few seconds', when: () => s.theme === 'cyber' },
     { type: 'toggle', key: 'scanlines', label: 'Scanlines', desc: 'Retro screen lines + vignette', when: () => s.theme === 'cyber' },
@@ -451,7 +493,7 @@ const SECTIONS = [
     { type: 'toggle', key: 'animate', label: 'Animations', desc: 'Moving grid + glitch. Uses more power and can make typing feel slower' },
   ] },
   { em: '🖼️', title: 'Background', items: [
-    { type: 'seg', key: 'bgType', label: 'Type', options: [['cyber', 'Synthwave'], ['anime', 'Anime'], ['bing', 'Bing daily'], ['photo', 'Photos'], ['gradient', 'Gradient'], ['color', 'Color'], ['url', 'Link'], ['upload', 'Upload']] },
+    { type: 'seg', key: 'bgType', label: 'Type', options: [['theme', 'Theme colour'], ['cyber', 'Synthwave'], ['anime', 'Anime'], ['bing', 'Bing daily'], ['photo', 'Photos'], ['gradient', 'Gradient'], ['color', 'Color'], ['url', 'Link'], ['upload', 'Upload']] },
     { type: 'seg', key: 'animeEvery', label: 'New wallpaper', options: [['day', 'Every day'], ['tab', 'Every new tab']], when: () => s.bgType === 'anime' },
     { type: 'custom', when: () => s.bgType === 'gradient', render: renderGradientPicker },
     { type: 'color', key: 'bgColor', label: 'Color', when: () => s.bgType === 'color' },
@@ -578,6 +620,25 @@ function buildItem(it) {
   return wrap;
 }
 
+// Chrome's own preset colours, plus the brown Chrome is using now
+const SEEDS = [['Your Chrome', '#8a5a44'], ['Blue', '#4a7bd0'], ['Cool grey', '#5f6b7a'], ['Grey', '#6b6b6b'], ['Aqua', '#2e8b94'], ['Viridian', '#3a8a5c'],
+  ['Citron', '#a19a2d'], ['Apricot', '#c27c3e'], ['Rose', '#c2526b'], ['Fuchsia', '#b0459c'], ['Violet', '#7a5ac8'], ['Neon red', '#fa1e4e']];
+function renderSeedPicker(wrap) {
+  const l = document.createElement('div'); l.className = 'lbl'; l.textContent = 'Colour – match it to your Chrome colour so the page blends in';
+  const sw = document.createElement('div'); sw.className = 'swatches';
+  const mark = () => sw.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.c === s.seed));
+  for (const [name, c] of SEEDS) {
+    const b = Object.assign(document.createElement('button'), { title: name }); b.dataset.c = c; b.style.background = c;
+    b.onclick = () => { set({ seed: c }); mark(); };
+    sw.append(b);
+  }
+  const pick = document.createElement('label'); pick.title = 'Any colour';
+  const ci = Object.assign(document.createElement('input'), { type: 'color', value: s.seed });
+  ci.oninput = () => { set({ seed: ci.value }); mark(); };
+  pick.append(ci); sw.append(pick);
+  mark(); wrap.append(l, sw);
+}
+
 function renderGradientPicker(wrap) {
   const g = document.createElement('div'); g.className = 'presets';
   GRADIENTS.forEach(([name, css], i) => {
@@ -665,6 +726,7 @@ function openDrawer(open) {
   $('drawer').setAttribute('aria-hidden', String(!open));
   $('btnCustomize').classList.toggle('on', open);
 }
+$('pillCustomize').onclick = () => openDrawer(true);
 $('btnCustomize').onclick = () => openDrawer(!$('drawer').classList.contains('open'));
 $('drawerClose').onclick = () => openDrawer(false);
 
@@ -676,7 +738,7 @@ document.addEventListener('keydown', (e) => {
 // ================= boot =================
 const [{ ntp }, sync] = await Promise.all([chrome.storage.local.get('ntp'), chrome.storage.sync.get(['accent'])]);
 s = { ...DEFAULTS, ...(ntp || {}) };
-if (s.perfV !== 2) { s.animate = false; s.perfV = 2; chrome.storage.local.set({ ntp: s }); }
+if ((s.perfV || 0) < 3) { s.animate = false; s.theme = 'chrome'; s.bgType = 'theme'; s.font = 'system'; s.perfV = 3; chrome.storage.local.set({ ntp: s }); }
 accent = sync.accent || accent;
 render();
 buildDrawer();
