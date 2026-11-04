@@ -46,11 +46,15 @@ gets all chapters. Each series keeps one reader that grows as new chapters arriv
 ## Look & feel
 - **New tab:** the Syndicates page (right-click Chrome's bottom bar → Hide footer once; Chrome remembers it). Or popup → Style →
   *New tab opens* → **Google (customised)**: google.com with your theme colours, greeting + clock and your shortcuts.
-- **Home page (new tab):** **Chrome+** (default – Chrome's own layout in tones of your Chrome colour, so it blends in), **Cyber/gamer** (neon HUD, synthwave) or **Clean glass**. Backgrounds (theme colour, synthwave, anime wallpapers, Bing daily, photos, gradients, upload…), clock & greeting, search engine picker, editable shortcuts, weather, quote, notes, to-do, fonts – all under **Customize**.
+- **Home page (new tab):** **Chrome+** (default – Chrome's own layout in tones of your Chrome colour, so it blends in), **Cyber/gamer** (neon HUD, synthwave) or **Clean glass**. Backgrounds (theme colour, synthwave, anime wallpapers, Bing daily, photos, gradients, upload…), clock & greeting, search engine picker, editable shortcuts, weather, notes, fonts – all under **Customize**.
+- **Home dashboard (Chrome+):** a **Today** card (to-do list with a progress ring), a weekly **Timetable** (add classes/work/gym per day; highlights what's on now and what's next, ‹ › to plan other days) and a **philosophical quote** of the day (Marcus Aurelius, Seneca, Laozi, Camus… ↻ for another). Each can be turned off in Customize → Widgets; *Continue reading / Airing today* shelves are optional there too.
 - **Google & YouTube skins** follow the home-page theme (calm Chrome+ tones by default, neon in Cyber mode).
 - **Dark mode on every site** – Dark Reader engine (images keep their colours), with "No dark mode here" in the dock.
 - **Floating dock** on every site: pause protection here, dark mode, accent, download chapter/series, YouTube shortcuts.
 - Accent colour everywhere, per-site custom CSS, tab sleeper (frees RAM).
+
+## Anime tracker
+Popup → **Anime tracker**: trending and this season's anime, a 7-day airing schedule, and your own list with episode progress (data from the free AniList API). Each title shows **where to watch it legally** (official streaming links), the trailer and the AniList page. No streaming or downloading of episodes.
 
 ## Sidebar apps
 Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch – or add any site with **+**.

@@ -6,9 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>New Tab</title>
   <link rel="stylesheet" href="newtab.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&display=swap">
 </head>
 <body>
   <div id="bg"></div>
+  <div id="grain"></div>
   <div id="dim"></div>
 
   <div id="topbar">
@@ -46,6 +48,21 @@
       <button type="button" id="engineBtn" class="engine" title="Change search engine"></button>
     </form>
     <div id="shortcuts"></div>
+    <section id="dash" hidden>
+      <div class="dcard" id="todayCard">
+        <div class="dh"><div class="ring"><b>–</b></div><div><div class="dt">Today</div><div class="sub"></div></div></div>
+        <ul class="todo"></ul>
+        <form id="todayForm"><input id="todayIn" placeholder="Add a task and press Enter" autocomplete="off"></form>
+      </div>
+      <div class="dcard" id="ttCard">
+        <div class="dh"><div><div class="dt">Timetable</div><div class="sub day"></div></div><span class="sp"></span><button id="ttPrev" class="nav" title="Previous day">‹</button><button id="ttNext" class="nav" title="Next day">›</button></div>
+        <ol class="tt"></ol>
+        <p class="empty-tt">Nothing scheduled. Add your classes, work or gym below.</p>
+        <form id="ttForm"><input id="ttTime" type="time" required><input id="ttEnd" type="time" title="End (optional)"><input id="ttTitle" placeholder="What?" autocomplete="off" required><button>Add</button></form>
+      </div>
+    </section>
+    <figure id="qcard" hidden><blockquote class="q"></blockquote><figcaption><span class="who"></span><button id="qShuffle" title="Another quote">↻</button></figcaption></figure>
+    <section id="shelves"></section>
   </main>
 
   <div id="quote"></div>

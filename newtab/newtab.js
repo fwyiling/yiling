@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 
 const DEFAULTS = {
-  theme: 'chrome', seed: '#8a5a44', mode: 'system', scanlines: true, glitch: true, hud: true, animate: false, perfV: 3,
+  theme: 'chrome', seed: '#8a5a44', mode: 'system', scanlines: true, glitch: true, hud: true, animate: false, perfV: 4,
   bgType: 'theme', animeEvery: 'day', bgGradient: 0, bgColor: '#14141c', bgUrl: '', bgPhotoEvery: 'day', bgBlur: 0, bgDim: 25, bgZoom: true,
   showGreeting: true, name: '', greetingText: '',
   showClock: true, clock24: false, clockSeconds: false, clockSize: 96, clockWeight: 300, showDate: true,
@@ -18,6 +18,7 @@ const DEFAULTS = {
   ],
   showWeather: false, weatherCity: '', weatherUnit: 'c',
   showQuote: true, showNotes: true, showTodo: true, notes: '', todos: [],
+  showToday: true, showTimetable: true, showShelves: false, timetable: {}, quoteShift: 0,
   font: 'system', textShadow: true, glassBlur: 14, glassAlpha: 18, radius: 16, panelDark: false, layout: 'center',
   zen: false,
 };
@@ -59,22 +60,26 @@ const FONTS = {
 };
 const SWATCHES = ['#fa1e4e', '#ff7a00', '#ffd400', '#2ecc71', '#00c2ff', '#3b82f6', '#8b5cf6', '#ff4fd8', '#ffffff'];
 const QUOTES = [
-  ['The secret of getting ahead is getting started.', 'Mark Twain'],
-  ['It always seems impossible until it’s done.', 'Nelson Mandela'],
-  ['Simplicity is the ultimate sophistication.', 'Leonardo da Vinci'],
-  ['Stay hungry, stay foolish.', 'Steve Jobs'],
-  ['Whether you think you can or you think you can’t, you’re right.', 'Henry Ford'],
-  ['Done is better than perfect.', 'Sheryl Sandberg'],
-  ['The best way out is always through.', 'Robert Frost'],
-  ['Act as if what you do makes a difference. It does.', 'William James'],
-  ['Small deeds done are better than great deeds planned.', 'Peter Marshall'],
-  ['If you’re going through hell, keep going.', 'Winston Churchill'],
-  ['A person who never made a mistake never tried anything new.', 'Albert Einstein'],
-  ['Hard work beats talent when talent doesn’t work hard.', 'Tim Notke'],
-  ['Push yourself, because no one else is going to do it for you.', 'Unknown'],
-  ['The only limit to our realization of tomorrow is our doubts of today.', 'F. D. Roosevelt'],
-  ['Fall seven times, stand up eight.', 'Japanese proverb'],
-  ['People who don’t stand up for themselves never get any stronger.', 'Sung Jin-Woo'],
+  ['You have power over your mind – not outside events. Realize this, and you will find strength.', 'Marcus Aurelius'],
+  ['The happiness of your life depends upon the quality of your thoughts.', 'Marcus Aurelius'],
+  ['We suffer more often in imagination than in reality.', 'Seneca'],
+  ['Luck is what happens when preparation meets opportunity.', 'Seneca'],
+  ['A journey of a thousand miles begins with a single step.', 'Laozi'],
+  ['Nature does not hurry, yet everything is accomplished.', 'Laozi'],
+  ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
+  ['In the midst of winter, I found there was, within me, an invincible summer.', 'Albert Camus'],
+  ['The unexamined life is not worth living.', 'Socrates'],
+  ['We are what we repeatedly do. Excellence, then, is not an act, but a habit.', 'Will Durant, after Aristotle'],
+  ['It is not that we have a short time to live, but that we waste a lot of it.', 'Seneca'],
+  ['No man ever steps in the same river twice.', 'Heraclitus'],
+  ['Man is condemned to be free.', 'Jean-Paul Sartre'],
+  ['The obstacle is the way.', 'after Marcus Aurelius'],
+  ['Knowing yourself is the beginning of all wisdom.', 'Aristotle'],
+  ['First say to yourself what you would be; then do what you have to do.', 'Epictetus'],
+  ['Waste no more time arguing what a good man should be. Be one.', 'Marcus Aurelius'],
+  ['The mind is everything. What you think you become.', 'attributed to the Buddha'],
+  ['Do not spoil what you have by desiring what you have not.', 'Epicurus'],
+  ['To be is to do.', 'Immanuel Kant'],
 ];
 
 let s = { ...DEFAULTS };
@@ -427,10 +432,14 @@ async function renderWeather() {
 }
 
 function renderQuote() {
-  $('quote').hidden = !s.showQuote;
-  const day = Math.floor(Date.now() / 864e5);
-  const [q, a] = QUOTES[day % QUOTES.length];
+  const day = Math.floor(Date.now() / 864e5) + (s.quoteShift || 0);
+  const [q, a] = QUOTES[((day % QUOTES.length) + QUOTES.length) % QUOTES.length];
+  $('quote').hidden = !s.showQuote || s.theme === 'chrome';
   $('quote').replaceChildren(`“${q}”`, Object.assign(document.createElement('i'), { textContent: a }));
+  const qc = $('qcard');
+  qc.hidden = !s.showQuote || s.theme !== 'chrome';
+  qc.querySelector('.q').textContent = `“${q}”`;
+  qc.querySelector('.who').textContent = `— ${a}`;
 }
 
 function renderTodos() {
@@ -446,6 +455,7 @@ function renderTodos() {
     li.append(cb, sp, del);
     return li;
   }));
+  if (typeof renderDash === 'function' && $('dash')) renderDash();
 }
 $('todoForm').onsubmit = (e) => {
   e.preventDefault();
@@ -465,6 +475,111 @@ $('btnTodo').onclick = () => togglePop('popTodo');
 $('btnSidebar').onclick = async () => { const w = await chrome.windows.getCurrent(); chrome.sidePanel.open({ windowId: w.id }); };
 $('btnZen').onclick = () => set({ zen: !s.zen });
 
+// ---- dashboard: Today (to-dos) + Timetable ----
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+let ttDay = new Date().getDay();
+const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+function renderDash() {
+  const dash = $('dash');
+  const show = s.theme === 'chrome' && (s.showToday || s.showTimetable);
+  dash.hidden = !show;
+  if (!show) return;
+  // Today
+  const tc = $('todayCard'); tc.hidden = !s.showToday;
+  if (s.showToday) {
+    const done = s.todos.filter((t) => t.done).length, total = s.todos.length;
+    const pct = total ? done / total : 0;
+    tc.querySelector('.ring').style.setProperty('--p', pct);
+    tc.querySelector('.ring b').textContent = total ? `${Math.round(pct * 100)}%` : '–';
+    tc.querySelector('.sub').textContent = total ? `${done} of ${total} done` : 'Nothing planned yet';
+    const ul = tc.querySelector('ul');
+    ul.replaceChildren(...s.todos.map((t, i) => {
+      const li = document.createElement('li'); li.className = t.done ? 'done' : '';
+      li.innerHTML = '<button class="ck" title="Done"></button><span></span><button class="rm" title="Delete">✕</button>';
+      li.querySelector('span').textContent = t.text;
+      li.querySelector('.ck').onclick = () => { set({ todos: s.todos.map((x, k) => (k === i ? { ...x, done: !x.done } : x)) }, { quiet: true }); renderTodos(); };
+      li.querySelector('.rm').onclick = () => { set({ todos: s.todos.filter((_, k) => k !== i) }, { quiet: true }); renderTodos(); };
+      return li;
+    }));
+  }
+  // Timetable
+  const tt = $('ttCard'); tt.hidden = !s.showTimetable;
+  if (s.showTimetable) {
+    const key = DAYS[ttDay], today = ttDay === new Date().getDay();
+    const d = new Date(); d.setDate(d.getDate() + ((ttDay - d.getDay() + 7) % 7));
+    tt.querySelector('.day').textContent = today ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'long' });
+    const items = [...(s.timetable[key] || [])].sort((a, b) => toMin(a.time) - toMin(b.time));
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    let nextIdx = -1, nowIdx = -1;
+    if (today) items.forEach((it, i) => { const st = toMin(it.time), en = it.end ? toMin(it.end) : st + 60; if (st <= nowMin && nowMin < en) nowIdx = i; if (nextIdx < 0 && st > nowMin) nextIdx = i; });
+    const ol = tt.querySelector('ol');
+    ol.replaceChildren(...items.map((it, i) => {
+      const li = document.createElement('li');
+      li.className = i === nowIdx ? 'now' : i === nextIdx ? 'next' : (today && toMin(it.end || it.time) + (it.end ? 0 : 60) <= nowMin ? 'past' : '');
+      li.innerHTML = '<time></time><div><b></b><small></small></div><button class="rm" title="Delete">✕</button>';
+      li.querySelector('time').textContent = it.time + (it.end ? `–${it.end}` : '');
+      li.querySelector('b').textContent = it.title;
+      li.querySelector('small').textContent = i === nowIdx ? 'happening now' : i === nextIdx ? `next · in ${toMin(it.time) - nowMin} min` : '';
+      li.querySelector('.rm').onclick = () => { const all = { ...s.timetable }; all[key] = (all[key] || []).filter((x) => x !== it); set({ timetable: all }, { quiet: true }); renderDash(); };
+      return li;
+    }));
+    tt.querySelector('.empty-tt').hidden = items.length > 0;
+  }
+}
+$('todayForm').onsubmit = (e) => { e.preventDefault(); const v = $('todayIn').value.trim(); if (!v) return; $('todayIn').value = ''; set({ todos: [...s.todos, { text: v, done: false }] }, { quiet: true }); renderTodos(); };
+$('ttForm').onsubmit = (e) => {
+  e.preventDefault();
+  const title = $('ttTitle').value.trim(), time = $('ttTime').value, end = $('ttEnd').value;
+  if (!title || !time) return;
+  const key = DAYS[ttDay], all = { ...s.timetable };
+  all[key] = [...(all[key] || []), { time, end: end || '', title }];
+  $('ttTitle').value = ''; set({ timetable: all }, { quiet: true }); renderDash();
+};
+$('ttPrev').onclick = () => { ttDay = (ttDay + 6) % 7; renderDash(); };
+$('ttNext').onclick = () => { ttDay = (ttDay + 1) % 7; renderDash(); };
+$('qShuffle').onclick = () => set({ quoteShift: (s.quoteShift || 0) + 1 });
+setInterval(() => { if (!$('dash').hidden) renderDash(); }, 60000);
+
+// ---- shelves: Continue reading (manga library) + Airing today (anime list) ----
+async function coverUrl(url) {
+  if (!url) return '';
+  try { const r = await fetch(url, { credentials: 'omit' }); if (r.ok) return URL.createObjectURL(await r.blob()); } catch {}
+  return url;
+}
+let shelvesKey = '';
+async function renderShelves() {
+  const box = $('shelves');
+  if (s.showShelves === false || s.theme !== 'chrome') { box.replaceChildren(); return; }
+  const { mdLibrary = [], animeList = [] } = await chrome.storage.local.get(['mdLibrary', 'animeList']);
+  const reading = mdLibrary.filter((e) => e.lastNum).sort((a, b) => (b.lastRun || 0) - (a.lastRun || 0)).slice(0, 6);
+  const now = Date.now() / 1000;
+  const airing = animeList.filter((a) => a.next && a.next.airingAt - now < 86400 * 1.5 && a.next.airingAt - now > -3600).slice(0, 6);
+  const key = JSON.stringify([reading.map((e) => [e.id, e.lastNum]), airing.map((a) => [a.id, a.next?.episode])]);
+  if (key === shelvesKey) return;
+  shelvesKey = key;
+  const shelf = (title, items, link) => {
+    if (!items.length) return null;
+    const sec = document.createElement('div'); sec.className = 'shelf';
+    sec.innerHTML = `<div class="shelf-h"><span></span><a></a></div><div class="shelf-row"></div>`;
+    sec.querySelector('.shelf-h span').textContent = title;
+    Object.assign(sec.querySelector('.shelf-h a'), { textContent: 'Open →', href: chrome.runtime.getURL(link) });
+    const row = sec.querySelector('.shelf-row');
+    for (const it of items) {
+      const a = document.createElement('a'); a.className = 'pcard'; a.href = it.href;
+      a.innerHTML = '<div class="pc-img"></div><div class="pc-t"></div><div class="pc-s"></div>';
+      a.querySelector('.pc-t').textContent = it.title; a.querySelector('.pc-s').textContent = it.sub;
+      coverUrl(it.cover).then((u) => { if (u) a.querySelector('.pc-img').style.backgroundImage = `url("${u}")`; });
+      row.append(a);
+    }
+    return sec;
+  };
+  const fmtIn = (t) => { const d = t - now; return d <= 0 ? 'airing now' : d < 3600 ? `in ${Math.round(d / 60)} min` : `in ${Math.round(d / 3600)} h`; };
+  box.replaceChildren(...[
+    shelf('Continue reading', reading.map((e) => ({ title: e.series, sub: `Ch. ${e.lastNum}${e.total ? ` of ${e.total}` : ''}`, cover: e.cover, href: e.url })), 'library/library.html'),
+    shelf('Airing today', airing.map((a) => ({ title: a.title, sub: `Ep ${a.next.episode} · ${fmtIn(a.next.airingAt)}`, cover: a.cover, href: chrome.runtime.getURL(`anime/anime.html#${a.id}`) })), 'anime/anime.html'),
+  ].filter(Boolean));
+}
+
 function render() {
   applyLook();
   applyBackground();
@@ -477,7 +592,7 @@ function render() {
   $('btnTodo').hidden = !s.showTodo;
   if (!s.showNotes) $('popNotes').hidden = true;
   if (!s.showTodo) $('popTodo').hidden = true;
-  tick(); renderSearch(); renderShortcuts(); renderWeather(); renderQuote(); renderTodos();
+  tick(); renderSearch(); renderShortcuts(); renderWeather(); renderQuote(); renderTodos(); renderShelves(); renderDash();
   if (document.activeElement !== $('notes')) $('notes').value = s.notes;
 }
 
@@ -532,10 +647,13 @@ const SECTIONS = [
     { type: 'toggle', key: 'shortcutLabels', label: 'Show names', when: () => s.showShortcuts },
   ] },
   { em: '🧩', title: 'Widgets', items: [
+    { type: 'toggle', key: 'showToday', label: 'Today card', desc: 'Your to-do list on the home page' },
+    { type: 'toggle', key: 'showTimetable', label: 'Timetable card', desc: 'Weekly timetable with what’s on now / next' },
+    { type: 'toggle', key: 'showShelves', label: 'Continue reading / Airing today', desc: 'From your manga library and anime list' },
     { type: 'toggle', key: 'showWeather', label: 'Weather', desc: 'Free, no account (Open-Meteo)' },
     { type: 'text', key: 'weatherCity', label: 'City', placeholder: 'e.g. London', when: () => s.showWeather },
     { type: 'seg', key: 'weatherUnit', label: 'Unit', options: [['c', '°C'], ['f', '°F']], when: () => s.showWeather },
-    { type: 'toggle', key: 'showQuote', label: 'Quote of the day' },
+    { type: 'toggle', key: 'showQuote', label: 'Philosophical quote of the day' },
     { type: 'toggle', key: 'showNotes', label: 'Notes button' },
     { type: 'toggle', key: 'showTodo', label: 'To-do button' },
   ] },
@@ -746,6 +864,7 @@ document.addEventListener('keydown', async (e) => {
 const [{ ntp }, sync] = await Promise.all([chrome.storage.local.get('ntp'), chrome.storage.sync.get(['accent'])]);
 s = { ...DEFAULTS, ...(ntp || {}) };
 if ((s.perfV || 0) < 3) { s.animate = false; s.theme = 'chrome'; s.bgType = 'theme'; s.font = 'system'; s.perfV = 3; chrome.storage.local.set({ ntp: s }); }
+if (s.perfV < 4) { s.showShelves = false; s.perfV = 4; chrome.storage.local.set({ ntp: s }); }
 accent = sync.accent || accent;
 render();
 buildDrawer();
