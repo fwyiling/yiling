@@ -733,9 +733,8 @@ $('drawerClose').onclick = () => openDrawer(false);
 
 document.addEventListener('keydown', async (e) => {
   if (!e.ctrlKey && !e.altKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
-    const { hotSidebar = ']', hotMusic = '[' } = await chrome.storage.sync.get(['hotSidebar', 'hotMusic']);
-    if (e.key === hotSidebar || e.key === hotMusic) {
-      if (e.key === hotMusic) await chrome.storage.local.set({ lastSidebarApp: 'music', sidebarPing: Date.now() });
+    const { hotSidebar = ']' } = await chrome.storage.sync.get(['hotSidebar']);
+    if (e.key === hotSidebar) {
       const w = await chrome.windows.getCurrent(); chrome.sidePanel.open({ windowId: w.id }); return;
     }
   }

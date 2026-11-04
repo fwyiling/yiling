@@ -34,9 +34,8 @@ GX-style customization, and a manga/novel downloader.
 - **Learning tracker blocker:** third parties that set cookies on 3+ different sites get blocked (Privacy Badger-style).
 - **Clean up on close:** a site's cookies & storage are deleted 30 s after its last tab closes, except sites you keep (Cookie AutoDelete-style).
 - **Auto-load next chapter:** on manga & novel sites the next chapter is appended as you scroll (Pagetual-style).
-- **Sidebar apps:** Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch, Shield Music or your own sites in Chrome's side panel.
-- **Shield Music:** Spotify-style player for YouTube Music's catalogue (search, home feed, liked songs, playlists, queue + radio,
-  lyrics, video view, media keys). Built on YouTube.js (MIT); playback through YouTube's embed with your ad stripping applied.
+- **Sidebar apps:** Discord, Spotify, YouTube Music, WhatsApp, Telegram, ChatGPT, Claude, Twitch or your own sites in Chrome's side panel
+  (zoom per app so desktop sites fit; pop out as a floating window). Open with `]`, Alt+Shift+S or the popup.
 - **Client dock:** floating button on every site with quick toggles and Download.
 - **Tab sleeper**, accent color everywhere, per-site custom CSS.
 
@@ -62,7 +61,6 @@ To hide Chrome's own footer ("Shield Client" link + "Customise Chrome") on the n
 cd tools && npm install
 npx esbuild ../content/src/cookies.js --bundle --format=iife --outfile=../content/cookies.js
 npx esbuild ../content/src/autonext.js --bundle --format=iife --outfile=../content/autonext.js
-NODE_PATH=$PWD/node_modules npx esbuild ../music/src/music.js --bundle --format=esm --platform=browser --outfile=../music/music.js
 ```
 
 ## Updating filter lists
@@ -85,6 +83,5 @@ cd tools && npm install && node build-rules.mjs /tmp/easylist
 - [WebToEpub](https://github.com/dteviot/WebToEpub) – chapter-list discovery approach.
 - [catppuccin/userstyles](https://github.com/catppuccin/userstyles) (MIT) – Google's colour-variable map used in `skins/google.css`.
 - [DuckDuckGo autoconsent](https://github.com/duckduckgo/autoconsent) (MPL-2.0) – cookie-banner auto-reject engine + rules, vendored in `lib/vendor/`.
-- [YouTube.js](https://github.com/LuanRT/YouTube.js) (MIT) – YouTube Music data for Shield Music (bundled into `music/music.js`).
 - Pagetual, Privacy Badger, Cookie AutoDelete, Popup Blocker (strict) – behaviour references (own code).
 - [MangaDex API](https://api.mangadex.org/docs/) – official API for MangaDex downloads.

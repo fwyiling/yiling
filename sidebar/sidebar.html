@@ -12,6 +12,12 @@
     <header id="bar">
       <span id="appName">Pick an app</span>
       <span class="sp"></span>
+      <div class="zoom" id="zoomBox" hidden>
+        <button id="zoomOut" title="Smaller (fit more)">−</button>
+        <button id="zoomFit" title="Fit the whole site into the sidebar">Fit</button>
+        <button id="zoomIn" title="Bigger">+</button>
+      </div>
+      <button id="float" title="Open as a floating window">⧉</button>
       <button id="reload" title="Reload">⟳</button>
       <button id="popout" title="Open in a tab">↗</button>
     </header>
@@ -19,6 +25,7 @@
       <div id="welcome">
         <h2>Sidebar apps</h2>
         <p>Pick an app on the left. It stays open next to any page – your music keeps playing and chats stay connected while you browse.</p>
+        <p class="hint">Desktop sites like Discord are zoomed to fit – use − / + / Fit at the top, drag the panel's left edge to make it wider, or ⧉ to pop the app out into its own floating window.</p>
         <p class="hint">Some sites ask you to log in once inside the sidebar.</p>
       </div>
     </div>

@@ -455,12 +455,11 @@ chrome.declarativeNetRequest.updateSessionRules({
   }],
 }).catch((e) => console.warn('sidebar rule', e));
 chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
-// ] and [ hotkeys: open the side panel (and switch it to Shield Music for [)
+// ] hotkey: open the side panel
 function openSidebarFor(which, windowId) {
   // open first – Chrome only allows it straight after the key press
   const open = windowId != null ? chrome.sidePanel.open({ windowId }) : Promise.reject(new Error('no window'));
-  chrome.storage.local.set(which === 'music' ? { lastSidebarApp: 'music', sidebarPing: Date.now() } : { sidebarPing: Date.now() });
-  return open.catch(() => chrome.tabs.create({ url: chrome.runtime.getURL(which === 'music' ? 'music/music.html' : 'sidebar/sidebar.html') }));
+  return open.catch(() => chrome.tabs.create({ url: chrome.runtime.getURL('sidebar/sidebar.html') }));
 }
 chrome.commands.onCommand.addListener((cmd, tab) => {
   if (cmd === 'open-sidebar' && tab?.windowId != null) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
@@ -473,23 +472,6 @@ async function sidebarAllow(url) {
     await chrome.contentSettings.cookies.set({ primaryPattern: `https://[*.]${site}/*`, setting: 'allow' });
   } catch {}
 }
-
-// ---- Shield Music: YouTube's embed refuses pages without a referrer, and its API rejects
-// chrome-extension:// origins – give our own requests YouTube's address instead.
-const MUSIC_RULES = [100040, 100041];
-chrome.declarativeNetRequest.updateSessionRules({
-  removeRuleIds: MUSIC_RULES,
-  addRules: [
-    { id: MUSIC_RULES[0], priority: 5,
-      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://www.youtube.com/' }] },
-      condition: { initiatorDomains: [chrome.runtime.id], requestDomains: ['youtube-nocookie.com', 'youtube.com'], resourceTypes: ['sub_frame'] } },
-    { id: MUSIC_RULES[1], priority: 5,
-      action: { type: 'modifyHeaders', requestHeaders: [
-        { header: 'Origin', operation: 'set', value: 'https://music.youtube.com' },
-        { header: 'Referer', operation: 'set', value: 'https://music.youtube.com/' }] },
-      condition: { initiatorDomains: [chrome.runtime.id], requestDomains: ['youtube.com'], resourceTypes: ['xmlhttprequest', 'other'] } },
-  ],
-}).catch((e) => console.warn('music rules', e));
 
 // ---- strict pop-up blocker: new tabs/windows a page opens by itself, and hijacked redirects ----
 const OK_POPUP_HOST = /^(accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com|login\.live\.com|(www\.)?facebook\.com|discord\.com|github\.com|(www\.)?paypal\.com|checkout\.stripe\.com|(api\.)?twitter\.com|x\.com|id\.twitch\.tv|steamcommunity\.com|pay\.google\.com)$/i;
@@ -589,6 +571,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     'allow-once': () => allowOnce(msg.host),
     'sidebar-allow': () => sidebarAllow(msg.url),
     'open-sidebar': () => chrome.sidePanel.open({ windowId: msg.windowId }),
+    'float-app': () => chrome.windows.create({ url: msg.url, type: 'popup', width: msg.width || 480, height: msg.height || 760, focused: true }),
     'hotkey': () => openSidebarFor(msg.which, sender.tab?.windowId),
     'user-click': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: msg.href ? siteOf(msg.href) : null, interactive: !!msg.interactive }); },
     'open-anyway': () => { if (tabId != null) lastClicks.set(tabId, { t: Date.now(), site: siteOf(msg.url), interactive: true }); return chrome.tabs.create({ url: msg.url, openerTabId: tabId ?? undefined }); },
