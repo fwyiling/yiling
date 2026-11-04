@@ -2,6 +2,7 @@
 import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
 import { filterCompactRules, evalSnippets } from './lib/vendor/autoconsent.esm.js';
+import { HIANIME_HOST } from './lib/hianime.js';
 import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab, mangaDexDiagnose } from './lib/mangadex.js';
 
 
@@ -241,10 +242,10 @@ const AM_EMBED_HOSTS = ['megacloud.tv', 'megacloud.blog', 'megacloud.club', 'rap
 chrome.declarativeNetRequest.updateSessionRules({
   removeRuleIds: [AM_RULE, AM_RULE + 1],
   addRules: [
-    { id: AM_RULE, priority: 5, condition: { requestDomains: ['hianime.com'], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
-      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://hianime.com/' }] } },
+    { id: AM_RULE, priority: 5, condition: { requestDomains: [HIANIME_HOST], initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `https://${HIANIME_HOST}/` }] } },
     { id: AM_RULE + 1, priority: 5, condition: { requestDomains: AM_EMBED_HOSTS, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] },
-      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://hianime.com/' }] } },
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: `https://${HIANIME_HOST}/` }] } },
   ],
 }).catch((e) => console.warn('ani manga rules', e));
 
@@ -257,7 +258,7 @@ async function amStreamHeaders(tabId, referer) {
     addRules: [{
       id: amRuleId(tabId), priority: 6,
       action: { type: 'modifyHeaders', requestHeaders: [{ header: 'Referer', operation: 'set', value: referer }, { header: 'Origin', operation: 'set', value: origin }] },
-      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: ['hianime.com', 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
+      condition: { tabIds: [tabId], resourceTypes: ['xmlhttprequest', 'media', 'other'], excludedRequestDomains: [HIANIME_HOST, 'anilist.co', 'mangadex.org', 'mangadex.network', 'githubusercontent.com'] },
     }],
   });
 }
@@ -283,7 +284,7 @@ chrome.webRequest.onBeforeRequest.addListener((d) => {
   }
   if (!c.m3u8 && /\.m3u8$/i.test(path)) {
     c.m3u8 = d.url;
-    c.referer = d.initiator && d.initiator !== 'null' ? `${d.initiator}/` : 'https://hianime.com/';
+    c.referer = d.initiator && d.initiator !== 'null' ? `${d.initiator}/` : `https://${HIANIME_HOST}/`;
     setTimeout(() => amFinish(d.tabId), 1500); // give subtitle files a moment to show up
   }
 }, { urls: ['<all_urls>'], types: ['xmlhttprequest', 'media', 'other'] });
@@ -292,7 +293,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (c) { amCaptures.delete(tabId); clearTimeout(c.timer); c.reject(new Error('The HiAnime tab was closed')); }
 });
 async function amCaptureStream(url, playerTabId) {
-  if (!/^https:\/\/hianime\.com\/watch\//.test(url)) throw new Error('Not a HiAnime watch link');
+  if (!url.startsWith(`https://${HIANIME_HOST}/watch/`)) throw new Error('Not a HiAnime watch link');
   const tab = await chrome.tabs.create({ url, active: false });
   chrome.tabs.update(tab.id, { muted: true }).catch(() => {});
   const found = await new Promise((resolve, reject) => {
@@ -506,7 +507,7 @@ const NEVER_BLOCK = new Set(['gstatic.com', 'googleapis.com', 'recaptcha.net', '
   'github.com', 'githubusercontent.com', 'google.com', 'apple.com', 'microsoft.com', 'microsoftonline.com', 'live.com', 'twitch.tv', 'discord.com',
   'spotify.com', 'gravatar.com', 'wp.com', 'imgur.com', 'giphy.com', 'mangadex.org', 'mangadex.network', 'disqus.com', 'steampowered.com', 'steamcommunity.com', 'hcaptcha.com', 'okta.com', 'auth0.com', 'arkoselabs.com', 'funcaptcha.com',
   // HiAnime streaming CDNs — required for in-client playback and downloads
-  'hianime.com', 'megacloud.tv', 'rapid-cloud.co', 'allanime.day', 'embedsito.com']);
+  HIANIME_HOST, 'megacloud.tv', 'rapid-cloud.co', 'allanime.day', 'embedsito.com']);
 let learn = null, learnDirty = false;
 async function loadLearn() {
   if (!learn) { const { learned } = await chrome.storage.local.get('learned'); learn = learned || { seen: {}, blocked: [] }; }
