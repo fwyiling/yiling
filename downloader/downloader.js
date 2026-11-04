@@ -345,7 +345,7 @@ $('start').onclick = async () => {
   if (failed.length) $('failed').textContent = `Couldn't get: ${failed.slice(0, 8).join(', ')}${failed.length > 8 ? '…' : ''}`;
   const canOpen = mainFile && (fmt === 'reader' || fmt === 'html');
   $('open').hidden = !canOpen;
-  $('open').onclick = () => chrome.downloads.open(mainFile);
+  $('open').onclick = () => { try { chrome.downloads.open(mainFile); } catch { chrome.downloads.show(mainFile); } };
   $('show').hidden = !lastId;
   $('show').onclick = () => chrome.downloads.show(mainFile || lastId);
   chrome.storage.session.remove(`job_${jobId}`);
