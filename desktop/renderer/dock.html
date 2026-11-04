@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+  <title>Syndicates Dock</title>
+  <link rel="stylesheet" href="dock.css">
+</head>
+<body>
+  <div id="dock">
+    <div class="group left">
+      <button id="home" class="item home" title="Home"><img src="logo.svg" alt=""></button>
+      <span class="sep" id="homeSep"></span>
+      <div id="pins" class="apps"></div>
+      <span class="sep" id="runSep"></span>
+      <div id="running" class="apps"></div>
+    </div>
+    <div class="group right" id="clockBox">
+      <div id="clock"><b id="time"></b><small id="date"></small></div>
+    </div>
+  </div>
+  <script type="module" src="dock.js"></script>
+</body>
+</html>

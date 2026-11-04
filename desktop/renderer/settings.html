@@ -13,6 +13,8 @@
     <button data-tab="wallpaper" class="on"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Wallpaper</button>
     <button data-tab="widgets"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>Widgets</button>
     <button data-tab="home"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Home panel</button>
+    <button data-tab="taskbar"><svg viewBox="0 0 24 24"><rect x="3" y="15" width="18" height="5" rx="1.8"/><path d="M7 17.5h.01M10.5 17.5h.01M14 17.5h.01"/><path d="M6 5h12M6 9h8"/></svg>Taskbar</button>
+    <button data-tab="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>Lock screen</button>
     <button data-tab="general"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>General</button>
     <div class="grow"></div>
     <button id="openHome" class="ghost">Open Home <kbd id="hk"></kbd></button>
@@ -44,6 +46,39 @@
       <label class="field-row"><span>Shortcut to open Home</span><button id="hotkey" class="btn keycap"></button></label>
       <label class="field-row"><span>Web search</span><select class="field" data-k="home.engine"><option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave</option></select></label>
       <div class="row"><button id="clearPins" class="btn ghost">Unpin all apps</button><span class="muted" id="pinCount"></span></div>
+    </section>
+    <section data-panel="taskbar">
+      <h2>Windows taskbar</h2>
+      <p class="muted" id="tbNote">The same options as Windows Settings, applied straight away.</p>
+      <label class="field-row"><span>Icons</span><div class="seg" data-tb="align"><button value="left">Left</button><button value="center">Centre</button></div></label>
+      <label class="field-row"><span>Search</span><div class="seg" data-tb="search"><button value="hidden">Hidden</button><button value="icon">Icon</button><button value="box">Search box</button></div></label>
+      <label class="switch"><span><b>Task view button</b></span><input type="checkbox" data-tb="taskView"></label>
+      <label class="switch"><span><b>Hide the taskbar automatically</b><small id="autoHideNote">It slides up when you move the mouse to the bottom.</small></span><input type="checkbox" data-tb="autoHide"></label>
+      <label class="switch"><span><b>Colour the taskbar with your accent</b><small>Uses the accent colour picked in Windows. <a href="#" id="openColors">Choose it in Windows colours</a></small></span><input type="checkbox" data-tb="accentTint"></label>
+      <h2>Syndicates dock</h2>
+      <p class="muted">A dock in your colours replaces the look of the taskbar: Home, pinned apps, open windows and the clock. The Windows taskbar hides itself while the dock is on.</p>
+      <label class="switch"><span><b>Use the Syndicates dock</b></span><input type="checkbox" data-k="dock.on"></label>
+      <div id="dockOpts">
+        <label class="field-row"><span>Style</span><div class="seg" data-seg="dock.style"><button value="floating">Floating</button><button value="full">Full width</button></div></label>
+        <label class="field-row"><span>Size</span><div class="seg" data-seg="dock.size"><button value="s">Small</button><button value="m">Medium</button><button value="l">Large</button></div></label>
+        <label class="switch"><span><b>Pinned apps</b><small>Pin them in the Home panel.</small></span><input type="checkbox" data-k="dock.pinned"></label>
+        <label class="switch"><span><b>Open windows</b></span><input type="checkbox" data-k="dock.running"></label>
+        <label class="switch"><span><b>Clock</b></span><input type="checkbox" data-k="dock.clock"></label>
+        <label class="switch"><span><b>Keep windows clear of the dock</b><small>Maximized windows stop above it, like with the taskbar.</small></span><input type="checkbox" data-k="dock.reserve"></label>
+        <label class="slider"><span>Opacity</span><input type="range" min="0.3" max="1" step="0.05" data-k="dock.opacity"><em></em></label>
+      </div>
+    </section>
+    <section data-panel="lock">
+      <p class="muted">Windows can't animate the lock screen, so this uses a picture of your wallpaper with its widgets. The sign-in screen shows the same picture when “Show the lock screen background picture on the sign-in screen” is on in <a href="#" id="openLock">Windows lock screen settings</a>.</p>
+      <div class="lockrow">
+        <div class="lockprev" id="lockPrev"><span class="muted">No picture yet</span></div>
+        <div class="lockside">
+          <button id="lockApply" class="btn pri">Use my wallpaper as the lock screen</button>
+          <p class="muted" id="lockStatus"></p>
+        </div>
+      </div>
+      <label class="switch"><span><b>Keep it updated</b><small>Refreshes the picture shortly after you change the wallpaper or widgets.</small></span><input type="checkbox" data-k="lock.auto"></label>
+      <label class="switch"><span><b>Also make it the Windows wallpaper</b><small>Shown right after signing in, before Syndicates Desktop starts.</small></span><input type="checkbox" data-k="lock.alsoWallpaper"></label>
     </section>
     <section data-panel="general">
       <label class="switch"><span><b>Start with Windows</b><small>Your wallpaper is back after every restart.</small></span><input type="checkbox" data-k="general.startWithWindows"></label>

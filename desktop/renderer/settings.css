@@ -53,3 +53,16 @@ input[type=color] { width: 34px; height: 30px; padding: 0; border: 1px solid var
 .wrow input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--a); }
 .wrow input[type=range] { accent-color: var(--a); }
 .wrow .extra { display: flex; gap: 8px; } .wrow .extra .field { min-width: 0; width: 170px; padding: 6px 10px; }
+
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 11px; background: var(--p2); border: 1px solid var(--line); }
+.seg button { border: 0; background: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; color: var(--m); font-weight: 600; }
+.seg button.on { background: var(--a); color: #fff; }
+.seg.disabled { opacity: .45; pointer-events: none; }
+a { color: color-mix(in srgb, var(--a) 60%, #fff); }
+.btn.pri { background: var(--a); border-color: var(--a); color: #fff; }
+.btn:disabled { opacity: .6; cursor: default; }
+#dockOpts.off { opacity: .45; pointer-events: none; }
+.lockrow { display: flex; gap: 18px; align-items: center; margin: 16px 0 8px; flex-wrap: wrap; }
+.lockprev { width: 320px; aspect-ratio: 16 / 9; border-radius: 12px; background: var(--p2) center / cover no-repeat; border: 1px solid var(--line); display: grid; place-items: center; }
+.lockprev.has span { display: none; }
+.lockside { display: grid; gap: 10px; max-width: 360px; }

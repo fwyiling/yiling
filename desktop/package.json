@@ -20,8 +20,27 @@
   "build": {
     "appId": "app.syndicates.desktop",
     "productName": "Syndicates Desktop",
-    "files": ["main.js", "preload.js", "win32.js", "settings-store.js", "system.js", "renderer/**", "assets/**"],
-    "win": { "icon": "assets/icon.png", "target": ["portable", "nsis"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "files": [
+      "main.js",
+      "preload.js",
+      "win32.js",
+      "settings-store.js",
+      "system.js",
+      "taskbar.js",
+      "lockscreen.js",
+      "renderer/**",
+      "assets/**"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

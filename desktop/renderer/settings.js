@@ -40,13 +40,14 @@ document.querySelectorAll('.side [data-tab]').forEach((b) => b.onclick = () => {
   document.querySelectorAll('.side [data-tab]').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('[data-panel]').forEach((p) => p.classList.toggle('on', p.dataset.panel === b.dataset.tab));
   preview.classList.toggle('editing', b.dataset.tab === 'widgets');
+  document.querySelector('.preview-wrap').hidden = !['wallpaper', 'widgets'].includes(b.dataset.tab); // the preview only matters for these
   $('tip').textContent = b.dataset.tab === 'widgets' ? 'Drag any widget to move it.' : 'This is your desktop. Changes apply instantly.';
 });
 
 // ---------- generic inputs: data-k="path.to.key" ----------
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 const patchOf = (p, v) => p.split('.').reduceRight((acc, k) => ({ [k]: acc }), v);
-const fmt = { 'wallpaper.speed': (v) => `${(+v).toFixed(2)}×`, 'wallpaper.intensity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
+const fmt = { 'dock.opacity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.speed': (v) => `${(+v).toFixed(2)}×`, 'wallpaper.intensity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
 document.querySelectorAll('[data-k]').forEach((el) => {
   const k = el.dataset.k;
   const read = () => (el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : k === 'general.fps' ? +el.value : el.value);
@@ -128,6 +129,50 @@ hotkey.onclick = () => {
 $('clearPins').onclick = () => save({ home: { pins: [] } });
 $('openHome').onclick = () => sd.toggleHome(true);
 
+// ---------- segmented choices stored in settings: data-seg="dock.style" ----------
+document.querySelectorAll('[data-seg]').forEach((seg) => seg.querySelectorAll('button').forEach((b) => b.onclick = (e) => { e.preventDefault(); save(patchOf(seg.dataset.seg, b.value)); }));
+
+// ---------- Windows taskbar (read live from Windows, not stored by us) ----------
+let tb = {};
+async function loadTaskbar() { tb = await sd.taskbar().catch(() => ({ supported: false })); paintTaskbar(); }
+function paintTaskbar() {
+  document.querySelectorAll('[data-tb]').forEach((el) => {
+    const k = el.dataset.tb;
+    if (el.classList.contains('seg')) el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.value === tb[k]));
+    else el.checked = !!tb[k];
+    const lockedByDock = k === 'autoHide' && s.dock.on;
+    (el.closest('.seg') || el).classList?.toggle('disabled', !tb.supported || lockedByDock);
+    if (el.type === 'checkbox') el.disabled = !tb.supported || lockedByDock;
+  });
+  $('tbNote').textContent = tb.supported ? 'The same options as Windows Settings, applied straight away.' : 'These options work on Windows only.';
+  $('autoHideNote').textContent = s.dock.on ? 'On while the Syndicates dock is in use.' : 'It slides up when you move the mouse to the bottom.';
+}
+document.querySelectorAll('[data-tb]').forEach((el) => {
+  const k = el.dataset.tb;
+  const set = async (v) => { tb = await sd.setTaskbar({ [k]: v }); paintTaskbar(); };
+  if (el.classList.contains('seg')) el.querySelectorAll('button').forEach((b) => b.onclick = (e) => { e.preventDefault(); set(b.value); });
+  else el.onchange = () => set(el.checked);
+});
+$('openColors').onclick = (e) => { e.preventDefault(); sd.windowsSettings('colors'); };
+loadTaskbar();
+
+// ---------- lock screen ----------
+$('openLock').onclick = (e) => { e.preventDefault(); sd.windowsSettings('lockscreen'); };
+$('lockApply').onclick = async () => {
+  const b = $('lockApply');
+  b.disabled = true; b.textContent = 'Making the picture…';
+  try {
+    const r = await sd.applyLockScreen();
+    $('lockStatus').textContent = r.lock ? `Lock screen updated${r.wallpaper ? ' · Windows wallpaper too' : ''}.` : `Picture saved, but Windows didn't take it: ${r.error}`;
+  } catch (e) { $('lockStatus').textContent = `Couldn't make the picture: ${e.message}`; }
+  b.disabled = false; b.textContent = 'Use my wallpaper as the lock screen';
+};
+function paintLock() {
+  const L = s.lock, prev = $('lockPrev');
+  if (L.last) { prev.style.backgroundImage = `url("sd://media/lock?v=${L.lastAt}")`; prev.classList.add('has'); }
+  if (!$('lockStatus').textContent && L.lastAt) $('lockStatus').textContent = L.lastError ? `Last try: ${L.lastError}` : `Last updated ${new Date(L.lastAt).toLocaleString()}.`;
+}
+
 // ---------- reflect settings in the controls ----------
 function paint() {
   document.querySelectorAll('[data-k]').forEach((el) => {
@@ -156,5 +201,9 @@ function paint() {
   hotkey.textContent = s.home.hotkey || 'Not set';
   $('hk').textContent = s.home.hotkey || '';
   $('pinCount').textContent = `${s.home.pins.length} pinned`;
+  document.querySelectorAll('[data-seg]').forEach((seg) => { const v = getPath(s, seg.dataset.seg); seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.value === v)); });
+  $('dockOpts').classList.toggle('off', !s.dock.on);
+  paintLock();
+  if (tb.supported !== undefined) paintTaskbar();
 }
 paint();

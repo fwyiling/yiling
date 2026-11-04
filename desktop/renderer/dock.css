@@ -1,0 +1,32 @@
+:root { --a: #5e7d9c; --h: 64px; --op: .85; --t: #eef1f4; --m: #9aa3ad; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 13px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--t); user-select: none; }
+button { font: inherit; color: inherit; }
+#dock { position: absolute; display: flex; align-items: center; gap: 10px; background: rgba(18, 22, 28, var(--op)); border: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, .45); backdrop-filter: blur(24px) saturate(140%); }
+/* floating pill, centred */
+body.floating #dock { left: 50%; bottom: 8px; transform: translateX(-50%); height: calc(var(--h) - 14px); padding: 0 10px; border-radius: calc(var(--h) / 2); }
+body.floating .right { margin-left: 4px; }
+/* full-width bar */
+body.full #dock { inset: 0; height: 100%; border-radius: 0; border-width: 1px 0 0; padding: 0 14px; justify-content: space-between; }
+.group { display: flex; align-items: center; gap: 6px; height: 100%; }
+.apps { display: flex; align-items: center; gap: 4px; }
+.sep { width: 1px; height: 46%; background: rgba(255, 255, 255, .12); margin: 0 4px; }
+.sep[hidden], .apps:empty + .sep { display: none; }
+.item { position: relative; width: calc(var(--h) - 22px); height: calc(var(--h) - 22px); display: grid; place-items: center; border: 0; border-radius: 12px; background: none; cursor: pointer;
+  transition: background .15s, transform .18s cubic-bezier(.2, 0, 0, 1); }
+.item:hover { background: rgba(255, 255, 255, .08); transform: translateY(-3px) scale(1.08); }
+.item:active { transform: scale(.94); }
+.item img, .item .ph { width: 62%; height: 62%; border-radius: 8px; }
+.item .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 40%, #20262f); font-weight: 700; }
+.item.home img { width: 70%; height: 70%; border-radius: 9px; }
+/* running indicator: a dot, a longer bar for the window in front */
+.item::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 0; height: 3px; border-radius: 2px; background: var(--m); transform: translateX(-50%); transition: width .2s, background .2s; }
+.item.running::after { width: 5px; }
+.item.active::after { width: 16px; background: var(--a); }
+.item .count { position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--a); font-size: 9.5px; font-weight: 700; display: grid; place-items: center; }
+#clock { display: grid; justify-items: end; gap: 2px; padding: 0 6px; }
+#clock b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#clock small { font-size: 11px; color: var(--m); }
+body.floating #clock { justify-items: center; }
+.tip { position: fixed; bottom: calc(var(--h) + 2px); padding: 5px 10px; border-radius: 8px; background: rgba(18, 22, 28, .95); border: 1px solid rgba(255, 255, 255, .1); font-size: 12px; white-space: nowrap; pointer-events: none; transform: translateX(-50%); }

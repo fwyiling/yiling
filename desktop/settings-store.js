@@ -25,6 +25,8 @@ const DEFAULTS = {
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '' },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
+  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, opacity: 0.85, reserve: true, prevAutoHide: null },
+  lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);

@@ -6,8 +6,13 @@ const { pathToFileURL } = require('url');
 const { Store } = require('./settings-store');
 const system = require('./system');
 const win32 = require('./win32');
+const taskbar = require('./taskbar');
+const lockscreen = require('./lockscreen');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+// Chromium stops drawing windows it thinks are covered and shows them white. A window behind the
+// desktop icons always looks covered, so that check has to be off for the wallpaper to render.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 // sd://ui/<file> serves the app's own pages; sd://media/wallpaper serves only the wallpaper file you picked.
 protocol.registerSchemesAsPrivileged([{ scheme: 'sd', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -15,7 +20,7 @@ const UI_DIR = path.join(__dirname, 'renderer');
 const ui = (page, query = '') => `sd://ui/${page}${query}`;
 
 let displayTimer;
-let store, tray, homeWin = null, settingsWin = null, paused = false, userPaused = false;
+let store, tray, homeWin = null, settingsWin = null, dockWin = null, paused = false, userPaused = false;
 const wallpapers = new Map(); // display id -> BrowserWindow
 let apps = null;
 
@@ -37,11 +42,15 @@ function buildWallpapers() {
     w.loadURL(ui('wallpaper.html', `?display=${d.id}`));
     w.once('ready-to-show', () => {
       if (win32.isWin) {
+        // show first: a window Chromium considers hidden never paints, which left the desktop white
+        w.showInactive();
         const rect = screen.dipToScreenRect(null, d.bounds); // physical pixels for Win32
         const r = win32.attachToDesktop(w, rect);
         if (!r.ok) { // couldn't join the desktop layer: show as a normal window kept at the back
           console.warn('wallpaper attach failed:', r.reason);
-          w.setBounds(d.bounds); w.showInactive(); w.setIgnoreMouseEvents(true);
+          w.setBounds(d.bounds); w.setIgnoreMouseEvents(true);
+        } else {
+          w.webContents.invalidate(); // repaint inside its new parent
         }
       } else {
         w.showInactive(); // previewing on macOS/Linux
@@ -112,6 +121,59 @@ function openSettings() {
   settingsWin.loadURL(ui('settings.html'));
 }
 
+// ---------- Syndicates dock (replaces the look of the taskbar) ----------
+const DOCK_H = { s: 52, m: 64, l: 78 };
+let windowsList = [], dockTimer = null;
+function ownPids() { return [process.pid, ...app.getAppMetrics().map((m) => m.pid)]; }
+function placeDock() {
+  if (!dockWin || dockWin.isDestroyed()) return;
+  const dk = store.get().dock, d = screen.getPrimaryDisplay(), h = DOCK_H[dk.size] || DOCK_H.m;
+  const strip = { x: d.bounds.x, y: d.bounds.y + d.bounds.height - h, width: d.bounds.width, height: h };
+  if (win32.isWin && dk.reserve) {
+    win32.releaseEdge(dockWin);
+    const r = win32.reserveEdge(dockWin, screen.dipToScreenRect(null, strip), 'bottom'); // maximized windows stop above the dock
+    dockWin.setBounds(r ? screen.screenToDipRect(null, r) : strip);
+  } else dockWin.setBounds(strip);
+}
+async function pollWindows() {
+  if (!dockWin || dockWin.isDestroyed() || !store.get().dock.running) return;
+  windowsList = win32.listWindows(ownPids());
+  dockWin.webContents.send('windows', windowsList);
+}
+async function setDock(on) {
+  const st = store.get();
+  if (on && (!dockWin || dockWin.isDestroyed())) {
+    if (win32.isWin && st.dock.prevAutoHide == null) store.set({ dock: { prevAutoHide: win32.taskbarAutoHide() } });
+    if (win32.isWin) win32.setTaskbarAutoHide(true); // the Windows taskbar slides away; the dock takes its place
+    dockWin = new BrowserWindow({ width: 800, height: 64, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+      alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
+    dockWin.setAlwaysOnTop(true, 'pop-up-menu');
+    dockWin.loadURL(ui('dock.html'));
+    dockWin.once('ready-to-show', () => { placeDock(); dockWin.showInactive(); pollWindows(); });
+    dockWin.on('closed', () => { dockWin = null; });
+    clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 1000);
+  } else if (!on && dockWin) {
+    clearInterval(dockTimer);
+    if (win32.isWin) { win32.releaseEdge(dockWin); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
+    store.set({ dock: { prevAutoHide: null } });
+    dockWin.destroy(); dockWin = null;
+  }
+}
+
+// ---------- lock screen ----------
+let lockTimer = null;
+async function applyLockScreen() {
+  const st = store.get();
+  const file = await lockscreen.snapshot(path.join(app.getPath('userData'), 'lock'), ui('wallpaper.html', '?snapshot=1'), webPrefs.preload);
+  const result = { file, lock: false, wallpaper: false, error: '' };
+  try { result.lock = await lockscreen.setLockScreen(file); } catch (e) { result.error = e.message; }
+  if (st.lock.alsoWallpaper) result.wallpaper = win32.setWindowsWallpaper(file);
+  store.set({ lock: { last: file, lastAt: Date.now(), lastError: result.error } });
+  broadcast('settings', store.get());
+  return result;
+}
+const lockSoon = () => { clearTimeout(lockTimer); lockTimer = setTimeout(() => applyLockScreen().catch((e) => console.warn('lock screen', e.message)), 15000); };
+
 // ---------- tray ----------
 function updateTray() {
   if (!tray) return;
@@ -136,6 +198,8 @@ function applySettings(patch) {
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) app.setLoginItemSettings({ openAtLogin: !!next.general.startWithWindows });
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
+  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else placeDock(); }
+  if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
   updateTray();
   return next;
@@ -165,6 +229,25 @@ function wireIpc() {
     return r.canceled ? '' : r.filePaths[0];
   });
   ipcMain.handle('home:toggle', (_e, show) => toggleHome(show));
+  ipcMain.handle('taskbar:get', () => taskbar.read());
+  ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
+  ipcMain.handle('lock:apply', () => applyLockScreen());
+  ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
+    const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background' };
+    if (!pages[page]) throw new Error('unknown page');
+    return shell.openExternal(pages[page]);
+  });
+  ipcMain.handle('windows', () => windowsList);
+  ipcMain.handle('window:focus', (_e, hwnd) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd); setTimeout(pollWindows, 150); });
+  ipcMain.handle('exe-icon', async (_e, exe) => {
+    if (!windowsList.some((w) => w.exe === exe)) return '';
+    try { return (await app.getFileIcon(exe, { size: 'normal' })).toDataURL(); } catch { return ''; }
+  });
+  ipcMain.handle('pin-target', (_e, p) => { // what a pinned shortcut points at, to match it with open windows
+    if (!isKnownApp(p)) return '';
+    if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
+    try { return shell.readShortcutLink(p).target || p; } catch { return p; }
+  });
   ipcMain.handle('settings:open', () => { toggleHome(false); openSettings(); });
 }
 function isKnownApp(p) {
@@ -182,6 +265,11 @@ app.whenReady().then(() => {
       const file = path.normalize(path.join(UI_DIR, decodeURIComponent(u.pathname)));
       if (!file.startsWith(UI_DIR + path.sep)) return new Response('not found', { status: 404 });
       return net.fetch(pathToFileURL(file).href);
+    }
+    if (u.host === 'media' && u.pathname === '/lock') {
+      const f = store.get().lock.last;
+      if (!f || !fs.existsSync(f)) return new Response('no snapshot', { status: 404 });
+      return net.fetch(pathToFileURL(f).href);
     }
     if (u.host === 'media' && u.pathname === '/wallpaper') {
       const f = store.get().wallpaper.file;
@@ -204,6 +292,7 @@ app.whenReady().then(() => {
   tray.on('click', () => toggleHome(true));
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
+  if (store.get().dock.on) setDock(true);
   if (!fs.existsSync(store.file)) openSettings(); // first run: show what can be customized
 });
 app.on('second-instance', () => openSettings());
@@ -211,6 +300,7 @@ app.on('before-quit', () => {
   app.isQuitting = true;
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
+  if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
 });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => {}); // keep running in the tray

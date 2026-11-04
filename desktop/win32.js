@@ -33,7 +33,30 @@ function load() {
     GetWindowRect: user32.func('bool __stdcall GetWindowRect(intptr_t hwnd, _Out_ RECT *rect)'),
     GetClassNameW: user32.func('int __stdcall GetClassNameW(intptr_t hwnd, uint16_t *buf, int max)'),
     PostMessageW: user32.func('bool __stdcall PostMessageW(intptr_t hwnd, uint msg, uintptr_t wp, intptr_t lp)'),
+    // taskbar, wallpaper and the dock's window list
+    SendMessageTimeoutStr: user32.func('SendMessageTimeoutW', 'intptr_t __stdcall SendMessageTimeoutStr(intptr_t hwnd, uint msg, uintptr_t wp, str16 lp, uint flags, uint timeout, _Out_ uintptr_t *result)'),
+    SystemParametersInfoW: user32.func('bool __stdcall SystemParametersInfoW(uint action, uint param, str16 value, uint flags)'),
+    IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hwnd)'),
+    IsIconic: user32.func('bool __stdcall IsIconic(intptr_t hwnd)'),
+    GetWindow: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint cmd)'),
+    GetWindowTextW: user32.func('int __stdcall GetWindowTextW(intptr_t hwnd, uint16_t *buf, int max)'),
+    GetWindowThreadProcessId: user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)'),
+    ShowWindow: user32.func('bool __stdcall ShowWindow(intptr_t hwnd, int cmd)'),
+    SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(intptr_t hwnd)'),
+    SwitchToThisWindow: user32.func('void __stdcall SwitchToThisWindow(intptr_t hwnd, bool altTab)'),
+    shell32: koffi.load('shell32.dll'),
+    kernel32: koffi.load('kernel32.dll'),
+    dwmapi: koffi.load('dwmapi.dll'),
   };
+  const APPBARDATA = koffi.struct('APPBARDATA', { cbSize: 'uint32', hWnd: 'intptr_t', uCallbackMessage: 'uint32', uEdge: 'uint32', rc: RECT, lParam: 'intptr_t' });
+  Object.assign(u, {
+    APPBARDATA,
+    SHAppBarMessage: u.shell32.func('uintptr_t __stdcall SHAppBarMessage(uint32 msg, _Inout_ APPBARDATA *data)'),
+    OpenProcess: u.kernel32.func('intptr_t __stdcall OpenProcess(uint32 access, bool inherit, uint32 pid)'),
+    QueryFullProcessImageNameW: u.kernel32.func('bool __stdcall QueryFullProcessImageNameW(intptr_t proc, uint32 flags, uint16_t *buf, _Inout_ uint32_t *size)'),
+    CloseHandle: u.kernel32.func('bool __stdcall CloseHandle(intptr_t h)'),
+    DwmGetWindowAttribute: u.dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hwnd, uint32 attr, _Out_ int32_t *value, uint32 size)'),
+  });
   return u;
 }
 
@@ -129,4 +152,83 @@ function setDesktopIcons(show) {
   return true;
 }
 
-module.exports = { isWin, attachToDesktop, fullscreenAppRunning, setDesktopIcons };
+// ---------- desktop picture ----------
+/** Set the regular Windows wallpaper (shown before the app starts, and if it isn't running). */
+function setWindowsWallpaper(file) {
+  if (!load()) return false;
+  return u.SystemParametersInfoW(0x0014, 0, file, 0x01 | 0x02); // SPI_SETDESKWALLPAPER, save + tell everyone
+}
+
+// ---------- taskbar ----------
+const ABM_NEW = 0, ABM_REMOVE = 1, ABM_QUERYPOS = 2, ABM_SETPOS = 3, ABM_GETSTATE = 4, ABM_SETSTATE = 10, ABS_AUTOHIDE = 1;
+const appbar = (hwnd, extra = {}) => ({ cbSize: u.koffi.sizeof(u.APPBARDATA), hWnd: hwnd, uCallbackMessage: 0, uEdge: 3, rc: { left: 0, top: 0, right: 0, bottom: 0 }, lParam: 0, ...extra });
+function taskbarAutoHide() {
+  if (!load()) return false;
+  const d = appbar(u.FindWindowW('Shell_TrayWnd', null));
+  return (Number(u.SHAppBarMessage(ABM_GETSTATE, d)) & ABS_AUTOHIDE) !== 0;
+}
+/** The same switch as Settings > Personalization > Taskbar > Automatically hide the taskbar. */
+function setTaskbarAutoHide(on) {
+  if (!load()) return false;
+  u.SHAppBarMessage(ABM_SETSTATE, appbar(u.FindWindowW('Shell_TrayWnd', null), { lParam: on ? ABS_AUTOHIDE : 0 }));
+  return true;
+}
+/** Tell Explorer that taskbar settings in the registry changed, so it redraws without a restart. */
+function refreshTaskbar() {
+  if (!load()) return;
+  const out = [0];
+  for (const area of ['TraySettings', 'ImmersiveColorSet', 'WindowsThemeElement']) u.SendMessageTimeoutStr(0xffff, 0x001A, 0, area, 0x0002, 200, out); // HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG
+}
+
+// ---------- the dock: reserve a strip of the screen like the taskbar does ----------
+function reserveEdge(win, rect, edge = 'bottom') {
+  if (!load()) return null;
+  const hwnd = hwndOf(win), uEdge = { left: 0, top: 1, right: 2, bottom: 3 }[edge];
+  u.SHAppBarMessage(ABM_NEW, appbar(hwnd, { uCallbackMessage: 0x0400 + 77 }));
+  const d = appbar(hwnd, { uEdge, rc: { left: rect.x, top: rect.y, right: rect.x + rect.width, bottom: rect.y + rect.height } });
+  u.SHAppBarMessage(ABM_QUERYPOS, d);
+  if (edge === 'bottom') d.rc.top = d.rc.bottom - rect.height; else if (edge === 'top') d.rc.bottom = d.rc.top + rect.height;
+  u.SHAppBarMessage(ABM_SETPOS, d);
+  return { x: d.rc.left, y: d.rc.top, width: d.rc.right - d.rc.left, height: d.rc.bottom - d.rc.top };
+}
+function releaseEdge(win) { if (load() && !win.isDestroyed()) u.SHAppBarMessage(ABM_REMOVE, appbar(hwndOf(win))); }
+
+// ---------- open windows, for the dock ----------
+const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Windows.UI.Core.CoreWindow']);
+function exeOf(pid) {
+  const h = u.OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+  if (isNull(h)) return '';
+  try { const buf = new Uint16Array(1024), size = [1024]; return u.QueryFullProcessImageNameW(h, 0, buf, size) ? String.fromCharCode(...buf.slice(0, size[0])) : ''; }
+  finally { u.CloseHandle(h); }
+}
+/** Top-level app windows a taskbar would show: visible, not owned, not tool windows, not cloaked. */
+function listWindows(ownPids = []) {
+  if (!load()) return [];
+  const out = [], fg = Number(u.GetForegroundWindow());
+  const cb = u.koffi.register((hwnd) => {
+    if (!u.IsWindowVisible(hwnd) || !isNull(u.GetWindow(hwnd, 4))) return true; // GW_OWNER
+    const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
+    if ((ex & 0x80) && !(ex & 0x40000)) return true; // WS_EX_TOOLWINDOW without WS_EX_APPWINDOW
+    const cloaked = [0];
+    if (u.DwmGetWindowAttribute(hwnd, 14, cloaked, 4) === 0 && cloaked[0]) return true; // DWMWA_CLOAKED: hidden UWP / other desktops
+    const tb = new Uint16Array(256), n = u.GetWindowTextW(hwnd, tb, 256);
+    if (!n) return true;
+    const cls = new Uint16Array(128), cn = u.GetClassNameW(hwnd, cls, 128);
+    if (SHELL_CLASSES.has(String.fromCharCode(...cls.slice(0, cn)))) return true;
+    const pid = [0]; u.GetWindowThreadProcessId(hwnd, pid);
+    if (ownPids.includes(pid[0])) return true;
+    out.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === fg, minimized: !!u.IsIconic(hwnd) });
+    return true;
+  }, u.koffi.pointer(u.EnumProc));
+  try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
+  return out;
+}
+/** Click on a dock item: bring the window forward, or minimize it if it's already in front. */
+function focusWindow(hwnd) {
+  if (!load()) return;
+  if (Number(u.GetForegroundWindow()) === hwnd && !u.IsIconic(hwnd)) { u.ShowWindow(hwnd, 6); return; } // SW_MINIMIZE
+  if (u.IsIconic(hwnd)) u.ShowWindow(hwnd, 9); // SW_RESTORE
+  if (!u.SetForegroundWindow(hwnd)) u.SwitchToThisWindow(hwnd, true);
+}
+
+module.exports = { isWin, attachToDesktop, fullscreenAppRunning, setDesktopIcons, setWindowsWallpaper, taskbarAutoHide, setTaskbarAutoHide, refreshTaskbar, reserveEdge, releaseEdge, listWindows, focusWindow };
