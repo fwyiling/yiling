@@ -1,7 +1,7 @@
 // Shield Client – service worker
 import { DEFAULTS } from './lib/defaults.js';
 import { scanDocument } from './lib/extract.js';
-import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters } from './lib/mangadex.js';
+import { parseMangaDexUrl, mangaDexInfo, mangaDexChapters, useMangaDexTab } from './lib/mangadex.js';
 
 
 const MALWARE_FEED = 'https://urlhaus.abuse.ch/downloads/hostfile/';
@@ -253,10 +253,11 @@ async function scanTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
   if (parseMangaDexUrl(tab.url)) {
     const s = await getSettings();
+    useMangaDexTab(tabId);
     const info = await mangaDexInfo(tab.url, s.mdLangs);
     const chapters = await mangaDexChapters(info.mangaId, info.lang);
     return {
-      ...info, title: info.series, url: tab.url, origin: 'https://mangadex.org', images: [], text: '',
+      ...info, sourceTabId: tabId, title: info.series, url: tab.url, origin: 'https://mangadex.org', images: [], text: '',
       chapters, currentIndex: chapters.findIndex((c) => c.id === info.currentChapterId),
     };
   }

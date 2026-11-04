@@ -1,7 +1,7 @@
 import { makeZip, makeEpubBook } from '../lib/zip.js';
 import { scanDocument, autoScroll } from '../lib/extract.js';
 import { buildMangaReader, buildNovelReader } from '../lib/reader.js';
-import { mangaDexChapters, mangaDexPages, LANG_NAMES } from '../lib/mangadex.js';
+import { mangaDexChapters, mangaDexPages, mangaDexImageViaTab, useMangaDexTab, LANG_NAMES } from '../lib/mangadex.js';
 
 const $ = (id) => document.getElementById(id);
 const jobId = new URLSearchParams(location.search).get('job');
@@ -16,6 +16,7 @@ if (!job) { $('series').textContent = 'This download has expired. Start it again
 
 const isImages = job.kind === 'images';
 const isMD = job.source === 'mangadex';
+if (isMD) useMangaDexTab(await chrome.tabs.get(job.sourceTabId).then((t) => t.id, () => null));
 if (!isMD) {
   // make sure the page the user is on is always downloadable on its own
   const here = { url: job.url.replace(/#.*$/, ''), num: 0, label: job.title };
@@ -254,7 +255,11 @@ $('start').onclick = async () => {
         const results = new Array(page.images.length);
         let got = 0;
         await pool(page.images, 4, async (u, i) => {
-          try { results[i] = await fetchImage(u); } catch {}
+          try { results[i] = await fetchImage(u); } catch (e) {
+            if (isMD) { // direct download refused – fetch it through the MangaDex tab instead
+              try { const data = await mangaDexImageViaTab(u); results[i] = { data, ext: sniff(data) === 'unknown' ? 'jpg' : sniff(data) }; } catch {}
+            }
+          }
           el.lastChild.textContent = `${++got}/${page.images.length} pages`;
         });
         const files = results.map((r, i) => r && { name: `${pad(i + 1, 3)}.${r.ext}`, data: r.data }).filter(Boolean);
