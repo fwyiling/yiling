@@ -43,6 +43,7 @@ const calls = {
   mediaKey: () => w.mediaKey(0xB3),
   showTaskbar: () => w.showTaskbar(true),
   systemOverlayActive: () => w.systemOverlayActive(),
+  hideSwitchLabel: () => w.hideSwitchLabel({ x: 0, y: 0, width: 1920, height: 1080 }),
   taskbarVisible: () => w.taskbarVisible(),
   iconPixels: () => w.iconPixels('C:\\Windows\\explorer.exe'),
   placeWindow: () => w.placeWindow(fakeWin, { x: 0, y: 0, width: 100, height: 30 }),

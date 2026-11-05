@@ -29,7 +29,7 @@ const ui = (page, query = '') => `sd://ui/${page}${query}`;
 
 let displayTimer;
 let store, tray, homeWin = null, settingsWin = null, dockWin = null, islandWin = null, paused = false, userPaused = false;
-let gamer = false, gamerAuto = false; // gamer mode: everything of ours out of the way and idle
+let gamer = false, gamerAuto = false, fullSince = 0, fullSteady = false; // gamer mode: everything of ours out of the way and idle
 const wallpapers = new Map(); // display id -> BrowserWindow
 let apps = null;
 
@@ -88,9 +88,13 @@ function checkPause() {
   const displays = screen.getAllDisplays().map((d) => (win32.isWin ? screen.dipToScreenRect(null, d.bounds) : d.bounds));
   const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays, ownPids())) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
     || (g.pauseWhenCovered && wallpaperCovered());
-  if (g.autoGamer !== false && win32.isWin) { // a full-screen game or video: gamer mode by itself, and off again afterwards
-    const full = win32.fullscreenAppRunning(displays, ownPids());
-    if (full && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
+  // a full-screen game or video: gamer mode by itself, and off again afterwards. Only once something has stayed
+  // full screen for 3 s: screenshot overlays and other brief full-screen flashes must not flip everything around.
+  const full = win32.isWin && win32.fullscreenAppRunning(displays, ownPids());
+  fullSince = full ? (fullSince || Date.now()) : 0;
+  fullSteady = !!fullSince && Date.now() - fullSince >= 3000;
+  if (g.autoGamer !== false && win32.isWin) {
+    if (fullSteady && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
   }
   const next = userPaused || gamer || auto || overlayOn;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
@@ -111,11 +115,11 @@ function sendCursor() {
 }
 
 // ---------- Home panel ----------
-// the Home panel is closed (memory freed) after 3 minutes unused; it opens again in a moment when called
+// the Home panel is closed (memory freed) after 15 minutes unused; it opens again in a moment when called
 let homeRelease = null;
 function scheduleHomeRelease() {
   clearTimeout(homeRelease);
-  homeRelease = setTimeout(() => { if (homeWin && !homeWin.isDestroyed() && !homeWin.isVisible()) { homeWin.destroy(); homeWin = null; } }, 3 * 60e3);
+  homeRelease = setTimeout(() => { if (homeWin && !homeWin.isDestroyed() && !homeWin.isVisible()) { homeWin.destroy(); homeWin = null; } }, 15 * 60e3);
 }
 function toggleHome(force, mode = '') {
   const show = force ?? !(homeWin && homeWin.isVisible());
@@ -131,7 +135,11 @@ function toggleHome(force, mode = '') {
     homeWin.loadURL(ui('home.html'));
     homeWin.on('blur', () => { homeWin?.hide(); scheduleHomeRelease(); });
     homeWin.on('closed', () => { homeWin = null; });
-    homeWin.once('ready-to-show', () => { homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (mode) setTimeout(() => homeWin?.webContents.send('home-shown', mode), 400); });
+    // shown once the page has drawn its content (not on the first empty paint, which looked like loading twice)
+    let shown = false;
+    const reveal = () => { if (shown || !homeWin || homeWin.isDestroyed()) return; shown = true; homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (mode) homeWin.webContents.send('home-shown', mode); };
+    ipcMain.once('home:ready', reveal);
+    setTimeout(reveal, 2500); // in case the page is slow
     return;
   }
   homeWin.setBounds(d.bounds);
@@ -315,6 +323,26 @@ const TIMER_ACTIONS = {
   reset: () => timerSet({ state: 'idle', duration: 0, endAt: 0, left: 0 }),
 };
 
+// ---------- switching desktops ----------
+// Watched four times a second (two registry reads): right after a switch, hide Windows' "Desktop N" label and
+// the taskbar Windows brings back, and resume the wallpaper.
+let deskNow = -1, lastSwitchLabel = [];
+function watchDesktops() {
+  if (!win32.isWin || gamer) return;
+  const vd = win32.virtualDesktops();
+  if (vd.current === deskNow) return;
+  const first = deskNow === -1;
+  deskNow = vd.current;
+  if (first) return;
+  checkPause();
+  if (store.get().general.hideSwitchLabel !== false) {
+    const scr = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+    let n = 0;
+    const t = setInterval(() => { const h = win32.hideSwitchLabel(scr); if (h.length) lastSwitchLabel = h; if (++n >= 20) clearInterval(t); }, 80);
+  }
+  if (dockWin) setTimeout(() => { if (!win32.systemOverlayActive()) win32.showTaskbar(false); }, 450);
+}
+
 // ---------- MacBook-style switching: straight to the next / previous app, no picker ----------
 // Apps keep a stable left-to-right order (the order they were first seen, like Spaces on a Mac), so
 // swiping right then left always comes back to where you were.
@@ -357,13 +385,13 @@ const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return 
 function topbarTick() {
   if (!topWin || topWin.isDestroyed() || gamer) return;
   const d = screen.getPrimaryDisplay();
-  const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)], ownPids());
+  const full = fullSteady; // the same 3-second rule as gamer mode (checkPause keeps it current)
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
   keepTopbarAtTop(); keepIslandAtTop();
   const fg = currentWindows().find((w) => w.active);
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   const vd = win32.isWin ? win32.virtualDesktops() : { count: 1, current: 0 }, key = `${name}|${vd.count}|${vd.current}`;
-  if (vd.current !== lastDesk) { const switched = lastDesk !== -1; lastDesk = vd.current; checkPause(); if (switched && dockWin) setTimeout(() => { if (!win32.systemOverlayActive()) win32.showTaskbar(false); }, 450); } // a new desktop: resume the wallpaper at once if nothing covers it
+  if (vd.current !== lastDesk) { lastDesk = vd.current; checkPause(); } // a new desktop: resume the wallpaper at once if nothing covers it
   if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
 function setTopbar(on) {
@@ -497,7 +525,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -530,6 +558,8 @@ function addPin(p, name) {
   return applySettings({ home: { pins: [...pins, { name: name || path.basename(p).replace(/\.[^.]+$/, ''), path: p }] } });
 }
 async function iconFor(p, size) {
+  const se = storeEntry(p); // a Store app pinned by its exe: use its Start menu entry (logo)
+  if (se) p = se.path;
   const pin = store.get().home.pins.find((x) => x.path === p);
   if (pin?.icon && fs.existsSync(pin.icon)) { // an icon you picked yourself
     if (/\.(exe|dll)$/i.test(pin.icon)) { const u = bigIcon(pin.icon); if (u) return u; }
@@ -537,10 +567,25 @@ async function iconFor(p, size) {
     if (!img.isEmpty()) return img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL();
   }
   if (/\.lnk$/i.test(p) && win32.isWin) {
+    // never the shortcut file's own icon (Windows gives a blank page with an arrow): follow it to its icon / program
     try {
       const l = shell.readShortcutLink(p);
-      const isDir = (() => { try { return fs.statSync(l.target).isDirectory(); } catch { return false; } })();
-      if (!l.icon && l.target && !isDir && !/\.(exe|ico|dll)$/i.test(l.target)) return '';
+      const env = (f) => String(f || '').replace(/%([^%]+)%/g, (_m, v) => process.env[v] || '');
+      const icon = env(l.icon), target = env(l.target), index = l.iconIndex || 0;
+      const isDir = (() => { try { return fs.statSync(target).isDirectory(); } catch { return false; } })();
+      const src = icon && fs.existsSync(icon) ? icon : target && fs.existsSync(target) && !isDir ? target : '';
+      if (src) {
+        if (/\.(exe|dll|ico)$/i.test(src) && (index !== 0 || /\.dll$/i.test(src))) { // a numbered icon inside a file (imageres.dll, shell32.dll…)
+          const px = win32.iconPixels(src, index, 96);
+          if (px) return nativeImage.createFromBitmap(px.data, { width: px.width, height: px.height }).toDataURL();
+        }
+        if (/\.(exe|ico)$/i.test(src)) return bigIcon(src) || (await app.getFileIcon(src, { size: 'large' }).then((i) => i.toDataURL()).catch(() => ''));
+        if (!icon && !/\.(exe|ico|dll)$/i.test(src)) return ''; // a shortcut to a script: letter tile
+      } else if (!l.target && !isDir) {
+        // a shortcut without a target (Store / system app): its Start menu entry knows the logo
+        const e = (apps || []).find((a) => a.name.toLowerCase() === path.basename(p, '.lnk').toLowerCase() && a.logo);
+        if (e) { const img = nativeImage.createFromPath(e.logo); if (!img.isEmpty()) return img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL(); }
+      }
     } catch {}
   }
   if (/\.(bat|cmd|py|pyw|ps1|vbs|jar)$/i.test(p)) return ''; // scripts: Windows' icon for them is a blank page
@@ -605,7 +650,10 @@ function wireIpc() {
   });
   ipcMain.handle('pin-target', (_e, p) => { // what a pinned shortcut points at, to match it with open windows
     if (!isKnownApp(p)) return '';
-    if (appEntry(p)?.exe) return appEntry(p).exe;
+    if (/\\WindowsApps\\/i.test(p)) return storeKey(p);
+    const ae = appEntry(p);
+    if (ae?.exe) return ae.exe;
+    if (ae?.appId?.includes('!')) { const [fam] = ae.appId.split('!'); const i = fam.lastIndexOf('_'); return `store:${fam.slice(0, i)}|${fam.slice(i + 1)}`.toLowerCase(); }
     if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
     try { return shell.readShortcutLink(p).target || p; } catch { return p; }
   });
@@ -652,6 +700,8 @@ function wireIpc() {
     if (!dockWin || e.sender !== dockWin.webContents) return;
     const w = windowsList.find((x) => x.exe === exe);
     if (!w || !/\.exe$/i.test(exe)) throw new Error('not a running app');
+    const se = storeEntry(exe); // Store apps are pinned by their Start menu entry, so they can be opened again
+    if (se) return addPin(se.path, se.name);
     const name = path.basename(exe, '.exe');
     return addPin(exe, name.charAt(0).toUpperCase() + name.slice(1));
   });
@@ -681,12 +731,30 @@ function refreshApps(force = false) {
   return appsLoading;
 }
 const appEntry = (p) => (apps || []).find((a) => a.path === p) || store.get().home.pins.find((x) => x.path === p);
-function launchApp(p) {
+// Store apps (Claude, WhatsApp…) live in C:\Program Files\WindowsApps, where their exe can't be started or read
+// directly. Their folder is Name_Version_Arch_Resource_PublisherId; the Start menu entry is Name_PublisherId!App.
+function storeEntry(p) {
+  const m = /\\WindowsApps\\([^\\]+)\\/i.exec(p || '');
+  if (!m) return null;
+  const parts = m[1].split('_');
+  if (parts.length < 2) return null;
+  const family = `${parts[0]}_${parts[parts.length - 1]}`.toLowerCase();
+  return (apps || []).find((a) => a.appId && a.appId.toLowerCase().startsWith(`${family}!`)) || null;
+}
+const storeKey = (p) => { const m = /\\WindowsApps\\([^\\]+)\\/i.exec(p || ''); if (!m) return ''; const x = m[1].split('_'); return `store:${x[0]}|${x[x.length - 1]}`.toLowerCase(); };
+async function launchApp(p) {
+  if (/\\WindowsApps\\/i.test(p)) { // open Store apps the way Start does
+    let se = storeEntry(p);
+    if (!se) { await refreshApps(true); se = storeEntry(p); }
+    if (se) p = se.path;
+  }
   if (p.startsWith('shell:AppsFolder\\')) { // Store and other Start-menu-only apps open the way Start opens them
     if (win32.isWin) require('child_process').spawn('explorer.exe', [p], { detached: true, stdio: 'ignore' }).unref();
     return Promise.resolve('');
   }
-  return shell.openPath(p);
+  const err = await shell.openPath(p);
+  if (err) throw new Error(err);
+  return '';
 }
 
 // ---------- start ----------
@@ -731,6 +799,7 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', displaysChanged);
   powerMonitor.on('on-battery', checkPause);
   powerMonitor.on('on-ac', checkPause);
+  setInterval(watchDesktops, 250);
   setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
   setInterval(sendCursor, 50);

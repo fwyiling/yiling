@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('sd', {
   onCursor: on('cursor'),
   onHomeShown: on('home-shown'),
   onApps: on('apps'),
+  homeReady: () => ipcRenderer.send('home:ready'),
   searchFiles: (q) => ipcRenderer.invoke('files:search', q),
   pinPath: (p) => ipcRenderer.invoke('pin:add', p),
   pinFile: (file) => ipcRenderer.invoke('pin:add', webUtils.getPathForFile(file)), // a file dropped on Home

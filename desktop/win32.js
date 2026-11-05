@@ -378,6 +378,31 @@ function systemOverlayActive() {
   return false;
 }
 
+// The "Desktop 2" label Windows shows when switching desktops: a small Explorer window near the bottom.
+// Right after a switch, small Explorer pop-ups in the lower part of the screen are hidden (nothing else is touched).
+const KEEP_SHELL = new Set(['Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW', 'CabinetWClass', 'ExploreWClass', 'TaskListThumbnailWnd', 'NotifyIconOverflowWindow', '#32768']);
+let popCb = null, popOut = [], popScreen = null;
+function hideSwitchLabel(screenRect) {
+  if (!load()) return [];
+  popOut = []; popScreen = screenRect;
+  popCb ||= u.koffi.register((hwnd) => {
+    if (!u.IsWindowVisible(hwnd)) return true;
+    const buf = new Uint16Array(128), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(hwnd, buf, 128)));
+    if (KEEP_SHELL.has(cls)) return true;
+    const pid = [0]; u.GetWindowThreadProcessId(hwnd, pid);
+    if ((exeOf(pid[0]).split('\\').pop() || '').toLowerCase() !== 'explorer.exe') return true;
+    const r = {}; if (!u.GetWindowRect(hwnd, r)) return true;
+    const w = r.right - r.left, h = r.bottom - r.top, s = popScreen;
+    if (w < 60 || w > 800 || h < 24 || h > 300) return true; // only small pop-ups
+    if (r.top < s.y + s.height * 0.55) return true; // in the lower part of the screen, where the label appears
+    u.ShowWindow(hwnd, 0); // SW_HIDE
+    popOut.push({ cls, rect: [r.left, r.top, w, h] });
+    return true;
+  }, u.koffi.pointer(u.EnumProc));
+  u.EnumWindows(popCb, 0);
+  return popOut;
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -478,6 +503,7 @@ module.exports = {
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
   systemOverlayActive: safe('systemOverlayActive', systemOverlayActive, true),
+  hideSwitchLabel: safe('hideSwitchLabel', hideSwitchLabel, []),
   lastOverlay: () => lastOverlay,
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   iconPixels: safe('iconPixels', iconPixels, null),

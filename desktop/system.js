@@ -180,24 +180,46 @@ $ProgressPreference = 'SilentlyContinue'; $ErrorActionPreference = 'Stop'
 $q = $env:SD_Q.Replace("'", "''")
 $c = New-Object -ComObject ADODB.Connection
 $c.Open("Provider=Search.CollatorDSO;Extended Properties='Application=Windows';")
-$ext = ('.exe', '.lnk', '.bat', '.cmd', '.appref-ms', '.py', '.pyw', '.url' | ForEach-Object { "System.FileExtension = '$_'" }) -join ' OR '
-$rs = $c.Execute("SELECT TOP 20 System.ItemPathDisplay, System.ItemNameDisplay FROM SYSTEMINDEX WHERE System.ItemNameDisplay LIKE '%$q%' AND ($ext)")
+$rs = $c.Execute("SELECT TOP 40 System.ItemPathDisplay, System.ItemNameDisplay, System.ItemType FROM SYSTEMINDEX WHERE System.ItemNameDisplay LIKE '%$q%' AND SCOPE='file:' ORDER BY System.DateModified DESC")
 $out = @()
-while (-not $rs.EOF) { $out += [ordered]@{ p = $rs.Fields.Item('System.ItemPathDisplay').Value; n = $rs.Fields.Item('System.ItemNameDisplay').Value }; $rs.MoveNext() }
+while (-not $rs.EOF) { $out += [ordered]@{ p = $rs.Fields.Item('System.ItemPathDisplay').Value; n = $rs.Fields.Item('System.ItemNameDisplay').Value; t = $rs.Fields.Item('System.ItemType').Value }; $rs.MoveNext() }
 $c.Close()
 $j = ConvertTo-Json @($out) -Compress
 [Console]::Out.Write([regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value }))
 `;
+// fallback without Windows Search: Desktop, Documents, Downloads, Pictures, Music, Videos (a few levels deep)
+function walkFiles(q) {
+  const home = require('os').homedir(), out = [], ql = q.toLowerCase();
+  let seen = 0;
+  const walk = (dir, depth) => {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.length >= 30 || ++seen > 6000) return;
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const p = path.join(dir, e.name);
+      if (e.name.toLowerCase().includes(ql)) out.push({ name: e.name.replace(/\.(lnk|url)$/i, ''), path: p, folder: e.isDirectory() });
+      if (e.isDirectory() && depth < 4) walk(p, depth + 1);
+    }
+  };
+  for (const d of ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']) walk(path.join(home, d), 0);
+  return out;
+}
 function searchFiles(query) {
   const q = String(query || '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 40); // nothing that means something to the query language
-  if (process.platform !== 'win32' || q.length < 2) return Promise.resolve([]);
+  if (q.length < 2) return Promise.resolve([]);
+  if (process.platform !== 'win32') return Promise.resolve(walkFiles(q));
   const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   return new Promise((resolve) => require('child_process').execFile(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(FILES_PS, 'utf16le').toString('base64')],
     { windowsHide: true, timeout: 15000, env: { ...process.env, SD_Q: q } }, (err, stdout) => {
       let items = [];
       try { items = JSON.parse(String(stdout).trim() || '[]'); } catch {}
-      resolve((Array.isArray(items) ? items : [items]).filter((x) => x?.p && !/\\(WinSxS|Installer|\$Recycle\.Bin)\\|unins\d*\.exe$/i.test(x.p))
-        .map((x) => ({ name: String(x.n).replace(/\.(lnk|url|appref-ms)$/i, ''), path: String(x.p) })));
+      let found = (Array.isArray(items) ? items : [items]).filter((x) => x?.p && !/\\(WinSxS|Installer|\$Recycle\.Bin|AppData)\\|unins\d*\.exe$/i.test(x.p))
+        .map((x) => ({ name: String(x.n).replace(/\.(lnk|url|appref-ms)$/i, ''), path: String(x.p), folder: String(x.t || '').toLowerCase() === 'directory' }));
+      if (!found.length) found = walkFiles(q); // Windows Search turned off: look through your own folders directly
+      // apps and shortcuts first, then folders, then everything else (newest first, as the index gave them)
+      const rank = (f) => (/\.(exe|lnk|appref-ms|url|bat|cmd)$/i.test(f.path) ? 0 : f.folder ? 1 : 2);
+      resolve(found.sort((a, b) => rank(a) - rank(b)).slice(0, 24));
     }));
 }
 

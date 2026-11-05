@@ -6,6 +6,8 @@ const $ = (id) => document.getElementById(id);
 let s = await sd.get(), wins = [];
 const icons = new Map(), targets = new Map();
 const norm = (p) => String(p || '').toLowerCase();
+// a Store app's windows run from WindowsApps\Name_Version_Arch__Publisher\…; its pin says store:name|publisher
+const windowKey = (exe) => { const m = /\\windowsapps\\([^\\]+)\\/i.exec(exe || ''); if (!m) return norm(exe); const x = m[1].toLowerCase().split('_'); return `store:${x[0]}|${x[x.length - 1]}`; };
 
 function applyLook() {
   applyAccent(s.accent);
@@ -70,7 +72,7 @@ async function render() {
   const pins = s.home.pins || [];
   const pinExes = await Promise.all(pins.map((p) => pinTarget(p.path)));
   const byExe = new Map();
-  for (const w of wins) { const k = norm(w.exe); if (!byExe.has(k)) byExe.set(k, []); byExe.get(k).push(w); }
+  for (const w of wins) { const k = windowKey(w.exe); if (!byExe.has(k)) byExe.set(k, []); byExe.get(k).push(w); }
   const used = new Set();
   $('pins').replaceChildren(...pins.map((p, i) => {
     const k = norm(pinExes[i]), open = byExe.get(k) || [];

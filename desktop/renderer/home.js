@@ -122,6 +122,18 @@ function pinButton(a) {
   };
   return b;
 }
+const PIN_EXT = /\.(exe|lnk|url|bat|cmd|appref-ms|py|pyw|ps1|vbs|jar)$/i;
+function resultMenu(r, x, y) {
+  document.querySelector('.ctx')?.remove();
+  const m = document.createElement('div'); m.className = 'ctx';
+  const item = (label, fn) => { const b = Object.assign(document.createElement('button'), { textContent: label }); b.onclick = () => { m.remove(); fn(); }; m.append(b); };
+  item('Open', () => r.run());
+  if (!String(r.app.path).startsWith('shell:')) item('Show in folder', () => sd.revealPin(r.app.path));
+  if (!r.app.file || r.pinnable) item(isPinned(r.app) ? 'Unpin' : 'Pin', () => r.app.file && !isPinned(r.app) ? sd.pinPath(r.app.path).then((n) => { s = n; renderResults(); }) : togglePin(r.app).then(renderResults));
+  document.body.append(m);
+  m.style.left = `${Math.min(x, innerWidth - m.offsetWidth - 8)}px`; m.style.top = `${Math.min(y, innerHeight - m.offsetHeight - 8)}px`;
+  setTimeout(() => addEventListener('pointerdown', (e) => { if (!m.contains(e.target)) m.remove(); }, { once: true }));
+}
 function renderResults() {
   const q = $('q').value.trim().toLowerCase();
   $('results').hidden = !q;
@@ -130,12 +142,12 @@ function renderResults() {
   const pool = [...apps, ...s.home.pins.filter((p) => !apps.some((a) => a.path === p.path))]; // your pinned apps too, even ones the Start menu doesn't know
   const hits = pool.map((a) => [a, score(a.name, q)]).filter(([, sc]) => sc).sort((x, y) => y[1] - x[1] || x[0].name.localeCompare(y[0].name)).slice(0, 8).map(([a]) => a);
   const known = new Set(hits.map((a) => a.path));
-  const files = fileQ === q ? fileHits.filter((f) => !known.has(f.path) && !hits.some((a) => a.name.toLowerCase() === f.name.toLowerCase())).slice(0, 6) : [];
+  const files = fileQ === q ? fileHits.filter((f) => !known.has(f.path) && !hits.some((a) => a.name.toLowerCase() === f.name.toLowerCase())).slice(0, 10) : [];
   if (fileQ !== q) searchFilesSoon(q);
   const raw = $('q').value.trim();
   const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw) && !raw.includes(' ');
   rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => sd.launch(a.path) })),
-    ...files.map((f) => ({ label: f.name, hint: f.path.replace(/\\[^\\]+$/, ''), app: { ...f, file: true }, run: () => sd.launch(f.path) })),
+    ...files.map((f) => ({ label: f.name, hint: (f.folder ? 'Folder · ' : '') + f.path.replace(/[\\/][^\\/]+$/, ''), app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => sd.launch(f.path) })),
     isUrl ? { label: raw, hint: 'Open site', run: () => sd.open(/^https?:/i.test(raw) ? raw : `https://${raw}`) } : null,
     { label: `Search the web for “${raw}”`, hint: (s.home.engine || 'google').replace(/^./, (c) => c.toUpperCase()), run: () => sd.open((ENGINES[s.home.engine] || ENGINES.google) + encodeURIComponent(raw)) }].filter(Boolean);
   sel = Math.min(sel, rows.length - 1);
@@ -143,8 +155,9 @@ function renderResults() {
     const d = document.createElement('div'); d.className = 'res' + (i === sel ? ' on' : '');
     d.append(r.app ? iconEl(r.app) : Object.assign(document.createElement('div'), { className: 'ph', textContent: r.hint === 'Open site' ? '↗' : '⌕' }));
     d.append(Object.assign(document.createElement('span'), { textContent: r.label }), Object.assign(document.createElement('small'), { textContent: r.hint }));
-    if (r.app) d.append(pinButton(r.app));
+    if (r.app && (!r.app.file || r.pinnable)) d.append(pinButton(r.app)); // documents and folders open; apps can also be pinned
     d.onclick = () => r.run();
+    if (r.app) d.oncontextmenu = (e) => { e.preventDefault(); resultMenu(r, e.clientX, e.clientY); };
     return d;
   }));
 }
@@ -309,7 +322,7 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('q').value)
 $('customize').onclick = () => sd.openSettings();
 function onShown(mode) {
   $('q').value = ''; renderResults(); $('q').focus();
-  $('q').placeholder = mode === 'pin' ? 'Type an app’s name, then press Pin (or Ctrl+Enter)' : 'Search apps, files or the web · Ctrl+Enter pins'; tick(); renderTimetable(); renderIconsBtn();
+  $('q').placeholder = mode === 'pin' ? 'Type an app’s name, then press Pin (or Ctrl+Enter)' : 'Search apps, files, folders or the web'; tick(); renderTimetable(); renderIconsBtn();
   sd.apps().then((list) => { if (list.length !== apps.length) { apps = list; if (showAll) renderGrid(); } }).catch(() => {}); // picks up newly installed apps
 }
 sd.onHomeShown(onShown);
@@ -317,3 +330,4 @@ $('hint').textContent = `${s.home.hotkey} opens this panel · drag apps here to 
 
 apps = await sd.apps().catch(() => []);
 renderGrid(); renderTodos(); renderReading(); onShown();
+requestAnimationFrame(() => sd.homeReady()); // drawn: the window may appear now
