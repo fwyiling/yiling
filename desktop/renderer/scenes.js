@@ -190,7 +190,10 @@ export function createScene(canvas, opts) {
     if (next !== scene) { scene = next; resize(true); } else if (o.reinit) scene.init(s, w, h);
   }
   function resize(reinit) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5) * scene.scale;
+    let dpr = Math.min(window.devicePixelRatio || 1, 1.5) * scene.scale;
+    // never draw more than about Full HD: on big / high-DPI screens the browser scales it up, at a fraction of the GPU work
+    const px = canvas.clientWidth * canvas.clientHeight * dpr * dpr, MAX_PX = 1920 * 1080 * scene.scale * scene.scale;
+    if (px > MAX_PX) dpr *= Math.sqrt(MAX_PX / px);
     const cw = Math.max(1, Math.round(canvas.clientWidth * dpr)), ch = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (cw !== canvas.width || ch !== canvas.height || reinit) { canvas.width = cw; canvas.height = ch; w = cw; h = ch; scene.init(s, w, h); }
     canvas.style.filter = scene.scale < 1 ? `blur(${Math.round(8 / scene.scale)}px)` : '';

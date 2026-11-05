@@ -204,6 +204,7 @@ function fullscreenAppRunning(displays) {
   const n = u.GetClassNameW(fg, buf, 64);
   const cls = String.fromCharCode(...buf.slice(0, n));
   if (cls === 'Progman' || cls === 'WorkerW' || cls === 'Shell_TrayWnd') return false; // the desktop itself
+  if (OVERLAY_CLASSES.has(cls)) return false; // Task View, Start, Alt+Tab cover the screen too, but they aren't games
   const r = {};
   if (!u.GetWindowRect(fg, r)) return false;
   return displays.some((d) => r.left <= d.x && r.top <= d.y && r.right >= d.x + d.width && r.bottom >= d.y + d.height);

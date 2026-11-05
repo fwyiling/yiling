@@ -83,6 +83,7 @@ function wallpaperCovered() {
   return ix * iy >= wa.width * wa.height * 0.97;
 }
 function checkPause() {
+  keepIslandAtTop(); // also without the top bar: the taskbar coming and going moves it
   const g = store.get().general;
   const displays = screen.getAllDisplays().map((d) => (win32.isWin ? screen.dipToScreenRect(null, d.bounds) : d.bounds));
   const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays)) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
@@ -217,7 +218,13 @@ function placeDock() {
 }
 // hide the Windows taskbar (the dock replaces it), but never while Task View, Start or another Windows
 // overlay is open: hiding it then would close that overlay again
-function hideTaskbar() { if (win32.isWin && !win32.systemOverlayActive()) win32.showTaskbar(false); }
+let overlayAt = 0;
+function hideTaskbar() {
+  if (!win32.isWin) return;
+  if (win32.systemOverlayActive()) { overlayAt = Date.now(); return; }
+  if (Date.now() - overlayAt < 1200) return; // just after Task View / a desktop switch: let Windows finish first
+  if (win32.taskbarVisible()) win32.showTaskbar(false);
+}
 
 // one shared list of open windows for the dock and the top bar, at most once a second
 let windowsAt = 0, windowsKey = '';
@@ -249,7 +256,7 @@ async function setDock(on) {
     dockWin.on('closed', () => { dockWin = null; });
     clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 1000);
     clearInterval(dockEdgeTimer); dockEdgeTimer = setInterval(dockEdgeCheck, 60);
-    clearInterval(taskbarTimer); taskbarTimer = setInterval(() => { if (!gamer && !app.isQuitting) hideTaskbar(); }, 250); // cheap: one window lookup
+    clearInterval(taskbarTimer); taskbarTimer = setInterval(() => { if (!gamer && !app.isQuitting) hideTaskbar(); }, 300); // cheap: one window lookup
   } else if (!on && dockWin) {
     clearInterval(dockTimer); clearInterval(dockEdgeTimer); clearInterval(taskbarTimer);
     if (win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
@@ -327,7 +334,7 @@ function switchApp(dir, via = 'dock') {
 
 // ---------- top bar (like the macOS menu bar) ----------
 const TOP_H = 24; // the macOS menu bar's height
-let topWin = null, topTimer = null, topApp = '';
+let topWin = null, topTimer = null, topApp = '', lastDesk = -1;
 function placeTopbar() {
   if (!topWin || topWin.isDestroyed()) return;
   const d = screen.getPrimaryDisplay(), strip = { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: TOP_H };
@@ -350,10 +357,11 @@ function topbarTick() {
   const d = screen.getPrimaryDisplay();
   const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]);
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
-  keepTopbarAtTop();
+  keepTopbarAtTop(); keepIslandAtTop();
   const fg = currentWindows().find((w) => w.active);
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   const vd = win32.isWin ? win32.virtualDesktops() : { count: 1, current: 0 }, key = `${name}|${vd.count}|${vd.current}`;
+  if (vd.current !== lastDesk) { lastDesk = vd.current; checkPause(); } // a new desktop: resume the wallpaper at once if nothing covers it
   if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
 function setTopbar(on) {
@@ -390,10 +398,17 @@ function topbarMenu(x, y) {
 // ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
 // After DynamicWin (Windows) and boring.notch (macOS): a transparent window at the top centre; only the pill takes clicks.
 const ISLAND = { w: 480, h: 320 };
+function islandRect() { const d = screen.getPrimaryDisplay(); return { x: Math.round(d.bounds.x + (d.bounds.width - ISLAND.w) / 2), y: d.bounds.y, width: ISLAND.w, height: ISLAND.h }; }
 function placeIsland() {
   if (!islandWin || islandWin.isDestroyed()) return;
-  const d = screen.getPrimaryDisplay();
-  islandWin.setBounds({ x: Math.round(d.bounds.x + (d.bounds.width - ISLAND.w) / 2), y: d.bounds.y, width: ISLAND.w, height: ISLAND.h });
+  islandWin.setBounds(islandRect());
+  if (win32.isWin) win32.placeWindow(islandWin, screen.dipToScreenRect(null, islandRect())); // Windows pushes it below the top bar otherwise
+}
+// Windows moves it whenever the taskbar / top bar change the work area; put it back on the top edge
+function keepIslandAtTop() {
+  if (!win32.isWin || !islandWin || islandWin.isDestroyed() || gamer) return;
+  const want = screen.dipToScreenRect(null, islandRect()), r = win32.windowRect(islandWin);
+  if (r && (r.y !== want.y || r.x !== want.x)) win32.placeWindow(islandWin, want);
 }
 function setIsland(on) {
   if (on && (!islandWin || islandWin.isDestroyed())) {
@@ -711,7 +726,7 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', displaysChanged);
   powerMonitor.on('on-battery', checkPause);
   powerMonitor.on('on-ac', checkPause);
-  setInterval(checkPause, 2000);
+  setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(sendCursor, 50);
   registerHotkey();
   tray = new Tray(icon().resize({ width: 16, height: 16 }));
