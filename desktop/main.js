@@ -198,7 +198,7 @@ function placeDock() {
   dockWin.webContents.send('dock-shown', dockShown);
 }
 async function pollWindows() {
-  if (!dockWin || dockWin.isDestroyed()) return;
+  if (!dockWin || dockWin.isDestroyed() || app.isQuitting) return; // never hide the taskbar again once quitting has begun
   if (win32.isWin) win32.showTaskbar(false); // Explorer brings it back now and then (Start menu, display changes)
   if (!store.get().dock.running) return;
   windowsList = win32.listWindows(ownPids());
@@ -600,11 +600,15 @@ app.whenReady().then(() => {
 app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
 app.on('before-quit', () => {
   app.isQuitting = true;
+  for (const t of [dockTimer, dockEdgeTimer, topTimer]) clearInterval(t); // nothing may hide the taskbar after this
   media.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
   if (topWin && win32.isWin) win32.releaseEdge(topWin);
   if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
 });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (win32.isWin && store?.get().dock.on) win32.showTaskbar(true); // last word: the taskbar is visible when we're gone
+});
 app.on('window-all-closed', () => {}); // keep running in the tray
