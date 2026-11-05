@@ -125,3 +125,9 @@ kbd { font: 600 11px system-ui; padding: 4px 8px; border-radius: 6px; background
 /* dropping files to pin */
 body.dropping #panel::after { content: "Drop to pin"; position: absolute; inset: -10px; display: grid; place-items: center; border-radius: 28px; border: 2px dashed var(--a);
   background: color-mix(in srgb, var(--a) 14%, rgba(10, 12, 16, .7)); font-size: 22px; font-weight: 600; pointer-events: none; }
+.app:focus:not(:focus-visible), button:focus:not(:focus-visible) { outline: none; }
+.res small { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpin { flex: none; margin-left: 10px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); cursor: pointer; font-size: 12px; opacity: 0; transition: opacity .12s; }
+.res:hover .rpin, .res.on .rpin, .rpin.on { opacity: 1; }
+.rpin:hover { border-color: var(--a); background: color-mix(in srgb, var(--a) 25%, transparent); }
+.rpin.on { color: var(--m); }

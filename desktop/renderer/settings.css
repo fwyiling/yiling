@@ -61,7 +61,7 @@ input[type=color] { width: 34px; height: 30px; padding: 0; border: 1px solid var
 a { color: color-mix(in srgb, var(--a) 60%, #fff); }
 .btn.pri { background: var(--a); border-color: var(--a); color: #fff; }
 .btn:disabled { opacity: .6; cursor: default; }
-#dockOpts.off { opacity: .45; pointer-events: none; }
+#dockOpts.off, #topOpts.off { opacity: .45; pointer-events: none; }
 .lockrow { display: flex; gap: 18px; align-items: center; margin: 16px 0 8px; flex-wrap: wrap; }
 .lockprev { width: 320px; aspect-ratio: 16 / 9; border-radius: 12px; background: var(--p2) center / cover no-repeat; border: 1px solid var(--line); display: grid; place-items: center; }
 .lockprev.has span { display: none; }

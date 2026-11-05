@@ -100,6 +100,28 @@ addEventListener('drop', async (e) => {
 // ---------- search ----------
 let sel = 0, rows = [];
 function score(name, q) { const n = name.toLowerCase(); if (n.startsWith(q)) return 3; if (n.split(/[\s\-_.]+/).some((w) => w.startsWith(q))) return 2; return n.includes(q) ? 1 : 0; }
+// files Windows Search found for the current query (apps/shortcuts/scripts outside the Start menu)
+let fileHits = [], fileQ = '', fileT = 0;
+function searchFilesSoon(q) {
+  clearTimeout(fileT);
+  if (q.length < 2) { fileHits = []; fileQ = ''; return; }
+  fileT = setTimeout(async () => {
+    const r = await sd.searchFiles(q).catch(() => []);
+    if ($('q').value.trim().toLowerCase() !== q) return;
+    fileQ = q; fileHits = r; renderResults();
+  }, 300);
+}
+function pinButton(a) {
+  const b = document.createElement('button'); b.className = 'rpin';
+  const pinned = isPinned(a);
+  b.textContent = pinned ? 'Pinned' : 'Pin'; b.classList.toggle('on', pinned); b.title = pinned ? 'Unpin from Home and the dock' : 'Pin to Home and the dock';
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    s = pinned ? await sd.unpin(a.path) : (a.file ? await sd.pinPath(a.path) : await sd.set({ home: { pins: [...s.home.pins, { name: a.name, path: a.path }] } }));
+    renderResults();
+  };
+  return b;
+}
 function renderResults() {
   const q = $('q').value.trim().toLowerCase();
   $('results').hidden = !q;
@@ -107,9 +129,13 @@ function renderResults() {
   if (!q) return;
   const pool = [...apps, ...s.home.pins.filter((p) => !apps.some((a) => a.path === p.path))]; // your pinned apps too, even ones the Start menu doesn't know
   const hits = pool.map((a) => [a, score(a.name, q)]).filter(([, sc]) => sc).sort((x, y) => y[1] - x[1] || x[0].name.localeCompare(y[0].name)).slice(0, 8).map(([a]) => a);
+  const known = new Set(hits.map((a) => a.path));
+  const files = fileQ === q ? fileHits.filter((f) => !known.has(f.path) && !hits.some((a) => a.name.toLowerCase() === f.name.toLowerCase())).slice(0, 6) : [];
+  if (fileQ !== q) searchFilesSoon(q);
   const raw = $('q').value.trim();
   const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw) && !raw.includes(' ');
   rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => sd.launch(a.path) })),
+    ...files.map((f) => ({ label: f.name, hint: f.path.replace(/\\[^\\]+$/, ''), app: { ...f, file: true }, run: () => sd.launch(f.path) })),
     isUrl ? { label: raw, hint: 'Open site', run: () => sd.open(/^https?:/i.test(raw) ? raw : `https://${raw}`) } : null,
     { label: `Search the web for “${raw}”`, hint: (s.home.engine || 'google').replace(/^./, (c) => c.toUpperCase()), run: () => sd.open((ENGINES[s.home.engine] || ENGINES.google) + encodeURIComponent(raw)) }].filter(Boolean);
   sel = Math.min(sel, rows.length - 1);
@@ -117,6 +143,7 @@ function renderResults() {
     const d = document.createElement('div'); d.className = 'res' + (i === sel ? ' on' : '');
     d.append(r.app ? iconEl(r.app) : Object.assign(document.createElement('div'), { className: 'ph', textContent: r.hint === 'Open site' ? '↗' : '⌕' }));
     d.append(Object.assign(document.createElement('span'), { textContent: r.label }), Object.assign(document.createElement('small'), { textContent: r.hint }));
+    if (r.app) d.append(pinButton(r.app));
     d.onclick = () => r.run();
     return d;
   }));
@@ -125,6 +152,7 @@ $('q').oninput = () => { sel = 0; renderResults(); };
 $('q').onkeydown = (e) => {
   if (e.key === 'ArrowDown') { sel = Math.min(rows.length - 1, sel + 1); renderResults(); e.preventDefault(); }
   else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); renderResults(); e.preventDefault(); }
+  else if (e.key === 'Enter' && e.ctrlKey && rows[sel]?.app) { $('results').children[sel]?.querySelector('.rpin')?.click(); e.preventDefault(); }
   else if (e.key === 'Enter' && rows[sel]) rows[sel].run();
 };
 

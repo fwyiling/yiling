@@ -173,4 +173,32 @@ async function githubRepos(user) {
   return (await r.json()).map((x) => ({ name: x.name, url: x.html_url, desc: x.description || '', lang: x.language || '', stars: x.stargazers_count, pushed: x.pushed_at }));
 }
 
-module.exports = { stats, listApps, listAppsFull, appIdToFile, weather, books, githubRepos };
+// Apps and shortcuts anywhere Windows Search has indexed (Desktop, Downloads, Documents…), for pinning by name.
+const FILES_PS = `
+$ProgressPreference = 'SilentlyContinue'; $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$q = $env:SD_Q.Replace("'", "''")
+$c = New-Object -ComObject ADODB.Connection
+$c.Open("Provider=Search.CollatorDSO;Extended Properties='Application=Windows';")
+$ext = ('.exe', '.lnk', '.bat', '.cmd', '.appref-ms', '.py', '.pyw', '.url' | ForEach-Object { "System.FileExtension = '$_'" }) -join ' OR '
+$rs = $c.Execute("SELECT TOP 20 System.ItemPathDisplay, System.ItemNameDisplay FROM SYSTEMINDEX WHERE System.ItemNameDisplay LIKE '%$q%' AND ($ext)")
+$out = @()
+while (-not $rs.EOF) { $out += [ordered]@{ p = $rs.Fields.Item('System.ItemPathDisplay').Value; n = $rs.Fields.Item('System.ItemNameDisplay').Value }; $rs.MoveNext() }
+$c.Close()
+$j = ConvertTo-Json @($out) -Compress
+[Console]::Out.Write([regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value }))
+`;
+function searchFiles(query) {
+  const q = String(query || '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 40); // nothing that means something to the query language
+  if (process.platform !== 'win32' || q.length < 2) return Promise.resolve([]);
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  return new Promise((resolve) => require('child_process').execFile(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(FILES_PS, 'utf16le').toString('base64')],
+    { windowsHide: true, timeout: 15000, env: { ...process.env, SD_Q: q } }, (err, stdout) => {
+      let items = [];
+      try { items = JSON.parse(String(stdout).trim() || '[]'); } catch {}
+      resolve((Array.isArray(items) ? items : [items]).filter((x) => x?.p && !/\\(WinSxS|Installer|\$Recycle\.Bin)\\|unins\d*\.exe$/i.test(x.p))
+        .map((x) => ({ name: String(x.n).replace(/\.(lnk|url|appref-ms)$/i, ''), path: String(x.p) })));
+    }));
+}
+
+module.exports = { searchFiles, stats, listApps, listAppsFull, appIdToFile, weather, books, githubRepos };

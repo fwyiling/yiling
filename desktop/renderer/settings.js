@@ -172,6 +172,14 @@ loadTaskbar();
 // ---------- lock screen ----------
 $('openLock').onclick = (e) => { e.preventDefault(); sd.windowsSettings('lockscreen'); };
 $('openTouchpad').onclick = (e) => { e.preventDefault(); sd.windowsSettings('touchpad'); };
+const GESTURE = { apps: 'switch apps (MacBook style) ✓', desktops: 'switch desktops', volume: 'change the volume', nothing: 'do nothing', custom: 'run custom shortcuts' };
+function showGestures(g) {
+  if (!g?.precision) { $('gestureNote').textContent = 'No precision touchpad found: three-finger gestures need one. With a mouse, scroll over the dock to switch apps.'; $('macSwipe').disabled = true; return; }
+  $('gestureNote').textContent = `Three-finger swipes left / right now ${GESTURE[g.three] || g.three}.`;
+  $('macSwipe').disabled = g.three === 'apps';
+}
+sd.gestures().then(showGestures).catch(() => {});
+$('macSwipe').onclick = async () => showGestures(await sd.macGestures());
 $('lockApply').onclick = async () => {
   const b = $('lockApply');
   b.disabled = true; b.textContent = 'Making the picture…';
@@ -217,6 +225,7 @@ function paint() {
   $('pinCount').textContent = `${s.home.pins.length} pinned`;
   document.querySelectorAll('[data-seg]').forEach((seg) => { const v = getPath(s, seg.dataset.seg); seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.value === v)); });
   $('dockOpts').classList.toggle('off', !s.dock.on);
+  $('topOpts').classList.toggle('off', !s.topbar?.on);
   paintLock();
   if (tb.supported !== undefined) paintTaskbar();
 }

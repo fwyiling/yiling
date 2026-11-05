@@ -42,4 +42,21 @@ async function apply(patch) {
   return read();
 }
 
-module.exports = { read, apply };
+// Precision touchpad gestures (Settings > Bluetooth & devices > Touchpad). ThreeFingerSlideEnabled:
+// 0 nothing, 1 switch apps and show desktop, 2 switch desktops and show desktop, 3 audio and volume, 65535 custom.
+const TOUCHPAD = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad';
+const SLIDE = { 0: 'nothing', 1: 'apps', 2: 'desktops', 3: 'volume', 65535: 'custom' };
+async function gestures() {
+  if (!win32.isWin) return { precision: false, three: null };
+  const out = await run(['query', TOUCHPAD]);
+  const n = await readDword(TOUCHPAD, 'ThreeFingerSlideEnabled');
+  return { precision: !!out, three: SLIDE[n ?? 1] || 'apps' }; // missing value = Windows' default, switch apps
+}
+async function setThreeFingerApps() {
+  if (!win32.isWin) return gestures();
+  await run(['add', TOUCHPAD, '/v', 'ThreeFingerSlideEnabled', '/t', 'REG_DWORD', '/d', '1', '/f']);
+  win32.refreshTaskbar();
+  return gestures();
+}
+
+module.exports = { read, apply, gestures, setThreeFingerApps };

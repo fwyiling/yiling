@@ -225,6 +225,53 @@ async function setDock(on) {
   }
 }
 
+// ---------- top bar (like the macOS menu bar) ----------
+const TOP_H = 30;
+let topWin = null, topTimer = null, topApp = '';
+function placeTopbar() {
+  if (!topWin || topWin.isDestroyed()) return;
+  const d = screen.getPrimaryDisplay(), strip = { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: TOP_H };
+  if (win32.isWin) { win32.releaseEdge(topWin); win32.reserveEdge(topWin, screen.dipToScreenRect(null, strip), 'top'); } // maximized windows start below it
+  topWin.setBounds(strip);
+}
+const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return n ? n.charAt(0).toUpperCase() + n.slice(1) : ''; };
+function topbarTick() {
+  if (!topWin || topWin.isDestroyed()) return;
+  const d = screen.getPrimaryDisplay();
+  const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]);
+  if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
+  const fg = win32.isWin ? win32.listWindows(ownPids()).find((w) => w.active) : null;
+  const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
+  if (name !== topApp) { topApp = name; topWin.webContents.send('topbar', { app: name }); }
+}
+function setTopbar(on) {
+  if (on && (!topWin || topWin.isDestroyed())) {
+    topWin = new BrowserWindow({ width: 800, height: TOP_H, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+      alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Top Bar', webPreferences: webPrefs });
+    topWin.setAlwaysOnTop(true, 'pop-up-menu');
+    topWin.loadURL(ui('topbar.html'));
+    topWin.once('ready-to-show', () => { placeTopbar(); topWin.showInactive(); topApp = ''; topbarTick(); });
+    topWin.on('closed', () => { topWin = null; });
+    clearInterval(topTimer); topTimer = setInterval(topbarTick, 1000);
+  } else if (!on && topWin) {
+    clearInterval(topTimer);
+    if (win32.isWin) win32.releaseEdge(topWin);
+    topWin.destroy(); topWin = null;
+  }
+}
+function topbarMenu(x, y) {
+  Menu.buildFromTemplate([
+    { label: `Open Home  (${store.get().home.hotkey})`, click: () => toggleHome(true) },
+    { label: 'Customize…  (Ctrl+Alt+S)', click: openSettings },
+    { type: 'separator' },
+    { label: 'Show desktop', click: () => win32.pressKeys([0x5B, 0x44]) },
+    { label: 'Windows Settings', click: () => shell.openExternal('ms-settings:') },
+    { label: 'Task Manager', click: () => win32.pressKeys([0x11, 0x10, 0x1B]) },
+    { type: 'separator' },
+    { label: 'Lock', click: () => win32.lock() },
+  ]).popup({ window: topWin, x, y });
+}
+
 // ---------- lock screen ----------
 let lockTimer = null;
 async function applyLockScreen() {
@@ -272,6 +319,7 @@ function applySettings(patch) {
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
+  if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
@@ -286,7 +334,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, dock: !!dockWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, dock: !!dockWin, topbar: !!topWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -376,6 +424,8 @@ function wireIpc() {
   ipcMain.handle('diagnostics', () => diagnostics());
   ipcMain.handle('taskbar:get', () => taskbar.read());
   ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
+  ipcMain.handle('gestures:get', () => taskbar.gestures());
+  ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerApps());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
     const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
@@ -383,7 +433,7 @@ function wireIpc() {
     return shell.openExternal(pages[page]);
   });
   ipcMain.handle('windows', () => windowsList);
-  ipcMain.handle('window:focus', (_e, hwnd) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd); setTimeout(pollWindows, 150); });
+  ipcMain.handle('window:focus', (_e, hwnd, toggle = true) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd, toggle !== false); setTimeout(pollWindows, 150); });
   ipcMain.handle('exe-icon', async (_e, exe) => {
     if (!windowsList.some((w) => w.exe === exe)) return '';
     return iconFor(exe, 'large');
@@ -402,10 +452,14 @@ function wireIpc() {
   // the dock's Start / quick settings / notifications buttons press the Windows shortcuts for them
   const DOCK_KEYS = { start: [0x5B], quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; // Win, Win+A, Win+N
   ipcMain.handle('dock:state', () => dockShown);
+  ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
+  ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   // pin what you dropped on Home (a file you chose by dragging it there)
+  // files found by searching Home: those may be launched and pinned too
+  ipcMain.handle('files:search', async (_e, q) => { const r = await system.searchFiles(q); for (const f of r) foundFiles.add(f.path); return r; });
   ipcMain.handle('pin:add', (_e, p) => {
     p = String(p || '');
     if (!PINNABLE.test(p) || !fs.existsSync(p) || !fs.statSync(p).isFile()) throw new Error('only apps, shortcuts and scripts can be pinned');
@@ -433,11 +487,12 @@ function wireIpc() {
 }
 function isKnownApp(p) {
   if (typeof p !== 'string' || !p) return false;
-  const known = (apps ||= system.listApps()).some((a) => a.path === p);
+  const known = foundFiles.has(p) || (apps ||= system.listApps()).some((a) => a.path === p);
   return known || store.get().home.pins.some((x) => x.path === p);
 }
 // the quick shortcut list right away, then everything the Start menu lists (Store apps too); refreshed so new installs appear
 let appsAt = 0, appsLoading = null;
+const foundFiles = new Set();
 function refreshApps(force = false) {
   if (appsLoading || (!force && Date.now() - appsAt < 10 * 60e3)) return appsLoading;
   appsLoading = system.listAppsFull().then((list) => { if (list.length && list.length !== (apps || []).length) { apps = list; if (homeWin && !homeWin.isDestroyed()) homeWin.webContents.send('apps', apps); } appsAt = Date.now(); }).catch(() => {}).finally(() => { appsLoading = null; });
@@ -501,6 +556,7 @@ app.whenReady().then(() => {
   tray.on('click', () => openSettings()); // the tray icon is the obvious way in; Home has its own shortcut and dock button
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
+  if (store.get().topbar.on) setTopbar(true);
   if (store.get().dock.on) setDock(true);
   else if (win32.isWin) win32.showTaskbar(true); // in case a crash left it hidden
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
@@ -514,6 +570,7 @@ app.on('before-quit', () => {
   media.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
+  if (topWin && win32.isWin) win32.releaseEdge(topWin);
   if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
 });
 app.on('will-quit', () => globalShortcut.unregisterAll());

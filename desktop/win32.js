@@ -53,6 +53,7 @@ function bind() {
     SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(intptr_t hwnd)'),
     SwitchToThisWindow: user32.func('void __stdcall SwitchToThisWindow(intptr_t hwnd, bool altTab)'),
     keybd_event: user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr_t extra)'),
+    LockWorkStation: user32.func('bool __stdcall LockWorkStation()'),
     shell32: koffi.load('shell32.dll'),
     kernel32: koffi.load('kernel32.dll'),
     dwmapi: koffi.load('dwmapi.dll'),
@@ -357,10 +358,12 @@ function listWindows(ownPids = []) {
   return out;
 }
 /** Click on a dock item: bring the window forward, or minimize it if it's already in front. */
-function focusWindow(hwnd) {
+function focusWindow(hwnd, toggle = true) {
   if (!load()) return;
-  if (Number(u.GetForegroundWindow()) === hwnd && !u.IsIconic(hwnd)) { u.ShowWindow(hwnd, 6); return; } // SW_MINIMIZE
+  if (toggle && Number(u.GetForegroundWindow()) === hwnd && !u.IsIconic(hwnd)) { u.ShowWindow(hwnd, 6); return; } // SW_MINIMIZE
   if (u.IsIconic(hwnd)) u.ShowWindow(hwnd, 9); // SW_RESTORE
+  // Windows only lets the app that got the last input change the foreground window; a tap of Alt counts as that
+  u.keybd_event(0x12, 0, 0x1, 0); u.keybd_event(0x12, 0, 0x1 | 0x2, 0);
   if (!u.SetForegroundWindow(hwnd)) u.SwitchToThisWindow(hwnd, true);
 }
 
@@ -386,4 +389,5 @@ module.exports = {
   iconPixels: safe('iconPixels', iconPixels, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
+  lock: safe('lock', () => load() && u.LockWorkStation(), false),
 };

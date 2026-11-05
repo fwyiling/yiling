@@ -98,14 +98,14 @@ async function render() {
 
 // ---------- scroll over the dock (wheel or two fingers) to go to the next / previous app, MacBook style ----------
 let wheelAcc = 0, wheelAt = 0;
-$('dock').addEventListener('wheel', (e) => {
+document.addEventListener('wheel', (e) => { // anywhere on the dock window, not only exactly over an icon
   e.preventDefault();
   wheelAcc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   if (Math.abs(wheelAcc) < 60 || Date.now() - wheelAt < 280 || !groups.length) return;
   const dir = wheelAcc > 0 ? 1 : -1; wheelAcc = 0; wheelAt = Date.now();
   const cur = groups.findIndex((g) => g.some((w) => w.active));
   const next = groups[((cur < 0 ? (dir > 0 ? -1 : 0) : cur) + dir + groups.length) % groups.length];
-  sd.focusWindow((next.find((w) => w.active) || next[0]).hwnd);
+  sd.focusWindow((next.find((w) => w.active) || next[0]).hwnd, false); // switch, never minimize
 }, { passive: false });
 
 // a small menu above the dock (pin / unpin)
