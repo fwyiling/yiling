@@ -55,9 +55,9 @@ $ProgressPreference = 'SilentlyContinue'; $ErrorActionPreference = 'SilentlyCont
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $pk = @{}; foreach ($p in Get-AppxPackage) { $pk[$p.PackageFamilyName] = $p }
 $out = foreach ($it in (New-Object -ComObject Shell.Application).NameSpace('shell:AppsFolder').Items()) {
-  $id = $it.Path; $logo = ''
+  $id = $it.Path; $logo = ''; $dir = ''
   if ($id -match '^([^!]+)!(.+)$' -and $pk.ContainsKey($Matches[1])) {
-    $pkg = $pk[$Matches[1]]; $aid = $Matches[2]
+    $pkg = $pk[$Matches[1]]; $aid = $Matches[2]; $dir = $pkg.InstallLocation
     try {
       $m = [xml](Get-Content -Raw -LiteralPath (Join-Path $pkg.InstallLocation 'AppxManifest.xml'))
       $app = @($m.Package.Applications.Application) | Where-Object { $_.Id -eq $aid } | Select-Object -First 1
@@ -70,7 +70,7 @@ $out = foreach ($it in (New-Object -ComObject Shell.Application).NameSpace('shel
       }
     } catch {}
   }
-  [ordered]@{ n = $it.Name; id = $id; logo = $logo }
+  [ordered]@{ n = $it.Name; id = $id; logo = $logo; dir = $dir }
 }
 $j = ConvertTo-Json @($out) -Compress
 [Console]::Out.Write([regex]::Replace($j, '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value }))
@@ -106,7 +106,7 @@ function listAppsFull() {
           if (!name || !id || SKIP.test(name) || DOC.test(id) || /^https?:/i.test(id)) continue;
           const have = byName.get(name.toLowerCase());
           if (have) { have.appId ||= id; continue; } // the shortcut has the better icon
-          byName.set(name.toLowerCase(), { name, path: `shell:AppsFolder\\${id}`, appId: id, logo: it.logo || '', exe: appIdToFile(id) });
+          byName.set(name.toLowerCase(), { name, path: `shell:AppsFolder\\${id}`, appId: id, logo: it.logo || '', dir: it.dir || '', exe: appIdToFile(id) });
         }
         if (err && !items.length) console.warn('[apps] Start menu list unavailable:', err.message);
         resolve([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)));

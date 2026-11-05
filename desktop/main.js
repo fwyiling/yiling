@@ -557,9 +557,29 @@ function addPin(p, name) {
   const pins = store.get().home.pins.filter((x) => x.path !== p);
   return applySettings({ home: { pins: [...pins, { name: name || path.basename(p).replace(/\.[^.]+$/, ''), path: p }] } });
 }
+// a Store app's logo straight from its package: AppxManifest.xml names it; the largest PNG of that name is used
+function packageLogo(exePath) {
+  const m = /^(.*\\WindowsApps\\[^\\]+)\\/i.exec(exePath || '');
+  if (!m) return null;
+  try {
+    const dir = m[1], xml = fs.readFileSync(path.join(dir, 'AppxManifest.xml'), 'utf8');
+    const rel = (/Square44x44Logo="([^"]+)"/.exec(xml) || /Square150x150Logo="([^"]+)"/.exec(xml) || /<Logo>([^<]+)<\/Logo>/.exec(xml) || [])[1];
+    if (!rel) return null;
+    const full = path.join(dir, rel), base = path.basename(full, path.extname(full)), folder = path.dirname(full);
+    const pngs = fs.readdirSync(folder).filter((f) => f.toLowerCase().startsWith(base.toLowerCase()) && /\.png$/i.test(f) && !/contrast|lightunplated/i.test(f))
+      .map((f) => ({ f, size: fs.statSync(path.join(folder, f)).size })).sort((a, b) => b.size - a.size);
+    const file = pngs[0] ? path.join(folder, pngs[0].f) : fs.existsSync(full) ? full : null;
+    const img = file && nativeImage.createFromPath(file);
+    return img && !img.isEmpty() ? img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL() : null;
+  } catch { return null; }
+}
 async function iconFor(p, size) {
-  const se = storeEntry(p); // a Store app pinned by its exe: use its Start menu entry (logo)
-  if (se) p = se.path;
+  if (/\\WindowsApps\\/i.test(p)) { // a Store app (pinned or running by its exe): its Start menu entry, or its package's logo
+    if (!storeEntry(p) && !appsAt) await refreshApps(); // the Store app list may still be loading right after start
+    const se = storeEntry(p);
+    if (se?.logo) p = se.path;
+    else { const logo = packageLogo(p); if (logo) return logo; if (se) p = se.path; }
+  }
   const pin = store.get().home.pins.find((x) => x.path === p);
   if (pin?.icon && fs.existsSync(pin.icon)) { // an icon you picked yourself
     if (/\.(exe|dll)$/i.test(pin.icon)) { const u = bigIcon(pin.icon); if (u) return u; }
@@ -591,6 +611,7 @@ async function iconFor(p, size) {
   if (/\.(bat|cmd|py|pyw|ps1|vbs|jar)$/i.test(p)) return ''; // scripts: Windows' icon for them is a blank page
   const e = appEntry(p);
   if (e?.logo) { const img = nativeImage.createFromPath(e.logo); if (!img.isEmpty()) return img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL(); }
+  if (e?.dir) { const logo = packageLogo(`${e.dir}\\app.exe`); if (logo) return logo; } // Store app: read the logo from its package
   if (e?.exe) return bigIcon(e.exe) || (await app.getFileIcon(e.exe, { size }).then((i) => i.toDataURL()).catch(() => ''));
   if (p.startsWith('shell:')) return '';
   return bigIcon(p) || (await app.getFileIcon(p, { size }).then((i) => i.toDataURL()).catch(() => ''));
