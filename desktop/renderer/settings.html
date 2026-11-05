@@ -72,6 +72,12 @@
         <label class="switch"><span><b>Pinned apps</b><small>Pin them in the Home panel.</small></span><input type="checkbox" data-k="dock.pinned"></label>
         <label class="switch"><span><b>Open windows</b></span><input type="checkbox" data-k="dock.running"></label>
         <label class="switch"><span><b>Clock</b></span><input type="checkbox" data-k="dock.clock"></label>
+        <label class="switch"><span><b>Start button</b><small>Opens the Windows Start menu (the taskbar is hidden while the dock is on).</small></span><input type="checkbox" data-k="dock.start"></label>
+        <label class="switch"><span><b>Home button</b></span><input type="checkbox" data-k="dock.homeBtn"></label>
+        <label class="switch"><span><b>Wi-Fi & sound</b></span><input type="checkbox" data-k="dock.quick"></label>
+        <label class="switch"><span><b>Customize button</b></span><input type="checkbox" data-k="dock.gear"></label>
+        <label class="switch"><span><b>Magnify icons under the mouse</b></span><input type="checkbox" data-k="dock.magnify"></label>
+        <p class="muted">Pin apps with the + at the end of the dock, by right-clicking a running app, or from Home's search. Drag pinned icons to reorder them.</p>
         <label class="switch"><span><b>Now playing</b><small>Song and play / pause / skip, whichever app is playing.</small></span><input type="checkbox" data-k="dock.media"></label>
         <label class="field-row"><span>Hide the dock <small>Smart: out of the way when a window would be covered (intellihide). Always: until you push the mouse to the bottom edge.</small></span><div class="seg" data-seg="dock.hide"><button value="smart">Smart</button><button value="always">Always</button><button value="never">Never</button></div></label>
         <label class="switch"><span><b>Keep windows clear of the dock</b><small>Maximized windows stop above it, like with the taskbar.</small></span><input type="checkbox" data-k="dock.reserve"></label>
@@ -91,7 +97,16 @@
       <label class="switch"><span><b>Also make it the Windows wallpaper</b><small>Shown right after signing in, before Syndicates Desktop starts.</small></span><input type="checkbox" data-k="lock.alsoWallpaper"></label>
     </section>
     <section data-panel="general">
-      <div class="field-row"><span><b>Switch apps like a MacBook</b><small>Swipe three fingers left or right on the touchpad to go straight to the next app (no swipe up and pick). In Windows' touchpad settings, set <b>Three-finger gestures → Swipes</b> to <b>Switch apps and show desktop</b>. With a mouse: scroll over the dock.</small></span><div class="row"><button id="macSwipe" class="btn">Use three-finger swipes to switch apps</button><button id="openTouchpad" class="btn ghost">Touchpad settings</button></div></div>
+      <div class="mac-swipe">
+        <b>Switch apps like a MacBook</b>
+        <p class="muted">Three-finger swipe left / right goes straight to the previous / next app, without the Alt+Tab picker. Windows sends touchpad gestures to itself, so tell it once which keys a swipe should press:</p>
+        <ol class="muted">
+          <li>Open <b>Touchpad settings</b> → <b>Advanced gestures</b>.</li>
+          <li>Under <b>Three-finger gestures</b>: <b>Swipe left</b> → <b>Custom shortcut</b> → press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>; <b>Swipe right</b> → <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd>.</li>
+          <li>That's it: Syndicates switches instantly on those keys. They also work from the keyboard, and scrolling on the dock does the same.</li>
+        </ol>
+        <div class="row"><button id="openTouchpad" class="btn">Touchpad settings</button><button id="macSwipe" class="btn ghost">Or: Windows' own switcher (with picker)</button></div>
+      </div>
       <p class="muted" id="gestureNote"></p>
       <label class="switch"><span><b>Start with Windows</b><small>Your wallpaper is back after every restart.</small></span><input type="checkbox" data-k="general.startWithWindows"></label>
       <label class="switch"><span><b>Pause during full-screen apps</b><small>Games and full-screen video get all the power.</small></span><input type="checkbox" data-k="general.pauseOnFullscreen"></label>

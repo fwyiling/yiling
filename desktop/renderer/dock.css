@@ -75,3 +75,7 @@ body.full.away #dock { transform: translateY(100%); }
 .ctx button { text-align: left; padding: 7px 12px; border-radius: 7px; font-size: 12.5px; }
 .ctx button:hover { background: color-mix(in srgb, var(--a) 30%, transparent); }
 button:focus, button:focus-visible { outline: none; } /* no white focus rings after a click */
+.item.add { color: var(--m); border: 1.5px dashed rgba(255, 255, 255, .22); width: calc(var(--isz) * .78); height: calc(var(--isz) * .78); align-self: center; margin-bottom: 4px; }
+.item.add:hover { color: var(--t); border-color: var(--a); background: color-mix(in srgb, var(--a) 18%, transparent); }
+.item.add svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.item.dropbefore { box-shadow: -4px 0 0 -1px var(--a); }

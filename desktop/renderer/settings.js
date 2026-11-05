@@ -172,10 +172,10 @@ loadTaskbar();
 // ---------- lock screen ----------
 $('openLock').onclick = (e) => { e.preventDefault(); sd.windowsSettings('lockscreen'); };
 $('openTouchpad').onclick = (e) => { e.preventDefault(); sd.windowsSettings('touchpad'); };
-const GESTURE = { apps: 'switch apps (MacBook style) ✓', desktops: 'switch desktops', volume: 'change the volume', nothing: 'do nothing', custom: 'run custom shortcuts' };
+const GESTURE = { apps: 'switch apps with Windows’ picker', desktops: 'switch desktops', volume: 'change the volume', nothing: 'do nothing', custom: 'press custom shortcuts ✓ (the keys above give instant switching)' };
 function showGestures(g) {
   if (!g?.precision) { $('gestureNote').textContent = 'No precision touchpad found: three-finger gestures need one. With a mouse, scroll over the dock to switch apps.'; $('macSwipe').disabled = true; return; }
-  $('gestureNote').textContent = `Three-finger swipes left / right now ${GESTURE[g.three] || g.three}.`;
+  $('gestureNote').textContent = `Right now, three-finger swipes left / right ${GESTURE[g.three] || g.three}.`;
   $('macSwipe').disabled = g.three === 'apps';
 }
 sd.gestures().then(showGestures).catch(() => {});

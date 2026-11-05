@@ -70,7 +70,7 @@ function buildWallpapers() {
     wallpapers.set(d.id, w);
   }
 }
-const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(buildWallpapers, 800); };
+const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); }, 800); };
 
 // pause when a full-screen app is in front, or on battery
 // Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
@@ -105,7 +105,7 @@ function sendCursor() {
 }
 
 // ---------- Home panel ----------
-function toggleHome(force) {
+function toggleHome(force, mode = '') {
   const show = force ?? !(homeWin && homeWin.isVisible());
   if (!show) { homeWin?.hide(); return; }
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -117,12 +117,12 @@ function toggleHome(force) {
     homeWin.setMenu(null);
     homeWin.loadURL(ui('home.html'));
     homeWin.on('blur', () => homeWin?.hide());
-    homeWin.once('ready-to-show', () => { homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); });
+    homeWin.once('ready-to-show', () => { homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (mode) setTimeout(() => homeWin?.webContents.send('home-shown', mode), 400); });
     return;
   }
   homeWin.setBounds(d.bounds);
   homeWin.show(); homeWin.focus();
-  homeWin.webContents.send('home-shown');
+  homeWin.webContents.send('home-shown', mode);
 }
 
 function registerHotkey() {
@@ -132,6 +132,9 @@ function registerHotkey() {
   // Alt+Space is also Windows' window menu and PowerToys Run's key; fall back if something else owns it
   if (!reg(key, () => toggleHome()) && !reg('Alt+Shift+Space', () => toggleHome())) console.warn('hotkey in use:', key);
   reg('Ctrl+Alt+S', () => openSettings()); // Customize from anywhere
+  // bind a three-finger swipe to these in Windows' touchpad settings for MacBook-style switching
+  reg('Ctrl+Alt+Shift+Right', () => switchApp(1));
+  reg('Ctrl+Alt+Shift+Left', () => switchApp(-1));
 }
 
 // ---------- settings window ----------
@@ -225,14 +228,41 @@ async function setDock(on) {
   }
 }
 
+// ---------- MacBook-style switching: straight to the next / previous app, no picker ----------
+// Apps keep a stable left-to-right order (the order they were first seen, like Spaces on a Mac), so
+// swiping right then left always comes back to where you were.
+const appOrder = [];
+function switchApp(dir) {
+  if (!win32.isWin) return;
+  const list = win32.listWindows(ownPids());
+  const groups = new Map();
+  for (const w of list) { const k = (w.exe || String(w.hwnd)).toLowerCase(); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(w); if (!appOrder.includes(k)) appOrder.push(k); }
+  const keys = appOrder.filter((k) => groups.has(k));
+  if (keys.length < 2) return;
+  const cur = keys.findIndex((k) => groups.get(k).some((w) => w.active));
+  const next = keys[((cur < 0 ? 0 : cur) + dir + keys.length) % keys.length];
+  win32.focusWindow(groups.get(next)[0].hwnd, false); // its most recent window
+  setTimeout(pollWindows, 150);
+}
+
 // ---------- top bar (like the macOS menu bar) ----------
 const TOP_H = 30;
 let topWin = null, topTimer = null, topApp = '';
 function placeTopbar() {
   if (!topWin || topWin.isDestroyed()) return;
   const d = screen.getPrimaryDisplay(), strip = { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: TOP_H };
-  if (win32.isWin) { win32.releaseEdge(topWin); win32.reserveEdge(topWin, screen.dipToScreenRect(null, strip), 'top'); } // maximized windows start below it
   topWin.setBounds(strip);
+  if (win32.isWin) {
+    const phys = screen.dipToScreenRect(null, strip);
+    win32.releaseEdge(topWin); win32.reserveEdge(topWin, phys, 'top'); // maximized windows start below it
+    win32.placeWindow(topWin, phys); // and the bar itself stays ON the reserved strip (it used to be pushed below it)
+  }
+}
+// Windows may push the bar into the work area when the screen or taskbar changes; put it back
+function keepTopbarAtTop() {
+  if (!win32.isWin || !topWin || topWin.isDestroyed()) return;
+  const want = screen.dipToScreenRect(null, { ...screen.getPrimaryDisplay().bounds, height: TOP_H }), r = win32.windowRect(topWin);
+  if (r && (r.y !== want.y || r.x !== want.x || r.height !== want.height)) win32.placeWindow(topWin, { x: want.x, y: want.y, width: want.width, height: want.height });
 }
 const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return n ? n.charAt(0).toUpperCase() + n.slice(1) : ''; };
 function topbarTick() {
@@ -240,6 +270,7 @@ function topbarTick() {
   const d = screen.getPrimaryDisplay();
   const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]);
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
+  keepTopbarAtTop();
   const fg = win32.isWin ? win32.listWindows(ownPids()).find((w) => w.active) : null;
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   if (name !== topApp) { topApp = name; topWin.webContents.send('topbar', { app: name }); }
@@ -420,7 +451,7 @@ function wireIpc() {
     const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ['openFile'], filters });
     return r.canceled ? '' : r.filePaths[0];
   });
-  ipcMain.handle('home:toggle', (_e, show) => toggleHome(show));
+  ipcMain.handle('home:toggle', (_e, show, mode) => toggleHome(show, mode === 'pin' ? 'pin' : ''));
   ipcMain.handle('diagnostics', () => diagnostics());
   ipcMain.handle('taskbar:get', () => taskbar.read());
   ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
@@ -452,6 +483,8 @@ function wireIpc() {
   // the dock's Start / quick settings / notifications buttons press the Windows shortcuts for them
   const DOCK_KEYS = { start: [0x5B], quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; // Win, Win+A, Win+N
   ipcMain.handle('dock:state', () => dockShown);
+  ipcMain.handle('switch-app', (e, dir) => { if (dockWin && e.sender === dockWin.webContents) switchApp(dir > 0 ? 1 : -1); });
+  ipcMain.handle('battery', () => win32.battery());
   ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });

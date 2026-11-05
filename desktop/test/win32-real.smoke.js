@@ -16,5 +16,6 @@ assert.ok(ic && ic.width === 256, 'no 256 px icon from explorer.exe');
 let opaque = 0; for (let i = 3; i < ic.data.length; i += 4) if (ic.data[i] > 200) opaque++;
 console.log(`ok   256 px icon from explorer.exe: ${Math.round(100 * opaque / (256 * 256))}% opaque pixels`);
 assert.ok(opaque > 256 * 256 * 0.15, 'the big icon came out empty');
+console.log('ok   battery:', JSON.stringify(w.battery()));
 assert.strictEqual(w.status().error, '');
 console.log('real Windows bindings fine');

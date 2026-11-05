@@ -16,6 +16,9 @@ function applyLook() {
   document.documentElement.style.setProperty('--h', `${h}px`);
   document.documentElement.style.setProperty('--op', Math.max(0.8, dk.opacity ?? 0.96));
   $('clock').hidden = !dk.clock;
+  $('start').hidden = dk.start === false; $('home').hidden = dk.homeBtn === false;
+  $('quick').hidden = dk.quick === false; $('gear').hidden = dk.gear === false;
+  magnifyOn = dk.magnify !== false; if (!magnifyOn) magnify(null);
   $('pins').hidden = !dk.pinned;
   $('running').hidden = !dk.running;
 }
@@ -32,7 +35,9 @@ document.addEventListener('mouseout', (e) => { if (e.target.closest('[data-tip]'
 
 // ---------- magnification (macOS Dock): icons near the cursor grow and push their neighbours ----------
 const MAX = 0.42, RANGE = 110;
+let magnifyOn = true;
 function magnify(x) {
+  if (!magnifyOn) x = null;
   for (const it of document.querySelectorAll('.apps .item, .left > .item')) {
     if (x == null) { it.style.setProperty('--s', 1); continue; }
     const r = it.getBoundingClientRect(), c = r.left + r.width / 2;
@@ -59,7 +64,6 @@ function focusGroup(list) {
 }
 async function pinTarget(p) { if (!targets.has(p)) targets.set(p, sd.pinTarget(p).catch(() => p)); return targets.get(p); }
 
-let groups = []; // open apps in dock order, for scrolling through them
 async function render() {
   const pins = s.home.pins || [];
   const pinExes = await Promise.all(pins.map((p) => pinTarget(p.path)));
@@ -74,10 +78,22 @@ async function render() {
     b.append(iconFor(`pin:${p.path}`, () => sd.appIcon(p.path), p.name));
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
     b.onclick = () => (open.length ? focusGroup(open) : sd.launch(p.path));
-    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Unpin', () => sd.unpin(p.path)]]); };
+    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Move left', () => movePin(i, -1)], ['Move right', () => movePin(i, 1)], ['Unpin', () => sd.unpin(p.path)]]); };
+    // drag pinned icons to reorder them
+    b.draggable = true;
+    b.ondragstart = (e) => { e.dataTransfer.setData('text/x-pin', String(i)); e.dataTransfer.effectAllowed = 'move'; hideTip(); };
+    b.ondragover = (e) => { if (e.dataTransfer.types.includes('text/x-pin')) { e.preventDefault(); b.classList.add('dropbefore'); } };
+    b.ondragleave = () => b.classList.remove('dropbefore');
+    b.ondrop = (e) => { e.preventDefault(); b.classList.remove('dropbefore'); const from = +e.dataTransfer.getData('text/x-pin'); if (from !== i) reorderPins(from, i); };
     tip(b, open.length ? `${p.name} · ${open[0].title}` : p.name);
     return b;
   }));
+  if (s.dock.pinned) { // + : pin another app (opens Home's search, where every result has a Pin button)
+    const add = document.createElement('button'); add.className = 'item add'; add.dataset.tip = 'Pin an app';
+    add.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>';
+    add.onclick = () => sd.toggleHome(true, 'pin');
+    $('pins').append(add);
+  }
   const rest = [...byExe.entries()].filter(([k]) => !used.has(k));
   $('running').replaceChildren(...rest.map(([k, list]) => {
     const w = list[0], name = (w.exe.split(/[\\/]/).pop() || w.title).replace(/\.exe$/i, '');
@@ -90,7 +106,6 @@ async function render() {
     tip(b, list.length > 1 ? `${name} · ${list.length} windows` : w.title);
     return b;
   }));
-  groups = [...pins.map((p, i) => byExe.get(norm(pinExes[i]))).filter(Boolean), ...rest.map(([, list]) => list)];
   const showPins = s.dock.pinned && pins.length, showRun = s.dock.running && rest.length;
   $('runSep').hidden = !(showPins && showRun);
   $('homeSep').hidden = !(showPins || showRun);
@@ -101,11 +116,9 @@ let wheelAcc = 0, wheelAt = 0;
 document.addEventListener('wheel', (e) => { // anywhere on the dock window, not only exactly over an icon
   e.preventDefault();
   wheelAcc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-  if (Math.abs(wheelAcc) < 60 || Date.now() - wheelAt < 280 || !groups.length) return;
+  if (Math.abs(wheelAcc) < 60 || Date.now() - wheelAt < 280) return;
   const dir = wheelAcc > 0 ? 1 : -1; wheelAcc = 0; wheelAt = Date.now();
-  const cur = groups.findIndex((g) => g.some((w) => w.active));
-  const next = groups[((cur < 0 ? (dir > 0 ? -1 : 0) : cur) + dir + groups.length) % groups.length];
-  sd.focusWindow((next.find((w) => w.active) || next[0]).hwnd, false); // switch, never minimize
+  sd.switchApp(dir); // the same instant switch as the three-finger swipe
 }, { passive: false });
 
 // a small menu above the dock (pin / unpin)
@@ -118,6 +131,13 @@ function menu(x, items) {
   m.style.left = `${Math.max(6, Math.min(x - r.left - m.offsetWidth / 2, r.width - m.offsetWidth - 6))}px`;
   hideTip(); setTimeout(() => addEventListener('pointerdown', (e) => { if (!m.contains(e.target)) m.remove(); }, { once: true }));
 }
+
+// ---------- reorder pinned apps ----------
+async function reorderPins(from, to) {
+  const pins = [...(s.home.pins || [])]; const [p] = pins.splice(from, 1); pins.splice(to, 0, p);
+  s = await sd.set({ home: { pins } }); render();
+}
+const movePin = (i, d) => { const n = (s.home.pins || []).length; if (i + d >= 0 && i + d < n) reorderPins(i, i + d); };
 
 // ---------- now playing ----------
 let np = { on: false };

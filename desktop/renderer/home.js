@@ -307,8 +307,9 @@ const close = () => sd.toggleHome(false);
 $('backdrop').onclick = close;
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('q').value) { $('q').value = ''; renderResults(); } else close(); } });
 $('customize').onclick = () => sd.openSettings();
-function onShown() {
-  $('q').value = ''; renderResults(); $('q').focus(); tick(); renderTimetable(); renderIconsBtn();
+function onShown(mode) {
+  $('q').value = ''; renderResults(); $('q').focus();
+  $('q').placeholder = mode === 'pin' ? 'Type an app’s name, then press Pin (or Ctrl+Enter)' : 'Search apps, files or the web · Ctrl+Enter pins'; tick(); renderTimetable(); renderIconsBtn();
   sd.apps().then((list) => { if (list.length !== apps.length) { apps = list; if (showAll) renderGrid(); } }).catch(() => {}); // picks up newly installed apps
 }
 sd.onHomeShown(onShown);

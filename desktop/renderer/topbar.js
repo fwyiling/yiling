@@ -42,19 +42,20 @@ async function weather() {
 }
 weather(); setInterval(weather, 15 * 60e3);
 
-// battery (laptops only)
+// battery (laptops only): asked from Windows, which knows whether there is one (the web API can't tell)
 let hasBattery = false;
-navigator.getBattery?.().then((b) => {
-  const show = () => {
-    hasBattery = b.chargingTime !== 0 || b.level < 1 || !b.charging; // desktops report "full and charging" forever
-    const pct = Math.round(b.level * 100);
-    $('battery').querySelector('span').textContent = `${pct}%`;
-    $('battery').querySelector('b').style.width = `${pct}%`;
-    $('battery').classList.toggle('low', pct <= 20 && !b.charging); $('battery').classList.toggle('charging', b.charging);
-    look();
-  };
-  b.addEventListener('levelchange', show); b.addEventListener('chargingchange', show); show();
-}).catch(() => {});
+async function battery() {
+  const b = await sd.battery().catch(() => null);
+  hasBattery = !!b?.present;
+  if (hasBattery) {
+    $('battery').querySelector('span').textContent = `${b.percent}%`;
+    $('battery').querySelector('b').style.width = `${b.percent}%`;
+    $('battery').classList.toggle('low', b.percent <= 20 && !b.plugged); $('battery').classList.toggle('charging', !!b.charging);
+    $('battery').title = b.charging ? 'Charging' : b.plugged ? 'Plugged in' : 'On battery';
+  }
+  look();
+}
+battery(); setInterval(battery, 30e3);
 
 $('logo').onclick = () => { const r = $('logo').getBoundingClientRect(); sd.topbarMenu(Math.round(r.left), Math.round(r.bottom)); };
 $('quick').onclick = () => sd.topbarKeys('quick');

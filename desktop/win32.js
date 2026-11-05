@@ -73,6 +73,9 @@ function bind() {
     DeleteObject: gdi32.func('bool __stdcall DeleteObject(intptr_t obj)'),
     GetDIBits: gdi32.func('int __stdcall GetDIBits(intptr_t hdc, intptr_t bmp, uint start, uint lines, _Out_ uint8_t *bits, _Inout_ BITMAPINFOHEADER *info, uint usage)'),
   });
+  const SYSTEM_POWER_STATUS = koffi.struct('SYSTEM_POWER_STATUS', { ACLineStatus: 'uint8', BatteryFlag: 'uint8', BatteryLifePercent: 'uint8', SystemStatusFlag: 'uint8', BatteryLifeTime: 'uint32', BatteryFullLifeTime: 'uint32' });
+  u.SYSTEM_POWER_STATUS = SYSTEM_POWER_STATUS;
+  u.GetSystemPowerStatus = u.kernel32.func('bool __stdcall GetSystemPowerStatus(_Out_ SYSTEM_POWER_STATUS *status)');
   const APPBARDATA = koffi.struct('APPBARDATA', { cbSize: 'uint32', hWnd: 'intptr_t', uCallbackMessage: 'uint32', uEdge: 'uint32', rc: RECT, lParam: 'intptr_t' });
   Object.assign(u, {
     APPBARDATA,
@@ -304,6 +307,20 @@ function iconPixels(file, index = 0, size = 256) {
   }
 }
 
+/** Put a window exactly at a physical-pixel rect (bars that must sit on the reserved screen edge). */
+function placeWindow(win, r) { if (load() && !win.isDestroyed()) u.SetWindowPos(hwndOf(win), 0, r.x, r.y, r.width, r.height, SWP_NOZORDER | SWP_NOACTIVATE); }
+/** A window's rect in physical pixels. */
+function windowRect(win) { if (!load() || win.isDestroyed()) return null; const r = {}; return u.GetWindowRect(hwndOf(win), r) ? { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top } : null; }
+
+/** The laptop battery as Windows reports it: { present, percent, charging }. */
+function battery() {
+  if (!load()) return { present: false };
+  const st = {};
+  if (!u.GetSystemPowerStatus(st)) return { present: false };
+  const present = !(st.BatteryFlag & 128) && st.BatteryFlag !== 255 && st.BatteryLifePercent <= 100; // 128: no system battery
+  return { present, percent: st.BatteryLifePercent, charging: !!(st.BatteryFlag & 8) || st.ACLineStatus === 1, plugged: st.ACLineStatus === 1 };
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -387,6 +404,9 @@ module.exports = {
   showTaskbar: safe('showTaskbar', showTaskbar, false),
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   iconPixels: safe('iconPixels', iconPixels, null),
+  placeWindow: safe('placeWindow', placeWindow),
+  battery: safe('battery', battery, { present: false }),
+  windowRect: safe('windowRect', windowRect, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
   lock: safe('lock', () => load() && u.LockWorkStation(), false),
