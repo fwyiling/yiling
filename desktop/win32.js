@@ -349,6 +349,20 @@ function virtualDesktops() {
   return { count, current };
 }
 
+// Windows' own overlays: Task View (three-finger swipe up), Alt+Tab, Start, search, quick settings,
+// notifications, the input-method switcher, and the taskbar itself while in use. Hiding the taskbar
+// while one of these is in front closes it again, so the dock leaves the taskbar alone then.
+const OVERLAY_CLASSES = new Set(['XamlExplorerHostIslandWindow', 'MultitaskingViewFrame', 'Windows.UI.Core.CoreWindow', 'ForegroundStaging',
+  'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'TaskListThumbnailWnd', 'NotifyIconOverflowWindow', 'TopLevelWindowForOverflowXamlIsland',
+  'Shell_InputSwitchTopLevelWindow', 'ControlCenterWindow', 'Xaml_WindowedPopupClass', '#32768']);
+function systemOverlayActive() {
+  if (!load()) return false;
+  const fg = u.GetForegroundWindow();
+  if (isNull(fg)) return true; // in between: e.g. while Task View or a desktop switch animates
+  const buf = new Uint16Array(128);
+  return OVERLAY_CLASSES.has(String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 128))));
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -448,6 +462,7 @@ module.exports = {
   desktopTree: safe('desktopTree', desktopTree, []),
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
+  systemOverlayActive: safe('systemOverlayActive', systemOverlayActive, true),
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),

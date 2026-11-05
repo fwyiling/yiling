@@ -110,9 +110,16 @@ function sendCursor() {
 }
 
 // ---------- Home panel ----------
+// the Home panel is closed (memory freed) after 3 minutes unused; it opens again in a moment when called
+let homeRelease = null;
+function scheduleHomeRelease() {
+  clearTimeout(homeRelease);
+  homeRelease = setTimeout(() => { if (homeWin && !homeWin.isDestroyed() && !homeWin.isVisible()) { homeWin.destroy(); homeWin = null; } }, 3 * 60e3);
+}
 function toggleHome(force, mode = '') {
   const show = force ?? !(homeWin && homeWin.isVisible());
-  if (!show) { homeWin?.hide(); return; }
+  if (!show) { homeWin?.hide(); scheduleHomeRelease(); return; }
+  clearTimeout(homeRelease);
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   if (!homeWin || homeWin.isDestroyed()) {
     homeWin = new BrowserWindow({
@@ -121,7 +128,8 @@ function toggleHome(force, mode = '') {
     });
     homeWin.setMenu(null);
     homeWin.loadURL(ui('home.html'));
-    homeWin.on('blur', () => homeWin?.hide());
+    homeWin.on('blur', () => { homeWin?.hide(); scheduleHomeRelease(); });
+    homeWin.on('closed', () => { homeWin = null; });
     homeWin.once('ready-to-show', () => { homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (mode) setTimeout(() => homeWin?.webContents.send('home-shown', mode), 400); });
     return;
   }
@@ -194,7 +202,7 @@ function dockEdgeCheck() {
     dockHideTimer = setTimeout(() => { dockHideTimer = null; setDockShown(false); }, 650);
   } else if (dockMouseInside) { clearTimeout(dockHideTimer); dockHideTimer = null; }
 }
-let windowsList = [], dockTimer = null, dockEdgeTimer = null;
+let windowsList = [], dockTimer = null, dockEdgeTimer = null, taskbarTimer = null;
 function ownPids() { return [process.pid, ...app.getAppMetrics().map((m) => m.pid)]; }
 function placeDock() {
   if (!dockWin || dockWin.isDestroyed()) return;
@@ -207,6 +215,10 @@ function placeDock() {
   dockWin.setBounds(win);
   dockWin.webContents.send('dock-shown', dockShown);
 }
+// hide the Windows taskbar (the dock replaces it), but never while Task View, Start or another Windows
+// overlay is open: hiding it then would close that overlay again
+function hideTaskbar() { if (win32.isWin && !win32.systemOverlayActive()) win32.showTaskbar(false); }
+
 // one shared list of open windows for the dock and the top bar, at most once a second
 let windowsAt = 0, windowsKey = '';
 function currentWindows(maxAge = 900) {
@@ -215,7 +227,7 @@ function currentWindows(maxAge = 900) {
 }
 async function pollWindows(fresh = false) {
   if (!dockWin || dockWin.isDestroyed() || app.isQuitting || gamer) return; // never hide the taskbar again once quitting has begun
-  if (win32.isWin) win32.showTaskbar(false); // Explorer brings it back now and then (Start menu, display changes)
+  hideTaskbar(); // Explorer brings it back now and then (Start menu, display changes)
   if (!store.get().dock.running) return;
   const list = currentWindows(fresh ? 0 : 900);
   const key = list.map((w) => `${w.hwnd}${w.active ? '*' : ''}${w.title}`).join('|');
@@ -237,8 +249,9 @@ async function setDock(on) {
     dockWin.on('closed', () => { dockWin = null; });
     clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 1000);
     clearInterval(dockEdgeTimer); dockEdgeTimer = setInterval(dockEdgeCheck, 60);
+    clearInterval(taskbarTimer); taskbarTimer = setInterval(() => { if (!gamer && !app.isQuitting) hideTaskbar(); }, 250); // cheap: one window lookup
   } else if (!on && dockWin) {
-    clearInterval(dockTimer); clearInterval(dockEdgeTimer);
+    clearInterval(dockTimer); clearInterval(dockEdgeTimer); clearInterval(taskbarTimer);
     if (win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
     store.set({ dock: { prevAutoHide: null } });
     dockWin.destroy(); dockWin = null;
@@ -717,7 +730,7 @@ app.whenReady().then(() => {
 app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
 app.on('before-quit', () => {
   app.isQuitting = true;
-  for (const t of [dockTimer, dockEdgeTimer, topTimer]) clearInterval(t); // nothing may hide the taskbar after this
+  for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
   media.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back

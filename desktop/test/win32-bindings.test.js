@@ -42,6 +42,7 @@ const calls = {
   desktopTree: () => w.desktopTree(),
   mediaKey: () => w.mediaKey(0xB3),
   showTaskbar: () => w.showTaskbar(true),
+  systemOverlayActive: () => w.systemOverlayActive(),
   taskbarVisible: () => w.taskbarVisible(),
   iconPixels: () => w.iconPixels('C:\\Windows\\explorer.exe'),
   placeWindow: () => w.placeWindow(fakeWin, { x: 0, y: 0, width: 100, height: 30 }),
