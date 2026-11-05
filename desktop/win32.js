@@ -65,6 +65,8 @@ function bind() {
     QueryFullProcessImageNameW: u.kernel32.func('bool __stdcall QueryFullProcessImageNameW(intptr_t proc, uint32 flags, uint16_t *buf, _Inout_ uint32_t *size)'),
     CloseHandle: u.kernel32.func('bool __stdcall CloseHandle(intptr_t h)'),
     DwmGetWindowAttribute: u.dwmapi.func('long __stdcall DwmGetWindowAttribute(intptr_t hwnd, uint32 attr, _Out_ int32_t *value, uint32 size)'),
+    // the same function for DWMWA_EXTENDED_FRAME_BOUNDS (the visible frame, without the invisible resize border)
+    DwmGetFrameRect: u.dwmapi.func('__stdcall', 'DwmGetWindowAttribute', 'long', ['intptr_t', 'uint32', koffi.out(koffi.pointer(RECT)), 'uint32']),
   });
   return u;
 }
@@ -180,6 +182,22 @@ function fullscreenAppRunning(displays) {
   const r = {};
   if (!u.GetWindowRect(fg, r)) return false;
   return displays.some((d) => r.left <= d.x && r.top <= d.y && r.right >= d.x + d.width && r.bottom >= d.y + d.height);
+}
+
+/** The visible frame of the window in front (physical pixels), or null for the desktop, the dock itself,
+ *  minimized windows and the app's own windows. Used for the dock's intellihide (as in Dash to Dock / Plank). */
+function foregroundRect(ownPids = []) {
+  if (!load()) return null;
+  const fg = u.GetForegroundWindow();
+  if (isNull(fg) || u.IsIconic(fg) || !u.IsWindowVisible(fg)) return null;
+  const buf = new Uint16Array(64);
+  const cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 64)));
+  if (['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'].includes(cls)) return null;
+  const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
+  if (ownPids.includes(pid[0])) return null;
+  const r = {};
+  if (u.DwmGetFrameRect(fg, 9, r, 16) !== 0 && !u.GetWindowRect(fg, r)) return null;
+  return { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top };
 }
 
 /** Show or hide the desktop icons (the same toggle as Desktop > View > Show desktop icons). */
@@ -316,5 +334,6 @@ module.exports = {
   desktopTree: safe('desktopTree', desktopTree, []),
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
+  foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
 };

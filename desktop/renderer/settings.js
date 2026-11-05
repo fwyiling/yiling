@@ -104,7 +104,7 @@ document.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener(
 }));
 
 // ---------- widgets list ----------
-const WIDGETS = { clock: 'Clock', greeting: 'Greeting', date: 'Date', stats: 'CPU & memory', weather: 'Weather', quote: 'Quote', media: 'Now playing' };
+const WIDGETS = { clock: 'Clock', greeting: 'Greeting', date: 'Date', stats: 'CPU & memory', weather: 'Weather', quote: 'Quote', media: 'Now playing', today: 'Today (next class, to-dos)' };
 $('wlist').replaceChildren(...Object.entries(WIDGETS).map(([k, label]) => {
   const r = document.createElement('div'); r.className = 'wrow'; r.dataset.w = k;
   r.innerHTML = `<input type="checkbox" title="Show"><b>${label}</b><input type="range" min="0.5" max="2" step="0.05" title="Size"><div class="extra"></div>`;

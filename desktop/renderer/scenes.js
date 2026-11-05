@@ -104,8 +104,78 @@ const SCENES = {
       ctx.fillStyle = rgba(s.base, 0.9); ctx.beginPath(); ctx.arc(cx, cy, r0 * 0.92, 0, Math.PI * 2); ctx.fill();
     },
   },
+  // out-of-focus lights drifting at different depths (the classic bokeh wallpaper)
+  bokeh: {
+    scale: 0.75,
+    init(s, w, h) {
+      const n = Math.round(46 * (0.5 + s.intensity));
+      s.orbs = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, z: Math.random(), ph: Math.random() * 6.28, c: Math.floor(Math.random() * 2) }));
+      s.orbs.sort((a, b) => a.z - b.z); // far ones first
+    },
+    draw(s, ctx, w, h, t, dt) {
+      const bg = ctx.createLinearGradient(0, 0, w * 0.3, h);
+      bg.addColorStop(0, rgba(mix(s.base, s.colors[2] || s.colors[0], 0.45), 1)); bg.addColorStop(1, rgba(s.base, 1));
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      const m = Math.min(w, h), lvl = s.audio?.level || 0;
+      ctx.globalCompositeOperation = 'lighter';
+      for (const o of s.orbs) {
+        const r = m * (0.015 + o.z * 0.07) * (1 + lvl * 0.4);
+        o.y -= dt * 0.006 * s.speed * (0.3 + o.z); o.x += Math.sin(t * 0.3 + o.ph) * 0.15 * o.z;
+        if (o.y < -r) { o.y = h + r; o.x = Math.random() * w; }
+        const x = o.x - s.px * w * 0.05 * o.z, y = o.y - s.py * h * 0.05 * o.z;
+        const tw = 0.55 + 0.45 * Math.sin(t * (0.6 + o.z) + o.ph); // twinkle
+        const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r);
+        const a = (0.10 + 0.22 * (1 - o.z)) * tw * (0.6 + s.intensity * 0.6);
+        g.addColorStop(0, rgba(s.colors[o.c], a)); g.addColorStop(0.75, rgba(s.colors[o.c], a * 0.7)); g.addColorStop(1, rgba(s.colors[o.c], 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    },
+  },
+  // rain on a window: streaks in three depths, drops that cling to the glass and slide down
+  rain: {
+    scale: 1,
+    init(s, w, h) {
+      const n = Math.round(260 * (0.4 + s.intensity));
+      s.streaks = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, z: 0.3 + Math.random() * 0.7 }));
+      s.drops = Array.from({ length: 70 }, () => ({ x: Math.random() * w, y: Math.random() * h, r: 1.5 + Math.random() * 4, v: 0 }));
+      s.flash = 0;
+    },
+    draw(s, ctx, w, h, t, dt) {
+      const bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, rgba(mix(s.base, [0, 0, 0], 0.3), 1)); bg.addColorStop(1, rgba(mix(s.base, s.colors[2] || s.colors[0], 0.35), 1));
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      // city-light glow behind the glass
+      for (let i = 0; i < 3; i++) {
+        const gx = w * (0.2 + i * 0.3) - s.px * w * 0.02, gy = h * (0.75 + 0.05 * Math.sin(i * 2));
+        const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, h * 0.5);
+        g.addColorStop(0, rgba(s.colors[i % 2], 0.16 * (0.6 + s.intensity * 0.5))); g.addColorStop(1, rgba(s.colors[i % 2], 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      }
+      if (Math.random() < 0.0006 * s.intensity) s.flash = 1; // a distant flash now and then
+      if (s.flash > 0.01) { ctx.fillStyle = `rgba(200,210,230,${s.flash * 0.12})`; ctx.fillRect(0, 0, w, h); s.flash *= 0.9; }
+      ctx.lineCap = 'round';
+      const wind = 0.18 + s.px * 0.1;
+      for (const r of s.streaks) {
+        const v = dt * (0.9 + r.z * 1.4) * s.speed;
+        r.y += v; r.x += v * wind;
+        if (r.y > h) { r.y = -20; r.x = Math.random() * w * 1.2 - w * 0.1; }
+        ctx.strokeStyle = `rgba(200,212,230,${0.06 + r.z * 0.16})`; ctx.lineWidth = r.z * 1.3;
+        ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - wind * 18 * r.z, r.y - 18 * r.z); ctx.stroke();
+      }
+      for (const d of s.drops) { // drops on the glass: still, then slide when they get heavy
+        if (Math.random() < 0.002) d.v = 0.05 + Math.random() * 0.15;
+        d.y += d.v * dt * s.speed; d.v *= 0.995;
+        if (d.y > h + 10) { d.y = -10; d.x = Math.random() * w; d.v = 0; }
+        const g = ctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.3, 0, d.x, d.y, d.r);
+        g.addColorStop(0, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(160,175,195,0.05)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r * 0.85, d.r, 0, 0, 6.2832); ctx.fill();
+        if (d.v > 0.04) { ctx.strokeStyle = 'rgba(200,210,225,0.08)'; ctx.lineWidth = d.r * 0.6; ctx.beginPath(); ctx.moveTo(d.x, d.y - d.r); ctx.lineTo(d.x, d.y - d.r - 30); ctx.stroke(); }
+      }
+    },
+  },
 };
-export const SCENE_NAMES = { aurora: 'Aurora', particles: 'Particles', waves: 'Waves', starfield: 'Starfield', visualizer: 'Visualizer' };
+export const SCENE_NAMES = { aurora: 'Aurora', particles: 'Particles', waves: 'Waves', starfield: 'Starfield', bokeh: 'Bokeh', rain: 'Rain', visualizer: 'Visualizer' };
 
 export function createScene(canvas, opts) {
   const ctx = canvas.getContext('2d', { alpha: false });

@@ -141,7 +141,9 @@ function openSettings() {
 
 // ---------- Syndicates dock (replaces the look of the taskbar) ----------
 const DOCK_H = { s: 52, m: 64, l: 78 }, DOCK_HEADROOM = 46;
-let dockShown = true, dockHideTimer = null, dockMouseInside = false;
+let dockShown = true, dockHideTimer = null, dockMouseInside = false, dockBlocked = false, dockTick = 0;
+// 'smart': hides only when the window in front would be covered; 'always': until the mouse hits the bottom edge; 'never'
+const dockHideMode = (dk) => (['smart', 'always', 'never'].includes(dk.hide) ? dk.hide : dk.autohide === false ? 'never' : 'smart');
 // Auto-hide (like Seelen UI's dock and macOS): out of sight until the mouse touches the bottom edge of the screen.
 function setDockShown(show) {
   if (!dockWin || dockWin.isDestroyed() || show === dockShown) return;
@@ -151,11 +153,18 @@ function setDockShown(show) {
 }
 function dockEdgeCheck() {
   if (!dockWin || dockWin.isDestroyed()) return;
-  const dk = store.get().dock;
-  if (!dk.autohide) { setDockShown(true); return; }
+  const dk = store.get().dock, mode = dockHideMode(dk);
+  if (mode === 'never') { setDockShown(true); return; }
   const d = screen.getPrimaryDisplay(), p = screen.getCursorScreenPoint();
   const onDisplay = p.x >= d.bounds.x && p.x < d.bounds.x + d.bounds.width;
   const bottom = d.bounds.y + d.bounds.height, h = DOCK_H[dk.size] || DOCK_H.m;
+  // smart (intellihide, as in Dash to Dock and Plank): stay up unless the window in front would be covered
+  if (mode === 'smart' && ++dockTick % 4 === 0) {
+    const fg = win32.isWin ? win32.foregroundRect(ownPids()) : null;
+    const band = screen.dipToScreenRect(null, { x: d.bounds.x, y: bottom - h - 8, width: d.bounds.width, height: h + 8 });
+    dockBlocked = !!fg && fg.x < band.x + band.width && fg.x + fg.width > band.x && fg.y + fg.height > band.y + 4 && fg.y < band.y + band.height;
+  }
+  if (mode === 'smart' && !dockBlocked) { clearTimeout(dockHideTimer); dockHideTimer = null; setDockShown(true); return; }
   if (onDisplay && p.y >= bottom - 2) {
     clearTimeout(dockHideTimer); dockHideTimer = null;
     if (!dockShown && !(win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]))) setDockShown(true); // not over games / full-screen video
@@ -172,7 +181,7 @@ function placeDock() {
   // the window is taller than the dock: room above it for magnified icons and tooltips (clicks pass through there)
   const win = { ...strip, y: strip.y - DOCK_HEADROOM, height: h + DOCK_HEADROOM };
   if (win32.isWin) win32.releaseEdge(dockWin);
-  if (win32.isWin && dk.reserve && !dk.autohide) win32.reserveEdge(dockWin, screen.dipToScreenRect(null, strip), 'bottom'); // maximized windows stop above it
+  if (win32.isWin && dk.reserve && dockHideMode(dk) === 'never') win32.reserveEdge(dockWin, screen.dipToScreenRect(null, strip), 'bottom'); // maximized windows stop above it
   dockWin.setBounds(win);
   dockWin.webContents.send('dock-shown', dockShown);
 }
@@ -188,7 +197,7 @@ async function setDock(on) {
   if (on && (!dockWin || dockWin.isDestroyed())) {
     if (win32.isWin && st.dock.prevAutoHide == null) store.set({ dock: { prevAutoHide: win32.taskbarAutoHide() } });
     if (win32.isWin) { win32.setTaskbarAutoHide(true); win32.showTaskbar(false); } // one bottom bar: the Windows taskbar goes away while the dock is on
-    dockShown = !st.dock.autohide;
+    dockShown = dockHideMode(st.dock) !== 'always';
     dockWin = new BrowserWindow({ width: 800, height: 64 + DOCK_HEADROOM, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
@@ -280,6 +289,17 @@ function wireIpc() {
   ipcMain.handle('paused', () => paused);
   ipcMain.handle('stats', () => system.stats());
   ipcMain.handle('weather', (_e, city) => system.weather(city));
+  ipcMain.handle('books', (_e, q) => system.books(q));
+  ipcMain.handle('github-repos', (_e, user) => system.githubRepos(user));
+  // Places: what the desktop icons were for, so they can be hidden without losing anything
+  ipcMain.handle('places:open', (_e, key) => {
+    const PLACES = { pc: 'shell:MyComputerFolder', home: app.getPath('home'), downloads: app.getPath('downloads'), documents: app.getPath('documents'), recycle: 'shell:RecycleBinFolder' };
+    const p = PLACES[key];
+    if (!p) throw new Error('unknown place');
+    toggleHome(false);
+    if (p.startsWith('shell:')) { if (win32.isWin) require('child_process').spawn('explorer.exe', [p], { detached: true, stdio: 'ignore' }).unref(); return true; }
+    return shell.openPath(p);
+  });
   ipcMain.handle('apps', () => (apps ||= system.listApps()));
   ipcMain.handle('app-icon', async (_e, p) => {
     if (!isKnownApp(p)) return '';

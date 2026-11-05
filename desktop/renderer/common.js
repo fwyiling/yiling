@@ -25,5 +25,20 @@ const QUOTES = [
   ['The journey of a thousand miles begins with one step.', 'Lao Tzu'],
 ];
 export const quoteOfTheHour = (d) => QUOTES[(d.getDate() * 24 + d.getHours()) % QUOTES.length];
+// Timetable entries: { d: 0-6 (Monday first), s: '08:00', e: '09:30', t: 'Maths', p: 'Room 3' }
+export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+export const weekday = (d) => (d.getDay() + 6) % 7;
+const mins = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + (m || 0); };
+/** The class happening now, or the next one today: { cls, now } or null. */
+export function nextClass(timetable, d = new Date()) {
+  const t = d.getHours() * 60 + d.getMinutes();
+  const today = (timetable || []).filter((c) => c.d === weekday(d)).sort((a, b) => mins(a.s) - mins(b.s));
+  const cur = today.find((c) => mins(c.s) <= t && t < mins(c.e));
+  if (cur) return { cls: cur, now: true };
+  const nxt = today.find((c) => mins(c.s) > t);
+  return nxt ? { cls: nxt, now: false } : null;
+}
+export const byTime = (a, b) => mins(a.s) - mins(b.s);
+
 export function applyAccent(accent) { document.documentElement.style.setProperty('--a', accent || '#5e7d9c'); }
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

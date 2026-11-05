@@ -73,3 +73,13 @@
 .w-quote blockquote { margin: 0; font-size: 2.1cqmin; font-style: italic; font-weight: 400; opacity: .9; }
 .w-quote figcaption { margin-top: .6em; font-size: 1.3cqmin; letter-spacing: .14em; text-transform: uppercase; opacity: .65; }
 .w-stats { justify-content: center; }
+.w-today { gap: 2.4cqmin; }
+.w-today .col { display: grid; gap: .35em; min-width: 9cqmin; max-width: 18cqw; }
+.w-today .col + .col:not([hidden]) { padding-left: 2.4cqmin; border-left: 1px solid rgba(255, 255, 255, .1); }
+.w-today b { font-size: 2cqmin; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.w-today .sub { font-size: 1.45cqmin; opacity: .7; overflow: hidden; text-overflow: ellipsis; }
+/* with the dock on, nothing sits where it appears */
+[data-layout="center"][data-dock="on"] > .wp-foot { top: 81%; }
+[data-layout="center"][data-dock="on"] > .wp-cards { top: 63%; }
+[data-layout="left"][data-dock="on"] > .wp-foot { top: 82%; }
+[data-layout="left"][data-dock="on"] > .wp-hero, [data-layout="left"][data-dock="on"] > .wp-cards { top: 60%; }

@@ -24,12 +24,13 @@ const DEFAULTS = {
     stats:    { on: true,  x: 0.08, y: 0.86, scale: 1 },
     weather:  { on: false, x: 0.92, y: 0.1,  scale: 1, city: '' },
     quote:    { on: true,  x: 0.5,  y: 0.9,  scale: 1 },
-    media:    { on: true,  x: 0.86, y: 0.86, scale: 1 },   // now playing (only shows while something plays)
+    media:    { on: true,  x: 0.86, y: 0.86, scale: 1 },
+    today:    { on: true,  x: 0.14, y: 0.86, scale: 1 },   // next class and to-dos (only shows when there's something)   // now playing (only shows while something plays)
   },
   name: '',
-  home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '' },
+  home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [], github: '' },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
-  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, autohide: true, reserve: true, prevAutoHide: null },
+  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, hide: 'smart', reserve: true, prevAutoHide: null },
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
 

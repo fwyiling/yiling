@@ -2,7 +2,7 @@
 // Used full-screen behind the icons and, scaled down, as the live preview in Customize.
 import { createScene } from './scenes.js';
 import { startAudio, stopAudio, levels } from './audio.js';
-import { greeting, quoteOfTheHour, fmtTime, fmtDate } from './common.js';
+import { greeting, quoteOfTheHour, fmtTime, fmtDate, nextClass } from './common.js';
 
 // Time-of-day tint: keyframes by hour (tint colour, how much of it, extra darkness), blended smoothly.
 const DAY = [[0, '#0b1a3a', 0.45, 0.18], [5, '#1d2450', 0.4, 0.12], [7, '#ff9a8b', 0.3, 0], [10, '#ffffff', 0, 0],
@@ -28,8 +28,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const layer = el('div', 'wp-widgets');
   // grouped layouts: the time in one hero stack, the info as a row (or column) of matching cards
   const groups = { hero: el('div', 'wp-group wp-hero'), cards: el('div', 'wp-group wp-cards'), foot: el('div', 'wp-group wp-foot') };
-  const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
-  const ORDER = ['greeting', 'clock', 'date', 'media', 'weather', 'stats', 'quote'];
+  const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', today: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
+  const ORDER = ['greeting', 'clock', 'date', 'today', 'media', 'weather', 'stats', 'quote'];
   layer.append(groups.hero, groups.cards, groups.foot);
   root.append(canvas, media, dim, layer);
   let scene = null, s = settings, mediaKey = '';
@@ -72,14 +72,30 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     date: () => el('div', 'w-date'),
     stats: () => el('div', 'w-stats w-card', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
     weather: () => el('div', 'w-weather w-card', '<b class="t">–</b><span class="d">Set a city in Customize</span>'),
+    today: () => el('div', 'w-today w-card', '<div class="col cls"><span class="lbl">Next</span><b></b><span class="sub"></span></div><div class="col todo"><span class="lbl">To-do</span><b></b><span class="sub"></span></div>'),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
     media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
   const layout = () => (['center', 'left', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'center');
-  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on) && (k !== 'weather' || preview || !!cfg.city);
+  // Today: the class on now / next (from the Home panel's timetable) and what's left on the to-do list
+  function todayInfo() {
+    const nc = nextClass(s.home?.timetable), open = (s.home?.todos || []).filter((t) => !t.done);
+    if (preview && !nc && !open.length) return { nc: { cls: { t: 'Maths', s: '10:00', p: 'Room 3' }, now: false }, open: [{ text: 'Finish the essay' }, {}] };
+    return { nc, open };
+  }
+  function renderToday() {
+    const e = widgets.today; if (!e) return;
+    const { nc, open } = todayInfo();
+    e.querySelector('.cls').hidden = !nc; e.querySelector('.todo').hidden = !open.length;
+    if (nc) { e.querySelector('.cls .lbl').textContent = nc.now ? 'Now' : 'Next'; e.querySelector('.cls b').textContent = nc.cls.t; e.querySelector('.cls .sub').textContent = [nc.cls.s, nc.cls.p].filter(Boolean).join(' · '); }
+    if (open.length) { e.querySelector('.todo b').textContent = `${open.length} left`; e.querySelector('.todo .sub').textContent = open[0].text || ''; }
+  }
+  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on) && (k !== 'weather' || preview || !!cfg.city)
+    && (k !== 'today' || (() => { const t = todayInfo(); return !!t.nc || t.open.length > 0; })());
   function placeWidgets() {
     const mode = layout();
     layer.dataset.layout = mode;
+    layer.dataset.dock = s.dock?.on ? 'on' : 'off'; // keep the bottom clear for the dock
     for (const k of ORDER) {
       const cfg = s.widgets[k];
       if (!cfg || !MAKERS[k]) continue;
@@ -149,11 +165,12 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const cityChanged = next.widgets.weather?.city !== s.widgets.weather?.city;
     s = next;
     root.style.setProperty('--a', s.accent);
-    applyBackground(); placeWidgets(); renderMedia(); refreshStats();
+    applyBackground(); placeWidgets(); renderMedia(); renderToday(); refreshStats();
     if (cityChanged || !widgets.weather?.dataset.loaded) { if (widgets.weather) widgets.weather.dataset.loaded = '1'; refreshWeather(); }
   }
   update(settings);
   const clockT = setInterval(() => tick(false), 1000);
+  const todayT = setInterval(() => { if (widgets.today) { widgets.today.hidden = !visible('today', s.widgets.today || {}); renderToday(); } }, 30e3);
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
   const dayT = setInterval(() => { if (s.wallpaper.dayCycle) applyBackground(); }, 5 * 60e3);
@@ -173,6 +190,6 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     widgets,
     pause(p) { scene?.pause(p); media.querySelector('video')?.[p ? 'pause' : 'play']?.(); root.classList.toggle('paused', p); },
     pointer(x, y) { scene?.pointer(x, y); root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
-    destroy() { clearInterval(clockT); clearInterval(statsT); clearInterval(weatherT); clearInterval(dayT); scene?.destroy(); root.replaceChildren(); },
+    destroy() { clearInterval(clockT); clearInterval(todayT); clearInterval(statsT); clearInterval(weatherT); clearInterval(dayT); scene?.destroy(); root.replaceChildren(); },
   };
 }
