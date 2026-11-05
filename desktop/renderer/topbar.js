@@ -13,7 +13,17 @@ function look() {
 }
 
 // the app in front, like macOS shows it next to the Apple menu
-sd.onTopbar?.((st) => { $('app').textContent = st.app || 'Desktop'; });
+sd.onTopbar?.((st) => {
+  $('app').textContent = st.app || 'Desktop';
+  // virtual desktops, like macOS Spaces: only shown once there is more than one
+  const d = st.desks || { count: 1, current: 0 };
+  $('desks').hidden = d.count < 2;
+  $('desks').replaceChildren(...Array.from({ length: d.count }, (_, i) => {
+    const b = Object.assign(document.createElement('button'), { textContent: String(i + 1), className: i === d.current ? 'on' : '' });
+    b.onclick = () => sd.topbarDesk(i);
+    return b;
+  }));
+});
 
 // clock: "Thu 5 Nov  20:51" in your own language and format
 function tick() {

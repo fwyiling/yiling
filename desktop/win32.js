@@ -77,6 +77,8 @@ function bind() {
     DeleteObject: gdi32.func('bool __stdcall DeleteObject(intptr_t obj)'),
     GetDIBits: gdi32.func('int __stdcall GetDIBits(intptr_t hdc, intptr_t bmp, uint start, uint lines, _Out_ uint8_t *bits, _Inout_ BITMAPINFOHEADER *info, uint usage)'),
   });
+  const advapi32 = koffi.load('advapi32.dll');
+  u.RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t hkey, str16 sub, str16 value, uint32 flags, void *type, _Out_ uint8_t *data, _Inout_ uint32_t *size)');
   const SYSTEM_POWER_STATUS = koffi.struct('SYSTEM_POWER_STATUS', { ACLineStatus: 'uint8', BatteryFlag: 'uint8', BatteryLifePercent: 'uint8', SystemStatusFlag: 'uint8', BatteryLifeTime: 'uint32', BatteryFullLifeTime: 'uint32' });
   u.SYSTEM_POWER_STATUS = SYSTEM_POWER_STATUS;
   u.GetSystemPowerStatus = u.kernel32.func('bool __stdcall GetSystemPowerStatus(_Out_ SYSTEM_POWER_STATUS *status)');
@@ -325,6 +327,28 @@ function battery() {
   return { present, percent: st.BatteryLifePercent, charging: !!(st.BatteryFlag & 8) || st.ACLineStatus === 1, plugged: st.ACLineStatus === 1 };
 }
 
+/** Make a bar a tool window: Windows shows tool windows on every virtual desktop (and never in Alt+Tab). */
+function makeToolWindow(win) {
+  if (!load() || win.isDestroyed()) return;
+  const h = hwndOf(win);
+  u.SetWindowLongPtrW(h, GWL_EXSTYLE, ((Number(u.GetWindowLongPtrW(h, GWL_EXSTYLE)) | 0x80) & ~0x40000) >>> 0); // + WS_EX_TOOLWINDOW, - WS_EX_APPWINDOW
+}
+
+// Virtual desktops (macOS Spaces): Explorer keeps their ids and the current one in the registry (Windows 11).
+const VD_KEY = 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops';
+function regBinary(sub, name) {
+  const buf = Buffer.alloc(16 * 64), size = [buf.length];
+  return u.RegGetValueW(-2147483647, sub, name, 0x8, null, buf, size) === 0 ? buf.subarray(0, size[0]) : null; // HKEY_CURRENT_USER, RRF_RT_REG_BINARY
+}
+function virtualDesktops() {
+  if (!load()) return { count: 1, current: 0 };
+  const ids = regBinary(VD_KEY, 'VirtualDesktopIDs'), cur = regBinary(VD_KEY, 'CurrentVirtualDesktop');
+  const count = ids ? Math.max(1, Math.floor(ids.length / 16)) : 1;
+  let current = 0;
+  if (ids && cur && cur.length === 16) for (let i = 0; i < count; i++) if (ids.subarray(i * 16, i * 16 + 16).equals(cur)) current = i;
+  return { count, current };
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -428,6 +452,8 @@ module.exports = {
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),
+  makeToolWindow: safe('makeToolWindow', makeToolWindow),
+  virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0 }),
   windowRect: safe('windowRect', windowRect, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),

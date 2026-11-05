@@ -17,5 +17,6 @@ let opaque = 0; for (let i = 3; i < ic.data.length; i += 4) if (ic.data[i] > 200
 console.log(`ok   256 px icon from explorer.exe: ${Math.round(100 * opaque / (256 * 256))}% opaque pixels`);
 assert.ok(opaque > 256 * 256 * 0.15, 'the big icon came out empty');
 console.log('ok   battery:', JSON.stringify(w.battery()));
+console.log('ok   virtual desktops:', JSON.stringify(w.virtualDesktops()));
 assert.strictEqual(w.status().error, '');
 console.log('real Windows bindings fine');

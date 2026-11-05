@@ -99,15 +99,18 @@
     </section>
     <section data-panel="general">
       <div class="mac-swipe">
-        <b>Switch apps like a MacBook</b>
-        <p class="muted">Three-finger swipe left / right goes straight to the previous / next app, without the Alt+Tab picker. Windows sends touchpad gestures to itself, so tell it once which keys a swipe should press:</p>
+        <b>Swipe between desktops like a MacBook</b>
+        <p class="muted">Windows has Spaces too: virtual desktops, with the same sliding animation. Three-finger swipe left / right moves between them.</p>
         <ol class="muted">
-          <li>Open <b>Touchpad settings</b> → <b>Advanced gestures</b>.</li>
-          <li>Under <b>Three-finger gestures</b>: <b>Swipe left</b> → <b>Custom shortcut</b> → press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>; <b>Swipe right</b> → <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd>.</li>
-          <li>That's it: Syndicates switches instantly on those keys. They also work from the keyboard, and scrolling on the dock does the same.</li>
+          <li>Click <b>Use three-finger swipes for desktops</b> below, or in <b>Touchpad settings</b> → <b>Three-finger gestures</b> → <b>Swipes</b> choose <b>Switch desktops and show desktop</b>.</li>
+          <li>Make another desktop: <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>D</kbd>, the top bar menu's <b>New desktop</b>, or swipe up and click <b>New desktop</b>.</li>
+          <li>The top bar shows your desktops (1 2 3…); click one to go there. The top bar, dock and island are on every desktop.</li>
         </ol>
-        <p class="muted" id="switchStatus"></p>
-        <div class="row"><button id="switchTest" class="btn">Test: switch to the next app</button><button id="openTouchpad" class="btn">Touchpad settings</button><button id="macSwipe" class="btn ghost">Or: Windows' own switcher (with picker)</button></div>
+        <div class="row"><button id="macSwipe" class="btn">Use three-finger swipes for desktops</button><button id="openTouchpad" class="btn ghost">Touchpad settings</button></div>
+        <details class="muted"><summary>Switching apps instead</summary>
+          <p>Ctrl+Alt+Shift+← / → (and scrolling on the dock) jump straight to the previous / next app. <span id="switchStatus"></span></p>
+          <button id="switchTest" class="btn ghost">Test: switch to the next app</button>
+        </details>
       </div>
       <p class="muted" id="gestureNote"></p>
       <label class="switch"><span><b>Gamer mode in full-screen games</b><small>While a game or video is full screen: wallpaper paused, bars and island hidden, nothing polling in the background. Ctrl+Alt+G turns gamer mode on or off any time.</small></span><input type="checkbox" data-k="general.autoGamer"></label>

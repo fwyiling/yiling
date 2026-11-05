@@ -69,3 +69,4 @@ a { color: color-mix(in srgb, var(--a) 60%, #fff); }
 .mac-swipe { padding: 14px 16px; border-radius: 14px; background: var(--p2); border: 1px solid var(--line); margin-bottom: 12px; }
 .mac-swipe ol { margin: 6px 0 12px; padding-left: 20px; line-height: 1.7; }
 .mac-swipe kbd { font: 600 11px system-ui; padding: 2px 6px; border-radius: 5px; background: rgba(255, 255, 255, .1); color: var(--t); }
+.mac-swipe details { margin-top: 12px; } .mac-swipe summary { cursor: pointer; } .mac-swipe details p { margin: 8px 0; }

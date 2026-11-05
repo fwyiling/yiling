@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('sd', {
   switchTest: () => ipcRenderer.invoke('switch:test'),
   switchStatus: () => ipcRenderer.invoke('switch:status'),
   topbarTimer: () => ipcRenderer.invoke('topbar:timer'),
+  topbarDesk: (i) => ipcRenderer.invoke('topbar:desk', i),
   onIslandOpen: on('island-open'),
   onGamer: on('gamer'),
   islandMouse: (inside) => ipcRenderer.send('island:mouse', !!inside),

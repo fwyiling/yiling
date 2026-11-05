@@ -47,6 +47,8 @@ const calls = {
   placeWindow: () => w.placeWindow(fakeWin, { x: 0, y: 0, width: 100, height: 30 }),
   windowRect: () => w.windowRect(fakeWin),
   battery: () => w.battery(),
+  makeToolWindow: () => w.makeToolWindow(fakeWin),
+  virtualDesktops: () => w.virtualDesktops(),
   foregroundRect: () => w.foregroundRect([1]),
   pressKeys: () => w.pressKeys([0x5B, 0x41]),
 };

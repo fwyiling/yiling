@@ -24,3 +24,7 @@ button:focus { outline: none; }
 .cell b { display: block; height: 100%; width: 50%; border-radius: 1px; background: #eef1f4; }
 #battery.low .cell b { background: #e5534b; } #battery.charging .cell b { background: #57ab5a; }
 #clock { font-weight: 600; }
+#desks { display: flex; gap: 2px; margin-left: 4px; }
+#desks button { min-width: 18px; height: 16px; padding: 0 5px; border-radius: 5px; font-size: 10.5px; font-weight: 700; color: var(--m); background: rgba(255, 255, 255, .06); }
+#desks button.on { background: var(--a); color: #fff; }
+#desks button:hover:not(.on) { background: rgba(255, 255, 255, .14); color: var(--t); }

@@ -180,11 +180,11 @@ function showSwitch(st) {
 sd.switchStatus().then(showSwitch).catch(() => {});
 setInterval(() => { if (document.querySelector('[data-panel=general].on')) sd.switchStatus().then(showSwitch).catch(() => {}); }, 2000);
 $('switchTest').onclick = async () => showSwitch(await sd.switchTest());
-const GESTURE = { apps: 'switch apps with Windows’ picker', desktops: 'switch desktops', volume: 'change the volume', nothing: 'do nothing', custom: 'press custom shortcuts ✓ (the keys above give instant switching)' };
+const GESTURE = { apps: 'switch apps', desktops: 'switch desktops ✓', volume: 'change the volume', nothing: 'do nothing', custom: 'press custom shortcuts' };
 function showGestures(g) {
-  if (!g?.precision) { $('gestureNote').textContent = 'No precision touchpad found: three-finger gestures need one. With a mouse, scroll over the dock to switch apps.'; $('macSwipe').disabled = true; return; }
+  if (!g?.precision) { $('gestureNote').textContent = 'No precision touchpad found: three-finger gestures need one. With a keyboard: Win+Ctrl+← / → switches desktops.'; $('macSwipe').disabled = true; return; }
   $('gestureNote').textContent = `Right now, three-finger swipes left / right ${GESTURE[g.three] || g.three}.`;
-  $('macSwipe').disabled = g.three === 'apps';
+  $('macSwipe').disabled = g.three === 'desktops';
 }
 sd.gestures().then(showGestures).catch(() => {});
 $('macSwipe').onclick = async () => showGestures(await sd.macGestures());

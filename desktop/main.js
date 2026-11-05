@@ -231,7 +231,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { placeDock(); dockWin.showInactive(); pollWindows(); });
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -340,7 +340,8 @@ function topbarTick() {
   keepTopbarAtTop();
   const fg = currentWindows().find((w) => w.active);
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
-  if (name !== topApp) { topApp = name; topWin.webContents.send('topbar', { app: name }); }
+  const vd = win32.isWin ? win32.virtualDesktops() : { count: 1, current: 0 }, key = `${name}|${vd.count}|${vd.current}`;
+  if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
 function setTopbar(on) {
   if (on && (!topWin || topWin.isDestroyed())) {
@@ -348,7 +349,7 @@ function setTopbar(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Top Bar', webPreferences: webPrefs });
     topWin.setAlwaysOnTop(true, 'pop-up-menu');
     topWin.loadURL(ui('topbar.html'));
-    topWin.once('ready-to-show', () => { placeTopbar(); topWin.showInactive(); topApp = ''; topbarTick(); });
+    topWin.once('ready-to-show', () => { win32.makeToolWindow(topWin); placeTopbar(); topWin.showInactive(); topApp = ''; topbarTick(); });
     topWin.on('closed', () => { topWin = null; });
     clearInterval(topTimer); topTimer = setInterval(topbarTick, 1000);
   } else if (!on && topWin) {
@@ -364,6 +365,7 @@ function topbarMenu(x, y) {
     { type: 'separator' },
     { label: 'Timer  (Ctrl+Alt+T)', click: openIslandTimer },
     { label: 'Gamer mode  (Ctrl+Alt+G)', type: 'checkbox', checked: gamer, click: () => setGamer(!gamer) },
+    { label: 'New desktop  (Win+Ctrl+D)', click: () => win32.pressKeys([0x5B, 0x11, 0x44]) },
     { label: 'Show desktop', click: () => win32.pressKeys([0x5B, 0x44]) },
     { label: 'Windows Settings', click: () => shell.openExternal('ms-settings:') },
     { label: 'Task Manager', click: () => win32.pressKeys([0x11, 0x10, 0x1B]) },
@@ -387,7 +389,7 @@ function setIsland(on) {
     islandWin.setAlwaysOnTop(true, 'screen-saver'); // above the top bar
     islandWin.setIgnoreMouseEvents(true, { forward: true });
     islandWin.loadURL(ui('island.html'));
-    islandWin.once('ready-to-show', () => { placeIsland(); if (!gamer) islandWin.showInactive(); });
+    islandWin.once('ready-to-show', () => { win32.makeToolWindow(islandWin); placeIsland(); if (!gamer) islandWin.showInactive(); });
     islandWin.on('closed', () => { islandWin = null; });
   } else if (!on && islandWin) { islandWin.destroy(); islandWin = null; }
 }
@@ -556,7 +558,7 @@ function wireIpc() {
   ipcMain.handle('taskbar:get', () => taskbar.read());
   ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
   ipcMain.handle('gestures:get', () => taskbar.gestures());
-  ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerApps());
+  ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerDesktops());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
     const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
@@ -592,6 +594,13 @@ function wireIpc() {
   ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch }));
   ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
   ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
+  // click a desktop dot: step there with Win+Ctrl+Left/Right (Windows' own switch, with its slide animation)
+  ipcMain.handle('topbar:desk', async (e, target) => {
+    if (!topWin || e.sender !== topWin.webContents || !win32.isWin) return;
+    const vd = win32.virtualDesktops(), steps = Math.max(-9, Math.min(9, Math.round(target) - vd.current));
+    for (let i = 0; i < Math.abs(steps); i++) { win32.pressKeys([0x5B, 0x11, steps > 0 ? 0x27 : 0x25]); await new Promise((r) => setTimeout(r, 260)); }
+    topApp = ''; topbarTick();
+  });
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });

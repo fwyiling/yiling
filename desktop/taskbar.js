@@ -52,6 +52,12 @@ async function gestures() {
   const n = await readDword(TOUCHPAD, 'ThreeFingerSlideEnabled');
   return { precision: !!out, three: SLIDE[n ?? 1] || 'apps' }; // missing value = Windows' default, switch apps
 }
+async function setThreeFingerDesktops() { // macOS Spaces: three-finger swipes slide between desktops
+  if (!win32.isWin) return gestures();
+  await run(['add', TOUCHPAD, '/v', 'ThreeFingerSlideEnabled', '/t', 'REG_DWORD', '/d', '2', '/f']);
+  win32.refreshTaskbar();
+  return gestures();
+}
 async function setThreeFingerApps() {
   if (!win32.isWin) return gestures();
   await run(['add', TOUCHPAD, '/v', 'ThreeFingerSlideEnabled', '/t', 'REG_DWORD', '/d', '1', '/f']);
@@ -59,4 +65,4 @@ async function setThreeFingerApps() {
   return gestures();
 }
 
-module.exports = { read, apply, gestures, setThreeFingerApps };
+module.exports = { read, apply, gestures, setThreeFingerApps, setThreeFingerDesktops };
