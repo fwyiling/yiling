@@ -310,7 +310,31 @@ function bigIcon(p) {
   iconCache.set(p, url);
   return url;
 }
+// what a shortcut really starts, so a .lnk to a script or an icon-less app gets a clean letter tile, not a blank page
+const PINNABLE = /\.(exe|lnk|url|bat|cmd|appref-ms|msc|py|pyw|ps1|vbs|jar)$/i;
+function addPin(p, name) {
+  const pins = store.get().home.pins.filter((x) => x.path !== p);
+  return applySettings({ home: { pins: [...pins, { name: name || path.basename(p).replace(/\.[^.]+$/, ''), path: p }] } });
+}
 async function iconFor(p, size) {
+  const pin = store.get().home.pins.find((x) => x.path === p);
+  if (pin?.icon && fs.existsSync(pin.icon)) { // an icon you picked yourself
+    if (/\.(exe|dll)$/i.test(pin.icon)) { const u = bigIcon(pin.icon); if (u) return u; }
+    const img = nativeImage.createFromPath(pin.icon);
+    if (!img.isEmpty()) return img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL();
+  }
+  if (/\.lnk$/i.test(p) && win32.isWin) {
+    try {
+      const l = shell.readShortcutLink(p);
+      const isDir = (() => { try { return fs.statSync(l.target).isDirectory(); } catch { return false; } })();
+      if (!l.icon && l.target && !isDir && !/\.(exe|ico|dll)$/i.test(l.target)) return '';
+    } catch {}
+  }
+  if (/\.(bat|cmd|py|pyw|ps1|vbs|jar)$/i.test(p)) return ''; // scripts: Windows' icon for them is a blank page
+  const e = appEntry(p);
+  if (e?.logo) { const img = nativeImage.createFromPath(e.logo); if (!img.isEmpty()) return img.resize({ width: 128, height: 128, quality: 'best' }).toDataURL(); }
+  if (e?.exe) return bigIcon(e.exe) || (await app.getFileIcon(e.exe, { size }).then((i) => i.toDataURL()).catch(() => ''));
+  if (p.startsWith('shell:')) return '';
   return bigIcon(p) || (await app.getFileIcon(p, { size }).then((i) => i.toDataURL()).catch(() => ''));
 }
 
@@ -333,13 +357,13 @@ function wireIpc() {
     if (p.startsWith('shell:')) { if (win32.isWin) require('child_process').spawn('explorer.exe', [p], { detached: true, stdio: 'ignore' }).unref(); return true; }
     return shell.openPath(p);
   });
-  ipcMain.handle('apps', () => (apps ||= system.listApps()));
+  ipcMain.handle('apps', () => { apps ||= system.listApps(); refreshApps(); return apps; }); // answers at once; the full list follows as 'apps'
   ipcMain.handle('app-icon', async (_e, p) => {
     if (!isKnownApp(p)) return '';
     return iconFor(p, 'large');
   });
   // only launch things that came from the Start menu or that you pinned yourself
-  ipcMain.handle('launch', (_e, p) => { if (!isKnownApp(p)) throw new Error('unknown app'); toggleHome(false); return shell.openPath(p); });
+  ipcMain.handle('launch', (_e, p) => { if (!isKnownApp(p)) throw new Error('unknown app'); toggleHome(false); return launchApp(p); });
   ipcMain.handle('open', (_e, url) => { if (!httpOnly(url)) throw new Error('only web links'); toggleHome(false); return shell.openExternal(url); });
   ipcMain.handle('pick-file', async (e, kind) => {
     const filters = kind === 'video' ? [{ name: 'Videos', extensions: ['mp4', 'webm', 'mkv', 'mov'] }]
@@ -354,7 +378,7 @@ function wireIpc() {
   ipcMain.handle('taskbar:set', (_e, patch) => taskbar.apply(patch));
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
-    const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background' };
+    const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
     if (!pages[page]) throw new Error('unknown page');
     return shell.openExternal(pages[page]);
   });
@@ -366,6 +390,7 @@ function wireIpc() {
   });
   ipcMain.handle('pin-target', (_e, p) => { // what a pinned shortcut points at, to match it with open windows
     if (!isKnownApp(p)) return '';
+    if (appEntry(p)?.exe) return appEntry(p).exe;
     if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
     try { return shell.readShortcutLink(p).target || p; } catch { return p; }
   });
@@ -380,12 +405,51 @@ function wireIpc() {
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
+  // pin what you dropped on Home (a file you chose by dragging it there)
+  ipcMain.handle('pin:add', (_e, p) => {
+    p = String(p || '');
+    if (!PINNABLE.test(p) || !fs.existsSync(p) || !fs.statSync(p).isFile()) throw new Error('only apps, shortcuts and scripts can be pinned');
+    return addPin(p);
+  });
+  // pin a program that is running, from the dock (handy for apps you made yourself)
+  ipcMain.handle('dock:pin', (e, exe) => {
+    if (!dockWin || e.sender !== dockWin.webContents) return;
+    const w = windowsList.find((x) => x.exe === exe);
+    if (!w || !/\.exe$/i.test(exe)) throw new Error('not a running app');
+    const name = path.basename(exe, '.exe');
+    return addPin(exe, name.charAt(0).toUpperCase() + name.slice(1));
+  });
+  ipcMain.handle('pin:remove', (_e, p) => applySettings({ home: { pins: store.get().home.pins.filter((x) => x.path !== p) } }));
+  ipcMain.handle('pin:icon', async (e, p) => {
+    const pins = store.get().home.pins;
+    if (!pins.some((x) => x.path === p)) throw new Error('not pinned');
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose an icon', properties: ['openFile'], filters: [{ name: 'Icons and pictures', extensions: ['png', 'ico', 'jpg', 'jpeg', 'webp', 'exe', 'dll'] }] });
+    if (r.canceled) return store.get();
+    iconCache.delete(p);
+    return applySettings({ home: { pins: pins.map((x) => (x.path === p ? { ...x, icon: r.filePaths[0] } : x)) } });
+  });
+  ipcMain.handle('pin:reveal', (_e, p) => { if (isKnownApp(p) && !p.startsWith('shell:')) shell.showItemInFolder(p); });
   ipcMain.handle('settings:open', () => { toggleHome(false); openSettings(); });
 }
 function isKnownApp(p) {
   if (typeof p !== 'string' || !p) return false;
   const known = (apps ||= system.listApps()).some((a) => a.path === p);
   return known || store.get().home.pins.some((x) => x.path === p);
+}
+// the quick shortcut list right away, then everything the Start menu lists (Store apps too); refreshed so new installs appear
+let appsAt = 0, appsLoading = null;
+function refreshApps(force = false) {
+  if (appsLoading || (!force && Date.now() - appsAt < 10 * 60e3)) return appsLoading;
+  appsLoading = system.listAppsFull().then((list) => { if (list.length && list.length !== (apps || []).length) { apps = list; if (homeWin && !homeWin.isDestroyed()) homeWin.webContents.send('apps', apps); } appsAt = Date.now(); }).catch(() => {}).finally(() => { appsLoading = null; });
+  return appsLoading;
+}
+const appEntry = (p) => (apps || []).find((a) => a.path === p) || store.get().home.pins.find((x) => x.path === p);
+function launchApp(p) {
+  if (p.startsWith('shell:AppsFolder\\')) { // Store and other Start-menu-only apps open the way Start opens them
+    if (win32.isWin) require('child_process').spawn('explorer.exe', [p], { detached: true, stdio: 'ignore' }).unref();
+    return Promise.resolve('');
+  }
+  return shell.openPath(p);
 }
 
 // ---------- start ----------
@@ -421,6 +485,7 @@ app.whenReady().then(() => {
     desktopCapturer.getSources({ types: ['screen'] }).then((src) => cb({ video: src[0], audio: 'loopback' })).catch(() => cb({}));
   });
   wireIpc();
+  setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
   media.start();
   buildWallpapers();

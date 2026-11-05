@@ -46,6 +46,7 @@ $('dock').addEventListener('mouseleave', () => magnify(null));
 // ---------- apps ----------
 function iconFor(key, loader, name) {
   const ph = document.createElement('div'); ph.className = 'ph'; ph.innerHTML = esc((name.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase());
+  ph.style.setProperty('--hue', [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7));
   if (!icons.has(key)) icons.set(key, loader().catch(() => ''));
   icons.get(key).then((url) => { if (url) { const img = new Image(); img.src = url; img.alt = ''; ph.replaceWith(img); } });
   return ph;
@@ -58,6 +59,7 @@ function focusGroup(list) {
 }
 async function pinTarget(p) { if (!targets.has(p)) targets.set(p, sd.pinTarget(p).catch(() => p)); return targets.get(p); }
 
+let groups = []; // open apps in dock order, for scrolling through them
 async function render() {
   const pins = s.home.pins || [];
   const pinExes = await Promise.all(pins.map((p) => pinTarget(p.path)));
@@ -72,6 +74,7 @@ async function render() {
     b.append(iconFor(`pin:${p.path}`, () => sd.appIcon(p.path), p.name));
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
     b.onclick = () => (open.length ? focusGroup(open) : sd.launch(p.path));
+    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Unpin', () => sd.unpin(p.path)]]); };
     tip(b, open.length ? `${p.name} · ${open[0].title}` : p.name);
     return b;
   }));
@@ -83,12 +86,37 @@ async function render() {
     b.append(iconFor(`exe:${k}`, () => sd.exeIcon(w.exe), name));
     if (list.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${list.length}</span>`);
     b.onclick = () => focusGroup(list);
+    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Pin to dock', () => sd.dockPin(w.exe)]]); };
     tip(b, list.length > 1 ? `${name} · ${list.length} windows` : w.title);
     return b;
   }));
+  groups = [...pins.map((p, i) => byExe.get(norm(pinExes[i]))).filter(Boolean), ...rest.map(([, list]) => list)];
   const showPins = s.dock.pinned && pins.length, showRun = s.dock.running && rest.length;
   $('runSep').hidden = !(showPins && showRun);
   $('homeSep').hidden = !(showPins || showRun);
+}
+
+// ---------- scroll over the dock (wheel or two fingers) to go to the next / previous app, MacBook style ----------
+let wheelAcc = 0, wheelAt = 0;
+$('dock').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  wheelAcc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  if (Math.abs(wheelAcc) < 60 || Date.now() - wheelAt < 280 || !groups.length) return;
+  const dir = wheelAcc > 0 ? 1 : -1; wheelAcc = 0; wheelAt = Date.now();
+  const cur = groups.findIndex((g) => g.some((w) => w.active));
+  const next = groups[((cur < 0 ? (dir > 0 ? -1 : 0) : cur) + dir + groups.length) % groups.length];
+  sd.focusWindow((next.find((w) => w.active) || next[0]).hwnd);
+}, { passive: false });
+
+// a small menu above the dock (pin / unpin)
+function menu(x, items) {
+  document.querySelector('.ctx')?.remove();
+  const m = document.createElement('div'); m.className = 'ctx';
+  for (const [label, fn] of items) { const b = Object.assign(document.createElement('button'), { textContent: label }); b.onclick = () => { m.remove(); fn(); }; m.append(b); }
+  // inside the dock: outside it, clicks pass through to the windows behind
+  const d = $('dock'), r = d.getBoundingClientRect(); d.append(m);
+  m.style.left = `${Math.max(6, Math.min(x - r.left - m.offsetWidth / 2, r.width - m.offsetWidth - 6))}px`;
+  hideTip(); setTimeout(() => addEventListener('pointerdown', (e) => { if (!m.contains(e.target)) m.remove(); }, { once: true }));
 }
 
 // ---------- now playing ----------

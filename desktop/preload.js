@@ -1,5 +1,5 @@
 // The only bridge between pages and the app: a small, fixed set of calls.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const on = (ch) => (cb) => { const h = (_e, v) => cb(v); ipcRenderer.on(ch, h); return () => ipcRenderer.removeListener(ch, h); };
 contextBridge.exposeInMainWorld('sd', {
@@ -40,4 +40,10 @@ contextBridge.exposeInMainWorld('sd', {
   onPause: on('pause'),
   onCursor: on('cursor'),
   onHomeShown: on('home-shown'),
+  onApps: on('apps'),
+  pinFile: (file) => ipcRenderer.invoke('pin:add', webUtils.getPathForFile(file)), // a file dropped on Home
+  unpin: (p) => ipcRenderer.invoke('pin:remove', p),
+  pinIcon: (p) => ipcRenderer.invoke('pin:icon', p),
+  revealPin: (p) => ipcRenderer.invoke('pin:reveal', p),
+  dockPin: (exe) => ipcRenderer.invoke('dock:pin', exe),
 });

@@ -112,7 +112,7 @@ $('wlist').replaceChildren(...Object.entries(WIDGETS).map(([k, label]) => {
   r.querySelector('[type=range]').oninput = (e) => save({ widgets: { [k]: { scale: +e.target.value } } });
   const extra = r.querySelector('.extra');
   if (k === 'clock') { extra.innerHTML = '<select class="field"><option value="big">Big</option><option value="minimal">Minimal</option><option value="analog">Analog</option></select>'; extra.firstChild.onchange = (e) => save({ widgets: { clock: { style: e.target.value } } }); }
-  if (k === 'weather') { extra.innerHTML = '<input class="field" placeholder="City, e.g. Shanghai">'; let t; extra.firstChild.oninput = (e) => { clearTimeout(t); t = setTimeout(() => save({ widgets: { weather: { city: e.target.value.trim() } } }), 600); }; }
+  if (k === 'weather') { extra.innerHTML = '<input class="field" placeholder="City (empty: automatic)">'; let t; extra.firstChild.oninput = (e) => { clearTimeout(t); t = setTimeout(() => save({ widgets: { weather: { city: e.target.value.trim() } } }), 600); }; }
   return r;
 }));
 
@@ -171,6 +171,7 @@ loadTaskbar();
 
 // ---------- lock screen ----------
 $('openLock').onclick = (e) => { e.preventDefault(); sd.windowsSettings('lockscreen'); };
+$('openTouchpad').onclick = (e) => { e.preventDefault(); sd.windowsSettings('touchpad'); };
 $('lockApply').onclick = async () => {
   const b = $('lockApply');
   b.disabled = true; b.textContent = 'Making the picture…';

@@ -22,15 +22,18 @@ function tick() {
 tick(); setInterval(tick, 1000);
 
 // ---------- app icons ----------
+const lazy = new IntersectionObserver((entries) => { for (const e of entries) if (e.isIntersecting) { lazy.unobserve(e.target); e.target.load?.(); } }, { rootMargin: '200px' });
 const initial = (n) => esc((n.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase());
+// apps without a real icon get a calm colour tile with their initial (colour from the name, so it never changes)
+const hue = (n) => [...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 function iconEl(a) {
-  const ph = document.createElement('div'); ph.className = 'ph'; ph.innerHTML = initial(a.name);
+  const ph = document.createElement('div'); ph.className = 'ph'; ph.innerHTML = initial(a.name); ph.style.setProperty('--hue', hue(a.name));
   const load = async () => {
     if (!icons.has(a.path)) icons.set(a.path, sd.appIcon(a.path).catch(() => ''));
     const url = await icons.get(a.path);
-    if (url) { const img = new Image(); img.src = url; img.alt = ''; ph.replaceWith(img); }
+    if (url && ph.isConnected) { const img = new Image(); img.src = url; img.alt = ''; ph.replaceWith(img); }
   };
-  load();
+  if (icons.has(a.path)) load(); else { ph.load = load; lazy.observe(ph); } // fetch icons only when they scroll into view
   return ph;
 }
 const isPinned = (a) => s.home.pins.some((p) => p.path === a.path);
@@ -46,6 +49,7 @@ function appTile(a) {
   pin.onclick = (e) => { e.stopPropagation(); togglePin(a); };
   b.append(pin);
   b.onclick = () => sd.launch(a.path);
+  b.oncontextmenu = (e) => { e.preventDefault(); tileMenu(a, e.clientX, e.clientY); };
   return b;
 }
 
@@ -57,7 +61,7 @@ function renderGrid() {
   $('allBtn').classList.toggle('on', showAll);
   $('allBtn').textContent = showAll ? 'Pinned' : 'All apps';
   $('grid').replaceChildren(...list.map(appTile));
-  if (!list.length) $('grid').innerHTML = `<p class="empty">${showAll ? 'No apps found in the Start menu.' : 'Nothing pinned yet – open <b>All apps</b> and press ＋ on the ones you use most.'}</p>`;
+  if (!list.length) $('grid').innerHTML = `<p class="empty">${showAll ? 'No apps found in the Start menu.' : 'Nothing pinned yet. Drag any app, shortcut or script here, open <b>All apps</b> and press ＋, or right-click an app in the dock.'}</p>`;
 }
 $('allBtn').onclick = () => { showAll = !showAll; renderGrid(); };
 $('addPin').onclick = async () => {
@@ -68,6 +72,31 @@ $('addPin').onclick = async () => {
   showAll = false; renderGrid();
 };
 
+// ---------- right-click a tile: pin / unpin, change icon, show in folder ----------
+function tileMenu(a, x, y) {
+  document.querySelector('.ctx')?.remove();
+  const m = document.createElement('div'); m.className = 'ctx';
+  const item = (label, fn) => { const b = Object.assign(document.createElement('button'), { textContent: label }); b.onclick = () => { m.remove(); fn(); }; m.append(b); };
+  item(isPinned(a) ? 'Unpin' : 'Pin', () => togglePin(a));
+  if (isPinned(a)) item('Change icon…', async () => { s = await sd.pinIcon(a.path); icons.delete(a.path); renderGrid(); });
+  if (!a.path.startsWith('shell:')) item('Show in folder', () => sd.revealPin(a.path));
+  document.body.append(m);
+  m.style.left = `${Math.min(x, innerWidth - m.offsetWidth - 8)}px`; m.style.top = `${Math.min(y, innerHeight - m.offsetHeight - 8)}px`;
+  setTimeout(() => addEventListener('pointerdown', (e) => { if (!m.contains(e.target)) m.remove(); }, { once: true }));
+}
+
+// ---------- drop an app, shortcut or script anywhere on Home to pin it ----------
+addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); } });
+addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dropping'); });
+addEventListener('drop', async (e) => {
+  e.preventDefault(); document.body.classList.remove('dropping');
+  const files = [...(e.dataTransfer?.files || [])];
+  let added = 0, err = '';
+  for (const f of files) { try { s = await sd.pinFile(f); added++; } catch (x) { err = String(x?.message || x).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); } }
+  if (added) { showAll = false; renderGrid(); document.querySelector('[data-t=apps]').click(); }
+  $('hint').textContent = added ? `Pinned ${added} app${added > 1 ? 's' : ''}` : err || $('hint').textContent;
+});
+
 // ---------- search ----------
 let sel = 0, rows = [];
 function score(name, q) { const n = name.toLowerCase(); if (n.startsWith(q)) return 3; if (n.split(/[\s\-_.]+/).some((w) => w.startsWith(q))) return 2; return n.includes(q) ? 1 : 0; }
@@ -76,7 +105,8 @@ function renderResults() {
   $('results').hidden = !q;
   document.querySelector('.cols').hidden = !!q;
   if (!q) return;
-  const hits = apps.map((a) => [a, score(a.name, q)]).filter(([, sc]) => sc).sort((x, y) => y[1] - x[1] || x[0].name.localeCompare(y[0].name)).slice(0, 8).map(([a]) => a);
+  const pool = [...apps, ...s.home.pins.filter((p) => !apps.some((a) => a.path === p.path))]; // your pinned apps too, even ones the Start menu doesn't know
+  const hits = pool.map((a) => [a, score(a.name, q)]).filter(([, sc]) => sc).sort((x, y) => y[1] - x[1] || x[0].name.localeCompare(y[0].name)).slice(0, 8).map(([a]) => a);
   const raw = $('q').value.trim();
   const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw) && !raw.includes(' ');
   rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => sd.launch(a.path) })),
@@ -128,6 +158,7 @@ function renderMedia(m) {
 }
 $('npCard').querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => sd.mediaControl(b.dataset.m); });
 sd.onMedia(renderMedia);
+sd.onApps((list) => { apps = list; if (showAll) renderGrid(); if ($('q').value) renderResults(); });
 sd.media().then(renderMedia).catch(() => {});
 
 // ---------- tabs ----------
@@ -248,9 +279,12 @@ const close = () => sd.toggleHome(false);
 $('backdrop').onclick = close;
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('q').value) { $('q').value = ''; renderResults(); } else close(); } });
 $('customize').onclick = () => sd.openSettings();
-function onShown() { $('q').value = ''; renderResults(); $('q').focus(); tick(); renderTimetable(); renderIconsBtn(); }
+function onShown() {
+  $('q').value = ''; renderResults(); $('q').focus(); tick(); renderTimetable(); renderIconsBtn();
+  sd.apps().then((list) => { if (list.length !== apps.length) { apps = list; if (showAll) renderGrid(); } }).catch(() => {}); // picks up newly installed apps
+}
 sd.onHomeShown(onShown);
-$('hint').textContent = `${s.home.hotkey} opens this panel from anywhere`;
+$('hint').textContent = `${s.home.hotkey} opens this panel · drag apps here to pin them · right-click a tile for more`;
 
 apps = await sd.apps().catch(() => []);
 renderGrid(); renderTodos(); renderReading(); onShown();

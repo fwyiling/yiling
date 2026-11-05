@@ -39,6 +39,16 @@ export function nextClass(timetable, d = new Date()) {
   return nxt ? { cls: nxt, now: false } : null;
 }
 export const byTime = (a, b) => mins(a.s) - mins(b.s);
+/** Like nextClass, but looks ahead through the week: { cls, now, day: 'today' | 'Tomorrow' | 'Mon'… } or null. */
+export function upcomingClass(timetable, d = new Date()) {
+  const nc = nextClass(timetable, d);
+  if (nc) return { ...nc, day: 'today' };
+  for (let k = 1; k <= 7; k++) {
+    const wd = (weekday(d) + k) % 7, list = (timetable || []).filter((c) => c.d === wd).sort(byTime);
+    if (list.length) return { cls: list[0], now: false, day: k === 1 ? 'Tomorrow' : DAYS[wd] };
+  }
+  return null;
+}
 
 export function applyAccent(accent) { document.documentElement.style.setProperty('--a', accent || '#5e7d9c'); }
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
