@@ -226,6 +226,27 @@ function refreshTaskbar() {
   for (const area of ['TraySettings', 'ImmersiveColorSet', 'WindowsThemeElement']) u.SendMessageTimeoutStr(0xffff, 0x001A, 0, area, 0x0002, 200, out); // HWND_BROADCAST, WM_SETTINGCHANGE, SMTO_ABORTIFHUNG
 }
 
+/** Hide or show the Windows taskbar on every monitor (what Seelen UI does while its own dock is on).
+ *  Explorer sometimes shows it again (e.g. after the Start menu), so the app re-applies this while the dock runs. */
+function showTaskbar(show) {
+  if (!load()) return false;
+  const bars = [u.FindWindowW('Shell_TrayWnd', null)];
+  for (let h = 0, i = 0; i < 16; i++) { h = u.FindWindowExW(0, h, 'Shell_SecondaryTrayWnd', null); if (isNull(h)) break; bars.push(h); }
+  let changed = false;
+  for (const h of bars) {
+    if (isNull(h) || !!u.IsWindowVisible(h) === !!show) continue;
+    u.ShowWindow(h, show ? 5 : 0); changed = true; // SW_SHOW / SW_HIDE
+  }
+  return changed;
+}
+
+/** Press a key combination, e.g. [0x5B] (Win: Start menu) or [0x5B, 0x41] (Win+A: quick settings). */
+function pressKeys(keys) {
+  if (!load()) return;
+  for (const k of keys) u.keybd_event(k, 0, 0, 0);
+  for (const k of [...keys].reverse()) u.keybd_event(k, 0, 0x2, 0); // KEYEVENTF_KEYUP
+}
+
 // ---------- the dock: reserve a strip of the screen like the taskbar does ----------
 function reserveEdge(win, rect, edge = 'bottom') {
   if (!load()) return null;
@@ -294,4 +315,6 @@ module.exports = {
   focusWindow: safe('focusWindow', focusWindow),
   desktopTree: safe('desktopTree', desktopTree, []),
   mediaKey: safe('mediaKey', mediaKey),
+  showTaskbar: safe('showTaskbar', showTaskbar, false),
+  pressKeys: safe('pressKeys', pressKeys),
 };

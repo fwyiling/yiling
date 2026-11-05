@@ -1,51 +1,71 @@
-:root { --a: #5e7d9c; --h: 64px; --op: .96; --t: #eef1f4; --m: #9aa3ad; color-scheme: dark; }
+/* Syndicates dock. Proportions and behaviour after the macOS Dock and Seelen UI's dock ("Weg"):
+   frosted pill, icons bottom-aligned that grow under the cursor and push their neighbours,
+   slides in from the bottom edge when auto-hide is on. */
+:root { --a: #5e7d9c; --h: 64px; --op: .96; --t: #eef1f4; --m: #9aa3ad; --isz: calc(var(--h) - 20px); color-scheme: dark; }
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 13px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--t); user-select: none; }
-button { font: inherit; color: inherit; }
-#dock { position: absolute; display: flex; align-items: center; gap: 10px; background: linear-gradient(rgba(30, 36, 45, var(--op)), rgba(18, 22, 28, var(--op))); border: 1px solid rgba(255, 255, 255, .1);
-  box-shadow: 0 10px 36px rgba(0, 0, 0, .45); backdrop-filter: blur(24px) saturate(140%); }
-/* floating pill, centred */
-body.floating #dock { left: 50%; bottom: 8px; transform: translateX(-50%); height: calc(var(--h) - 14px); padding: 0 10px; border-radius: calc(var(--h) / 2); }
-body.floating .right { margin-left: 4px; }
-/* full-width bar */
-body.full #dock { inset: 0; height: 100%; border-radius: 0; border-width: 1px 0 0; padding: 0 14px; justify-content: space-between; }
-.group { display: flex; align-items: center; gap: 6px; height: 100%; }
-.apps { display: flex; align-items: center; gap: 4px; }
-.sep { width: 1px; height: 46%; background: rgba(255, 255, 255, .12); margin: 0 4px; }
-.sep[hidden], .apps:empty + .sep { display: none; }
-.item { position: relative; width: calc(var(--h) - 22px); height: calc(var(--h) - 22px); display: grid; place-items: center; border: 0; border-radius: 12px; background: none; cursor: pointer;
-  transition: background .15s, transform .18s cubic-bezier(.2, 0, 0, 1); }
-.item:hover { background: rgba(255, 255, 255, .08); transform: translateY(-3px) scale(1.08); }
-.item:active { transform: scale(.94); }
-.item img, .item .ph { width: 62%; height: 62%; border-radius: 8px; }
-.item .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 40%, #20262f); font-weight: 700; }
-.item.home img { width: 70%; height: 70%; border-radius: 9px; }
-/* running indicator: a dot, a longer bar for the window in front */
-.item::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 0; height: 3px; border-radius: 2px; background: var(--m); transform: translateX(-50%); transition: width .2s, background .2s; }
-.item.running::after { width: 5px; }
-.item.active::after { width: 16px; background: var(--a); }
-.item .count { position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--a); font-size: 9.5px; font-weight: 700; display: grid; place-items: center; }
-#clock { display: grid; justify-items: end; gap: 2px; padding: 0 6px; }
-#clock b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-#clock small { font-size: 11px; color: var(--m); }
-body.floating #clock { justify-items: center; }
-.tip { position: fixed; bottom: calc(var(--h) + 2px); padding: 5px 10px; border-radius: 8px; background: rgba(18, 22, 28, .95); border: 1px solid rgba(255, 255, 255, .1); font-size: 12px; white-space: nowrap; pointer-events: none; transform: translateX(-50%); }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
 
-/* now playing */
-.np { gap: 8px; padding: 0 6px; max-width: 300px; }
-.np .art { width: calc(var(--h) * .58); height: calc(var(--h) * .58); border-radius: 10px; flex: none; background: center / cover no-repeat, color-mix(in srgb, var(--a) 45%, #1a2029); }
-.np .txt { display: grid; gap: 1px; min-width: 0; max-width: 150px; }
+#dock { position: absolute; bottom: 8px; left: 50%; height: var(--h); display: flex; align-items: center; gap: 12px; padding: 0 10px;
+  border-radius: 20px; background: linear-gradient(rgba(36, 42, 52, var(--op)), rgba(20, 24, 31, var(--op)));
+  border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .45), inset 0 1px rgba(255, 255, 255, .06);
+  transform: translateX(-50%); transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
+body.away #dock { transform: translate(-50%, calc(100% + 14px)); opacity: 0; }
+body.full #dock { left: 0; right: 0; bottom: 0; border-radius: 0; border-width: 1px 0 0; transform: none; justify-content: space-between; padding: 0 14px; }
+body.full.away #dock { transform: translateY(100%); }
+
+.group { display: flex; align-items: center; gap: 4px; height: 100%; }
+.apps { display: flex; align-items: flex-end; gap: 4px; height: 100%; padding-bottom: 10px; }
+.sep { width: 1px; height: 44%; background: rgba(255, 255, 255, .14); margin: 0 6px; flex: none; }
+
+/* app icons: --s is set per icon by dock.js (1 = normal, up to 1.45 under the cursor) */
+.item { --s: 1; position: relative; flex: none; width: var(--isz); height: var(--isz); display: grid; place-items: center; border-radius: 12px;
+  transform: scale(var(--s)); transform-origin: 50% 100%; margin-inline: calc((var(--s) - 1) * var(--isz) / 2);
+  transition: transform .14s ease-out, margin .14s ease-out, background .15s; }
+.left > .item { align-self: flex-end; margin-bottom: 10px; }
+.item:active { filter: brightness(.8); }
+.item img, .item .ph { width: 84%; height: 84%; border-radius: 22%; object-fit: contain; }
+.item .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 45%, #252b34); font-weight: 700; font-size: 15px; }
+.item.sys { background: rgba(255, 255, 255, .06); }
+.item.sys:hover { background: rgba(255, 255, 255, .11); }
+.item.sys img { width: 62%; height: 62%; }
+.item .win { width: 46%; height: 46%; fill: #6ab0f3; }
+/* running: a small dot under the icon; the window in front: accent */
+.item::after { content: ""; position: absolute; bottom: -7px; left: 50%; width: 4px; height: 4px; border-radius: 50%; background: transparent; transform: translateX(-50%); transition: background .2s, width .2s; }
+.item.running::after { background: var(--m); }
+.item.active::after { background: var(--a); width: 12px; border-radius: 2px; }
+.item .count { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--a); font-size: 10px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px #1b2028; }
+
+/* now playing: compact chip; previous / next appear on hover */
+.np { display: flex; align-items: center; gap: 9px; height: calc(var(--h) - 20px); padding: 0 6px 0 5px; border-radius: 12px; max-width: 260px; transition: background .15s; }
+.np:hover { background: rgba(255, 255, 255, .06); }
+.np .art { flex: none; width: calc(var(--h) - 30px); height: calc(var(--h) - 30px); border-radius: 8px; display: grid; place-items: center;
+  background: center / cover no-repeat, color-mix(in srgb, var(--a) 45%, #1a2029); }
+.np .note { width: 50%; height: 50%; fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; display: none; }
+.np .art.none .note { display: block; }
+.np .txt { display: grid; gap: 1px; min-width: 0; max-width: 140px; }
 .np .txt b, .np .txt small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np .txt b { font-size: 12.5px; font-weight: 600; } .np .txt small { font-size: 11px; color: var(--m); }
-.mctl { display: flex; gap: 2px; }
-.mctl button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.mctl { display: flex; align-items: center; gap: 1px; }
+.mctl button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: var(--t); }
 .mctl button:hover { background: rgba(255, 255, 255, .1); }
-.mctl button.pp { background: var(--a); color: #fff; }
+.mctl .extra { width: 0; opacity: 0; overflow: hidden; transition: width .18s, opacity .18s; }
+.np:hover .mctl .extra { width: 26px; opacity: 1; }
 .mctl svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
-.mctl .pp svg { fill: currentColor; }
-.mctl .pause, .playing .mctl .play { display: none; } .playing .mctl .pause { display: block; }
-.np .art { display: grid; place-items: center; } .np .art .note { width: 46%; height: 46%; fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; display: none; } .np .art.none .note { display: block; }
-.item.gear { width: calc(var(--h) - 30px); height: calc(var(--h) - 30px); color: var(--m); }
-.item.gear svg { width: 55%; height: 55%; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.item.gear:hover { color: var(--t); }
+.mctl .pp svg { fill: currentColor; stroke-width: 1.4; }
+.mctl .pause, .np.playing .mctl .play { display: none; } .np.playing .mctl .pause { display: block; }
+
+/* status area */
+.pill-btn { height: calc(var(--h) - 26px); display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 10px; color: var(--t); transition: background .15s; }
+.pill-btn:hover { background: rgba(255, 255, 255, .08); }
+.pill-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.clock { display: grid; justify-items: center; gap: 1px; min-width: 76px; }
+.clock b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; } .clock small { font-size: 10.5px; color: var(--m); }
+.item.gear { width: 30px; height: 30px; color: var(--m); border-radius: 8px; transform: none; margin: 0; }
+.item.gear:hover { color: var(--t); background: rgba(255, 255, 255, .08); }
+.item.gear svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+#tip { position: fixed; bottom: calc(var(--h) + 18px); transform: translateX(-50%); padding: 5px 10px; border-radius: 8px; background: rgba(24, 28, 35, .96);
+  border: 1px solid rgba(255, 255, 255, .1); font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+.mctl .pp { background: rgba(255, 255, 255, .1); } .mctl .pp:hover { background: var(--a); }

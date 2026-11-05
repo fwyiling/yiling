@@ -29,7 +29,7 @@ const DEFAULTS = {
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '' },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
-  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, reserve: true, prevAutoHide: null },
+  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, autohide: true, reserve: true, prevAutoHide: null },
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
 

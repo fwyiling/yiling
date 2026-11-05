@@ -41,6 +41,8 @@ const calls = {
   focusWindow: () => w.focusWindow(123),
   desktopTree: () => w.desktopTree(),
   mediaKey: () => w.mediaKey(0xB3),
+  showTaskbar: () => w.showTaskbar(true),
+  pressKeys: () => w.pressKeys([0x5B, 0x41]),
 };
 const errors = [];
 const origError = console.error;

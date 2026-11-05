@@ -140,21 +140,46 @@ function openSettings() {
 }
 
 // ---------- Syndicates dock (replaces the look of the taskbar) ----------
-const DOCK_H = { s: 52, m: 64, l: 78 };
-let windowsList = [], dockTimer = null;
+const DOCK_H = { s: 52, m: 64, l: 78 }, DOCK_HEADROOM = 46;
+let dockShown = true, dockHideTimer = null, dockMouseInside = false;
+// Auto-hide (like Seelen UI's dock and macOS): out of sight until the mouse touches the bottom edge of the screen.
+function setDockShown(show) {
+  if (!dockWin || dockWin.isDestroyed() || show === dockShown) return;
+  dockShown = show;
+  if (!show) { dockMouseInside = false; dockWin.setIgnoreMouseEvents(true, { forward: true }); }
+  dockWin.webContents.send('dock-shown', show);
+}
+function dockEdgeCheck() {
+  if (!dockWin || dockWin.isDestroyed()) return;
+  const dk = store.get().dock;
+  if (!dk.autohide) { setDockShown(true); return; }
+  const d = screen.getPrimaryDisplay(), p = screen.getCursorScreenPoint();
+  const onDisplay = p.x >= d.bounds.x && p.x < d.bounds.x + d.bounds.width;
+  const bottom = d.bounds.y + d.bounds.height, h = DOCK_H[dk.size] || DOCK_H.m;
+  if (onDisplay && p.y >= bottom - 2) {
+    clearTimeout(dockHideTimer); dockHideTimer = null;
+    if (!dockShown && !(win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]))) setDockShown(true); // not over games / full-screen video
+  } else if (dockShown && !dockMouseInside && p.y < bottom - h - 12 && !dockHideTimer) {
+    dockHideTimer = setTimeout(() => { dockHideTimer = null; setDockShown(false); }, 650);
+  } else if (dockMouseInside) { clearTimeout(dockHideTimer); dockHideTimer = null; }
+}
+let windowsList = [], dockTimer = null, dockEdgeTimer = null;
 function ownPids() { return [process.pid, ...app.getAppMetrics().map((m) => m.pid)]; }
 function placeDock() {
   if (!dockWin || dockWin.isDestroyed()) return;
   const dk = store.get().dock, d = screen.getPrimaryDisplay(), h = DOCK_H[dk.size] || DOCK_H.m;
   const strip = { x: d.bounds.x, y: d.bounds.y + d.bounds.height - h, width: d.bounds.width, height: h };
-  if (win32.isWin && dk.reserve) {
-    win32.releaseEdge(dockWin);
-    const r = win32.reserveEdge(dockWin, screen.dipToScreenRect(null, strip), 'bottom'); // maximized windows stop above the dock
-    dockWin.setBounds(r ? screen.screenToDipRect(null, r) : strip);
-  } else dockWin.setBounds(strip);
+  // the window is taller than the dock: room above it for magnified icons and tooltips (clicks pass through there)
+  const win = { ...strip, y: strip.y - DOCK_HEADROOM, height: h + DOCK_HEADROOM };
+  if (win32.isWin) win32.releaseEdge(dockWin);
+  if (win32.isWin && dk.reserve && !dk.autohide) win32.reserveEdge(dockWin, screen.dipToScreenRect(null, strip), 'bottom'); // maximized windows stop above it
+  dockWin.setBounds(win);
+  dockWin.webContents.send('dock-shown', dockShown);
 }
 async function pollWindows() {
-  if (!dockWin || dockWin.isDestroyed() || !store.get().dock.running) return;
+  if (!dockWin || dockWin.isDestroyed()) return;
+  if (win32.isWin) win32.showTaskbar(false); // Explorer brings it back now and then (Start menu, display changes)
+  if (!store.get().dock.running) return;
   windowsList = win32.listWindows(ownPids());
   dockWin.webContents.send('windows', windowsList);
 }
@@ -162,8 +187,9 @@ async function setDock(on) {
   const st = store.get();
   if (on && (!dockWin || dockWin.isDestroyed())) {
     if (win32.isWin && st.dock.prevAutoHide == null) store.set({ dock: { prevAutoHide: win32.taskbarAutoHide() } });
-    if (win32.isWin) win32.setTaskbarAutoHide(true); // the Windows taskbar slides away; the dock takes its place
-    dockWin = new BrowserWindow({ width: 800, height: 64, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+    if (win32.isWin) { win32.setTaskbarAutoHide(true); win32.showTaskbar(false); } // one bottom bar: the Windows taskbar goes away while the dock is on
+    dockShown = !st.dock.autohide;
+    dockWin = new BrowserWindow({ width: 800, height: 64 + DOCK_HEADROOM, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
@@ -172,9 +198,10 @@ async function setDock(on) {
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
     clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 1000);
+    clearInterval(dockEdgeTimer); dockEdgeTimer = setInterval(dockEdgeCheck, 60);
   } else if (!on && dockWin) {
-    clearInterval(dockTimer);
-    if (win32.isWin) { win32.releaseEdge(dockWin); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
+    clearInterval(dockTimer); clearInterval(dockEdgeTimer);
+    if (win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
     store.set({ dock: { prevAutoHide: null } });
     dockWin.destroy(); dockWin = null;
   }
@@ -227,7 +254,7 @@ function applySettings(patch) {
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
-  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else placeDock(); }
+  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
   updateTray();
@@ -289,7 +316,15 @@ function wireIpc() {
     if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
     try { return shell.readShortcutLink(p).target || p; } catch { return p; }
   });
-  ipcMain.on('dock:mouse', (e, inside) => { if (dockWin && e.sender === dockWin.webContents) dockWin.setIgnoreMouseEvents(!inside, { forward: true }); });
+  ipcMain.on('dock:mouse', (e, inside) => {
+    if (!dockWin || e.sender !== dockWin.webContents || !dockShown) return;
+    dockMouseInside = !!inside;
+    dockWin.setIgnoreMouseEvents(!inside, { forward: true });
+  });
+  // the dock's Start / quick settings / notifications buttons press the Windows shortcuts for them
+  const DOCK_KEYS = { start: [0x5B], quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; // Win, Win+A, Win+N
+  ipcMain.handle('dock:state', () => dockShown);
+  ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   ipcMain.handle('settings:open', () => { toggleHome(false); openSettings(); });
@@ -349,6 +384,7 @@ app.whenReady().then(() => {
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
   if (store.get().dock.on) setDock(true);
+  else if (win32.isWin) win32.showTaskbar(true); // in case a crash left it hidden
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
   if (!process.argv.includes('--smoke') && !process.argv.includes('--autostart')) openSettings(); // first run: show what can be customized
   // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
@@ -360,7 +396,7 @@ app.on('before-quit', () => {
   media.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
-  if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
+  if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
 });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => {}); // keep running in the tray

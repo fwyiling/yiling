@@ -6,25 +6,33 @@
   <title>Syndicates Dock</title>
   <link rel="stylesheet" href="dock.css">
 </head>
-<body>
+<body class="away">
   <div id="dock">
     <div class="group left">
-      <button id="home" class="item home" title="Home"><img src="logo.svg" alt=""></button>
+      <button id="start" class="item sys" data-tip="Start"><svg viewBox="0 0 24 24" class="win"><rect x="3" y="3" width="8.4" height="8.4" rx="1.2"/><rect x="12.6" y="3" width="8.4" height="8.4" rx="1.2"/><rect x="3" y="12.6" width="8.4" height="8.4" rx="1.2"/><rect x="12.6" y="12.6" width="8.4" height="8.4" rx="1.2"/></svg></button>
+      <button id="home" class="item sys"><img src="logo.svg" alt=""></button>
       <span class="sep" id="homeSep"></span>
       <div id="pins" class="apps"></div>
       <span class="sep" id="runSep"></span>
       <div id="running" class="apps"></div>
     </div>
-    <div class="group right np" id="np" hidden>
-      <div class="art none"><svg class="note" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></div>
-      <div class="txt"><b id="npTitle"></b><small id="npArtist"></small></div>
-      <div class="mctl"><button data-m="prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 6l-8 6 8 6z"/></svg></button><button data-m="toggle" class="pp" title="Play / pause"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg></button><button data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button></div>
-    </div>
-    <div class="group right" id="clockBox">
-      <div id="clock"><b id="time"></b><small id="date"></small></div>
-      <button id="gear" class="item gear" title="Customize"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    <div class="group right">
+      <span class="sep" id="npSep"></span>
+      <div class="np" id="np" hidden>
+        <div class="art none"><svg class="note" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></div>
+        <div class="txt"><b id="npTitle"></b><small id="npArtist"></small></div>
+        <div class="mctl">
+          <button data-m="prev" class="extra" data-tip="Previous"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 6l-8 6 8 6z"/></svg></button>
+          <button data-m="toggle" class="pp" data-tip="Play / pause"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg></button>
+          <button data-m="next" class="extra" data-tip="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button>
+        </div>
+      </div>
+      <button id="quick" class="pill-btn" data-tip="Wi-Fi, sound, brightness"><svg viewBox="0 0 24 24"><path d="M2.5 9.5a14 14 0 0 1 19 0M5.8 13a9 9 0 0 1 12.4 0M9.2 16.4a4 4 0 0 1 5.6 0"/><circle cx="12" cy="19.6" r=".9"/></svg><svg viewBox="0 0 24 24"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/></svg></button>
+      <button id="clock" class="pill-btn clock" data-tip="Notifications & calendar"><b id="time"></b><small id="date"></small></button>
+      <button id="gear" class="item gear" data-tip="Customize · Ctrl+Alt+S"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </div>
   </div>
+  <div id="tip" hidden></div>
   <script type="module" src="dock.js"></script>
 </body>
 </html>
