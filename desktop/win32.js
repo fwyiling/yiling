@@ -356,12 +356,23 @@ function virtualDesktops() {
 const OVERLAY_CLASSES = new Set(['XamlExplorerHostIslandWindow', 'MultitaskingViewFrame', 'Windows.UI.Core.CoreWindow', 'ForegroundStaging',
   'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'TaskListThumbnailWnd', 'NotifyIconOverflowWindow', 'TopLevelWindowForOverflowXamlIsland',
   'Shell_InputSwitchTopLevelWindow', 'ControlCenterWindow', 'Xaml_WindowedPopupClass', '#32768']);
+// Windows' shell programs: anything they put in front (Task View, Start, search, flyouts…) counts as busy
+const SHELL_EXES = new Set(['explorer.exe', 'shellexperiencehost.exe', 'startmenuexperiencehost.exe', 'searchhost.exe', 'searchapp.exe', 'shellhost.exe', 'textinputhost.exe', 'lockapp.exe', 'applicationframehost.exe']);
+const FILE_EXPLORER = new Set(['CabinetWClass', 'ExploreWClass', 'Progman', 'WorkerW']); // normal folders and the desktop are not overlays
+let lastOverlay = { cls: '', exe: '' };
 function systemOverlayActive() {
   if (!load()) return false;
   const fg = u.GetForegroundWindow();
   if (isNull(fg)) return true; // in between: e.g. while Task View or a desktop switch animates
   const buf = new Uint16Array(128);
-  return OVERLAY_CLASSES.has(String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 128))));
+  const cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 128)));
+  if (OVERLAY_CLASSES.has(cls)) { lastOverlay = { cls, exe: '' }; return true; }
+  if (FILE_EXPLORER.has(cls)) return false;
+  const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
+  const exe = (exeOf(pid[0]).split('\\').pop() || '').toLowerCase();
+  if (exe === 'applicationframehost.exe' && cls === 'ApplicationFrameWindow') return false; // a normal Store app window
+  if (SHELL_EXES.has(exe)) { lastOverlay = { cls, exe }; return true; }
+  return false;
 }
 
 /** Whether the main Windows taskbar is showing. */
@@ -464,6 +475,7 @@ module.exports = {
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
   systemOverlayActive: safe('systemOverlayActive', systemOverlayActive, true),
+  lastOverlay: () => lastOverlay,
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),

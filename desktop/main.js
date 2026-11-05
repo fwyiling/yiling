@@ -92,7 +92,7 @@ function checkPause() {
     const full = win32.fullscreenAppRunning(displays);
     if (full && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
   }
-  const next = userPaused || gamer || auto;
+  const next = userPaused || gamer || auto || overlayOn;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
 }
 
@@ -218,10 +218,12 @@ function placeDock() {
 }
 // hide the Windows taskbar (the dock replaces it), but never while Task View, Start or another Windows
 // overlay is open: hiding it then would close that overlay again
-let overlayAt = 0;
+let overlayAt = 0, overlayOn = false;
 function hideTaskbar() {
   if (!win32.isWin) return;
-  if (win32.systemOverlayActive()) { overlayAt = Date.now(); return; }
+  const ov = win32.systemOverlayActive();
+  if (ov !== overlayOn) { overlayOn = ov; checkPause(); } // pause the wallpaper while Windows animates (Task View, switching desktops)
+  if (ov) { overlayAt = Date.now(); return; }
   if (Date.now() - overlayAt < 1200) return; // just after Task View / a desktop switch: let Windows finish first
   if (win32.taskbarVisible()) win32.showTaskbar(false);
 }
@@ -397,8 +399,9 @@ function topbarMenu(x, y) {
 
 // ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
 // After DynamicWin (Windows) and boring.notch (macOS): a transparent window at the top centre; only the pill takes clicks.
-const ISLAND = { w: 480, h: 320 };
-function islandRect() { const d = screen.getPrimaryDisplay(); return { x: Math.round(d.bounds.x + (d.bounds.width - ISLAND.w) / 2), y: d.bounds.y, width: ISLAND.w, height: ISLAND.h }; }
+const ISLAND = { w: 480, h: 320 }, ISLAND_SMALL = { w: 300, h: 50 }; // small while it's just the pill: less for Windows to compose
+let islandBig = false;
+function islandRect() { const d = screen.getPrimaryDisplay(), z = islandBig ? ISLAND : ISLAND_SMALL; return { x: Math.round(d.bounds.x + (d.bounds.width - z.w) / 2), y: d.bounds.y, width: z.w, height: z.h }; }
 function placeIsland() {
   if (!islandWin || islandWin.isDestroyed()) return;
   islandWin.setBounds(islandRect());
@@ -408,11 +411,12 @@ function placeIsland() {
 function keepIslandAtTop() {
   if (!win32.isWin || !islandWin || islandWin.isDestroyed() || gamer) return;
   const want = screen.dipToScreenRect(null, islandRect()), r = win32.windowRect(islandWin);
-  if (r && (r.y !== want.y || r.x !== want.x)) win32.placeWindow(islandWin, want);
+  if (r && (r.y !== want.y || r.x !== want.x || r.width !== want.width || r.height !== want.height)) win32.placeWindow(islandWin, want);
 }
 function setIsland(on) {
   if (on && (!islandWin || islandWin.isDestroyed())) {
-    islandWin = new BrowserWindow({ ...ISLAND, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+    islandBig = false;
+    islandWin = new BrowserWindow({ width: ISLAND_SMALL.w, height: ISLAND_SMALL.h, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Island', webPreferences: webPrefs });
     islandWin.setAlwaysOnTop(true, 'screen-saver'); // above the top bar
     islandWin.setIgnoreMouseEvents(true, { forward: true });
@@ -493,7 +497,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -615,6 +619,7 @@ function wireIpc() {
   ipcMain.handle('dock:state', () => dockShown);
   ipcMain.handle('switch-app', (e, dir) => { if (dockWin && e.sender === dockWin.webContents) switchApp(dir > 0 ? 1 : -1); });
   ipcMain.handle('battery', () => win32.battery());
+  ipcMain.on('island:size', (e, big) => { if (!islandWin || e.sender !== islandWin.webContents || islandBig === !!big) return; islandBig = !!big; placeIsland(); });
   ipcMain.on('island:mouse', (e, inside) => { if (islandWin && e.sender === islandWin.webContents) islandWin.setIgnoreMouseEvents(!inside, { forward: true }); });
   ipcMain.handle('timer:get', () => timer);
   ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
@@ -727,6 +732,7 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', checkPause);
   powerMonitor.on('on-ac', checkPause);
   setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
+  setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
   setInterval(sendCursor, 50);
   registerHotkey();
   tray = new Tray(icon().resize({ width: 16, height: 16 }));

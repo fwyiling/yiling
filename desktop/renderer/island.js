@@ -60,7 +60,16 @@ function renderMedia() {
 document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { if (b.dataset.m === 'toggle') { np.playing = !np.playing; renderMedia(); } sd.mediaControl(b.dataset.m).catch(() => {}); });
 
 // ---------- shape ----------
+// the window grows before the island opens and shrinks after it has closed (it's just the pill most of the time)
+let shrinkT, bigWin = false;
 function shape() {
+  const wantBig = open || alerting;
+  clearTimeout(shrinkT);
+  if (wantBig && !bigWin) { bigWin = true; sd.islandSize(true); setTimeout(applyShape, 40); return; } // let the window grow first
+  if (!wantBig && bigWin) shrinkT = setTimeout(() => { bigWin = false; sd.islandSize(false); }, 650); // after the closing animation
+  applyShape();
+}
+function applyShape() {
   const t = active(), m = np.on;
   isl.dataset.mini = t && m ? 'both' : t ? 'timer' : m ? 'media' : 'none';
   isl.classList.toggle('alerting', alerting);
