@@ -29,8 +29,9 @@ const DEFAULTS = {
   },
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [], github: '' },
-  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true },
+  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, hide: 'smart', reserve: true, prevAutoHide: null },
+  island: { on: true },   // the pill at the top: timer, now playing
   topbar: { on: true, weather: true, media: true, battery: true, opacity: 0.78 }, // a slim bar along the top, like macOS
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };

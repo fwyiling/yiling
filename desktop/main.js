@@ -1,5 +1,5 @@
 // Syndicates Desktop – animated wallpaper + desktop widgets + a Home panel for Windows.
-const { app, BrowserWindow, Tray, Menu, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -28,7 +28,8 @@ const UI_DIR = path.join(__dirname, 'renderer');
 const ui = (page, query = '') => `sd://ui/${page}${query}`;
 
 let displayTimer;
-let store, tray, homeWin = null, settingsWin = null, dockWin = null, paused = false, userPaused = false;
+let store, tray, homeWin = null, settingsWin = null, dockWin = null, islandWin = null, paused = false, userPaused = false;
+let gamer = false, gamerAuto = false; // gamer mode: everything of ours out of the way and idle
 const wallpapers = new Map(); // display id -> BrowserWindow
 let apps = null;
 
@@ -70,7 +71,7 @@ function buildWallpapers() {
     wallpapers.set(d.id, w);
   }
 }
-const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); }, 800); };
+const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); }, 800); };
 
 // pause when a full-screen app is in front, or on battery
 // Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
@@ -86,7 +87,11 @@ function checkPause() {
   const displays = screen.getAllDisplays().map((d) => (win32.isWin ? screen.dipToScreenRect(null, d.bounds) : d.bounds));
   const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays)) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
     || (g.pauseWhenCovered && wallpaperCovered());
-  const next = userPaused || auto;
+  if (g.autoGamer !== false && win32.isWin) { // a full-screen game or video: gamer mode by itself, and off again afterwards
+    const full = win32.fullscreenAppRunning(displays);
+    if (full && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
+  }
+  const next = userPaused || gamer || auto;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
 }
 
@@ -135,6 +140,7 @@ function registerHotkey() {
   // bind a three-finger swipe to these in Windows' touchpad settings for MacBook-style switching
   reg('Ctrl+Alt+Shift+Right', () => switchApp(1));
   reg('Ctrl+Alt+Shift+Left', () => switchApp(-1));
+  reg('Ctrl+Alt+G', () => setGamer(!gamer)); // gamer mode
 }
 
 // ---------- settings window ----------
@@ -164,7 +170,7 @@ function setDockShown(show) {
   dockWin.webContents.send('dock-shown', show);
 }
 function dockEdgeCheck() {
-  if (!dockWin || dockWin.isDestroyed()) return;
+  if (!dockWin || dockWin.isDestroyed() || gamer) return;
   const dk = store.get().dock, mode = dockHideMode(dk);
   if (mode === 'never') { setDockShown(true); return; }
   const d = screen.getPrimaryDisplay(), p = screen.getCursorScreenPoint();
@@ -197,12 +203,19 @@ function placeDock() {
   dockWin.setBounds(win);
   dockWin.webContents.send('dock-shown', dockShown);
 }
-async function pollWindows() {
-  if (!dockWin || dockWin.isDestroyed() || app.isQuitting) return; // never hide the taskbar again once quitting has begun
+// one shared list of open windows for the dock and the top bar, at most once a second
+let windowsAt = 0, windowsKey = '';
+function currentWindows(maxAge = 900) {
+  if (Date.now() - windowsAt > maxAge) { windowsList = win32.isWin ? win32.listWindows(ownPids()) : []; windowsAt = Date.now(); }
+  return windowsList;
+}
+async function pollWindows(fresh = false) {
+  if (!dockWin || dockWin.isDestroyed() || app.isQuitting || gamer) return; // never hide the taskbar again once quitting has begun
   if (win32.isWin) win32.showTaskbar(false); // Explorer brings it back now and then (Start menu, display changes)
   if (!store.get().dock.running) return;
-  windowsList = win32.listWindows(ownPids());
-  dockWin.webContents.send('windows', windowsList);
+  const list = currentWindows(fresh ? 0 : 900);
+  const key = list.map((w) => `${w.hwnd}${w.active ? '*' : ''}${w.title}`).join('|');
+  if (key !== windowsKey) { windowsKey = key; dockWin.webContents.send('windows', list); } // redraw the dock only when something changed
 }
 async function setDock(on) {
   const st = store.get();
@@ -228,6 +241,54 @@ async function setDock(on) {
   }
 }
 
+// ---------- gamer mode ----------
+// Wallpaper paused, top bar / dock / island hidden (their screen edges given back), no background polling,
+// the Windows taskbar back (auto-hidden) so Start still works. Ctrl+Alt+G, the tray, the top bar menu, or
+// automatically while a full-screen game runs.
+function setGamer(on, auto = false) {
+  if (on === gamer) return;
+  gamer = on; gamerAuto = on && auto;
+  for (const w of [dockWin, topWin, islandWin]) {
+    if (!w || w.isDestroyed()) continue;
+    if (on) { if (win32.isWin) win32.releaseEdge(w); w.hide(); } else w.showInactive();
+  }
+  if (on) { media.pause(); if (dockWin && win32.isWin) win32.showTaskbar(true); }
+  else { media.resume(); placeTopbar(); placeDock(); pollWindows(true); }
+  checkPause();
+  broadcast('gamer', gamer);
+  updateTray();
+  if (!auto && Notification.isSupported()) new Notification({ title: on ? 'Gamer mode on' : 'Gamer mode off', body: on ? 'Wallpaper paused, bars hidden. Ctrl+Alt+G to turn it off.' : 'Everything is back.', silent: true }).show();
+}
+
+// ---------- timer (shown in the island) ----------
+// Lives here, not in a page, so it keeps counting whatever happens to the windows.
+let timer = { state: 'idle', duration: 0, endAt: 0, left: 0 }, timerDone = null;
+function timerSet(next) {
+  timer = { ...timer, ...next };
+  clearTimeout(timerDone);
+  if (timer.state === 'running') timerDone = setTimeout(timerFinish, Math.max(0, timer.endAt - Date.now()));
+  broadcast('timer', timer);
+  return timer;
+}
+function timerFinish() {
+  timerSet({ state: 'done', left: 0, endAt: Date.now() });
+  if (Notification.isSupported()) new Notification({ title: "Time's up", body: `Your ${fmtDuration(timer.duration)} timer has finished.` }).show(); // seen even in a game
+}
+const fmtDuration = (sec) => (sec >= 3600 ? `${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min` : sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec} s`);
+const timerLeft = () => (timer.state === 'running' ? Math.max(0, timer.endAt - Date.now()) / 1000 : timer.left);
+const TIMER_ACTIONS = {
+  start: (sec) => { sec = Math.max(1, Math.min(24 * 3600, Math.round(Number(sec) || 0))); return timerSet({ state: 'running', duration: sec, endAt: Date.now() + sec * 1000, left: sec }); },
+  pause: () => (timer.state === 'running' ? timerSet({ state: 'paused', left: timerLeft() }) : timer),
+  resume: () => (timer.state === 'paused' ? timerSet({ state: 'running', endAt: Date.now() + timer.left * 1000 }) : timer),
+  add: (sec) => {
+    sec = Math.round(Number(sec) || 60);
+    if (timer.state === 'running') return timerSet({ endAt: timer.endAt + sec * 1000, duration: timer.duration + sec });
+    if (timer.state === 'paused') return timerSet({ left: timer.left + sec, duration: timer.duration + sec });
+    return TIMER_ACTIONS.start(sec);
+  },
+  reset: () => timerSet({ state: 'idle', duration: 0, endAt: 0, left: 0 }),
+};
+
 // ---------- MacBook-style switching: straight to the next / previous app, no picker ----------
 // Apps keep a stable left-to-right order (the order they were first seen, like Spaces on a Mac), so
 // swiping right then left always comes back to where you were.
@@ -242,7 +303,7 @@ function switchApp(dir) {
   const cur = keys.findIndex((k) => groups.get(k).some((w) => w.active));
   const next = keys[((cur < 0 ? 0 : cur) + dir + keys.length) % keys.length];
   win32.focusWindow(groups.get(next)[0].hwnd, false); // its most recent window
-  setTimeout(pollWindows, 150);
+  setTimeout(() => pollWindows(true), 150);
 }
 
 // ---------- top bar (like the macOS menu bar) ----------
@@ -266,12 +327,12 @@ function keepTopbarAtTop() {
 }
 const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return n ? n.charAt(0).toUpperCase() + n.slice(1) : ''; };
 function topbarTick() {
-  if (!topWin || topWin.isDestroyed()) return;
+  if (!topWin || topWin.isDestroyed() || gamer) return;
   const d = screen.getPrimaryDisplay();
   const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]);
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
   keepTopbarAtTop();
-  const fg = win32.isWin ? win32.listWindows(ownPids()).find((w) => w.active) : null;
+  const fg = currentWindows().find((w) => w.active);
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   if (name !== topApp) { topApp = name; topWin.webContents.send('topbar', { app: name }); }
 }
@@ -295,12 +356,33 @@ function topbarMenu(x, y) {
     { label: `Open Home  (${store.get().home.hotkey})`, click: () => toggleHome(true) },
     { label: 'Customize…  (Ctrl+Alt+S)', click: openSettings },
     { type: 'separator' },
+    { label: 'Gamer mode  (Ctrl+Alt+G)', type: 'checkbox', checked: gamer, click: () => setGamer(!gamer) },
     { label: 'Show desktop', click: () => win32.pressKeys([0x5B, 0x44]) },
     { label: 'Windows Settings', click: () => shell.openExternal('ms-settings:') },
     { label: 'Task Manager', click: () => win32.pressKeys([0x11, 0x10, 0x1B]) },
     { type: 'separator' },
     { label: 'Lock', click: () => win32.lock() },
   ]).popup({ window: topWin, x, y });
+}
+
+// ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
+// After DynamicWin (Windows) and boring.notch (macOS): a transparent window at the top centre; only the pill takes clicks.
+const ISLAND = { w: 480, h: 320 };
+function placeIsland() {
+  if (!islandWin || islandWin.isDestroyed()) return;
+  const d = screen.getPrimaryDisplay();
+  islandWin.setBounds({ x: Math.round(d.bounds.x + (d.bounds.width - ISLAND.w) / 2), y: d.bounds.y, width: ISLAND.w, height: ISLAND.h });
+}
+function setIsland(on) {
+  if (on && (!islandWin || islandWin.isDestroyed())) {
+    islandWin = new BrowserWindow({ ...ISLAND, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+      alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Island', webPreferences: webPrefs });
+    islandWin.setAlwaysOnTop(true, 'screen-saver'); // above the top bar
+    islandWin.setIgnoreMouseEvents(true, { forward: true });
+    islandWin.loadURL(ui('island.html'));
+    islandWin.once('ready-to-show', () => { placeIsland(); if (!gamer) islandWin.showInactive(); });
+    islandWin.on('closed', () => { islandWin = null; });
+  } else if (!on && islandWin) { islandWin.destroy(); islandWin = null; }
 }
 
 // ---------- lock screen ----------
@@ -325,6 +407,7 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: `Open Home  (${store.get().home.hotkey})`, click: () => toggleHome(true) },
     { label: 'Customize…', click: openSettings },
+    { label: 'Gamer mode  (Ctrl+Alt+G)', type: 'checkbox', checked: gamer, click: () => setGamer(!gamer) },
     { type: 'separator' },
     { label: 'Pause wallpaper', type: 'checkbox', checked: userPaused, click: (i) => { userPaused = i.checked; checkPause(); } },
     { label: 'Hide desktop icons', type: 'checkbox', checked: g.hideDesktopIcons, enabled: win32.isWin, click: (i) => applySettings({ general: { hideDesktopIcons: i.checked } }) },
@@ -351,6 +434,7 @@ function applySettings(patch) {
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
+  if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
@@ -365,7 +449,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, dock: !!dockWin, topbar: !!topWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -464,7 +548,7 @@ function wireIpc() {
     return shell.openExternal(pages[page]);
   });
   ipcMain.handle('windows', () => windowsList);
-  ipcMain.handle('window:focus', (_e, hwnd, toggle = true) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd, toggle !== false); setTimeout(pollWindows, 150); });
+  ipcMain.handle('window:focus', (_e, hwnd, toggle = true) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd, toggle !== false); setTimeout(() => pollWindows(true), 150); });
   ipcMain.handle('exe-icon', async (_e, exe) => {
     if (!windowsList.some((w) => w.exe === exe)) return '';
     return iconFor(exe, 'large');
@@ -485,6 +569,10 @@ function wireIpc() {
   ipcMain.handle('dock:state', () => dockShown);
   ipcMain.handle('switch-app', (e, dir) => { if (dockWin && e.sender === dockWin.webContents) switchApp(dir > 0 ? 1 : -1); });
   ipcMain.handle('battery', () => win32.battery());
+  ipcMain.on('island:mouse', (e, inside) => { if (islandWin && e.sender === islandWin.webContents) islandWin.setIgnoreMouseEvents(!inside, { forward: true }); });
+  ipcMain.handle('timer:get', () => timer);
+  ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
+  ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
   ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
@@ -590,6 +678,7 @@ app.whenReady().then(() => {
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
   if (store.get().topbar.on) setTopbar(true);
+  if (store.get().island.on) setIsland(true);
   if (store.get().dock.on) setDock(true);
   else if (win32.isWin) win32.showTaskbar(true); // in case a crash left it hidden
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray

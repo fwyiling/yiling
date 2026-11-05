@@ -125,6 +125,9 @@ function start() {
 }
 
 function stop() { stopped = true; child?.kill(); child = null; }
+// gamer mode: no PowerShell polling in the background while you play
+function pause() { stop(); emit({ on: false }); }
+function resume() { stopped = false; restarts = 0; start(); }
 
 // virtual-key codes of the media keys
 const KEYS = { toggle: 0xB3, next: 0xB0, prev: 0xB1 };
@@ -137,7 +140,7 @@ function control(cmd) {
 }
 
 module.exports = {
-  PS, start, stop, control,
+  PS, start, stop, pause, resume, control,
   get: () => state,
   onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
 };

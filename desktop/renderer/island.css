@@ -1,0 +1,76 @@
+/* The island: a black pill that grows into live content. Motion after DynamicWin and boring.notch:
+   springy size changes, content that fades in once the shape has grown. */
+:root { --a: #5e7d9c; --t: #f2f4f7; --m: #9ea6b0; --top: 1px; --ch: 28px; color-scheme: dark; }
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none;
+  font: 500 13px/1.25 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--t); }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+button:focus { outline: none; }
+svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+#island { position: absolute; top: var(--top); left: 50%; transform: translateX(-50%); overflow: hidden; background: #000;
+  width: 118px; height: var(--ch); border-radius: 999px; box-shadow: 0 0 0 .5px rgba(255, 255, 255, .06);
+  transition: width .5s cubic-bezier(.3, 1.25, .45, 1), height .5s cubic-bezier(.3, 1.25, .45, 1), border-radius .45s ease, box-shadow .3s; will-change: width, height; }
+#island.live { width: 214px; }
+#island.open { width: 430px; border-radius: 30px; box-shadow: 0 18px 50px rgba(0, 0, 0, .55), 0 0 0 .5px rgba(255, 255, 255, .08); }
+#island.alerting { width: 400px; height: 70px; border-radius: 35px; animation: glow 1.6s ease-in-out infinite; }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--a) 60%, transparent), 0 10px 40px rgba(0, 0, 0, .5); } 50% { box-shadow: 0 0 0 3px var(--a), 0 0 34px color-mix(in srgb, var(--a) 70%, transparent); } }
+
+/* the three faces fade in and out over each other */
+.mini, .panel, .alert { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+#island.compact .mini, #island.open .panel, #island.alerting .alert { opacity: 1; pointer-events: auto; transition: opacity .25s ease .16s; }
+
+/* compact */
+.mini { display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 6px; }
+.lead { position: relative; width: 20px; height: 20px; }
+.ring, .mini-art { position: absolute; inset: 0; width: 20px; height: 20px; }
+.ring circle { stroke-width: 2.6; } .ring .bg { stroke: rgba(255, 255, 255, .16); }
+.ring .fg { stroke: var(--a); transform: rotate(-90deg); transform-origin: center; stroke-dasharray: 50.27; stroke-dashoffset: 50.27; transition: stroke-dashoffset .4s linear; }
+.mini-art { border-radius: 6px; background: center / cover no-repeat, color-mix(in srgb, var(--a) 50%, #222); }
+.trail { display: flex; align-items: center; gap: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; } .eq s { width: 2.5px; height: 30%; border-radius: 1px; background: var(--a); }
+.playing .eq s { animation: eq 1s ease-in-out infinite; } .playing .eq s:nth-child(2) { animation-delay: -.3s; } .playing .eq s:nth-child(3) { animation-delay: -.6s; } .playing .eq s:nth-child(4) { animation-delay: -.15s; }
+@keyframes eq { 0%, 100% { height: 25%; } 50% { height: 100%; } }
+.mini .ring, .mini .mini-art, .mini .t, .mini .eq { display: none; }
+#island[data-mini="timer"] .mini .ring, #island[data-mini="timer"] .mini .t { display: block; }
+#island[data-mini="media"] .mini .mini-art, #island[data-mini="media"] .mini .eq, #island[data-mini="both"] .mini .ring, #island[data-mini="both"] .mini .t, #island[data-mini="both"] .mini .eq { display: flex; }
+#island[data-mini="both"] .mini .ring { display: block; }
+
+/* open */
+.panel { padding: 16px 18px 14px; display: grid; gap: 14px; align-content: start; }
+.media { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 12px; }
+.big-art { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; background: center / cover no-repeat, color-mix(in srgb, var(--a) 45%, #1d222b); }
+.big-art .note { width: 46%; height: 46%; stroke: rgba(255, 255, 255, .75); } .big-art.has .note { display: none; }
+.media .txt { display: grid; gap: 3px; min-width: 0; } .media b, .media span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.media b { font-size: 14px; } .media span { font-size: 12px; color: var(--m); }
+.ctl { display: flex; align-items: center; gap: 2px; }
+.ctl button { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; } .ctl button:hover { background: rgba(255, 255, 255, .1); }
+.ctl svg { width: 17px; height: 17px; } .ctl .pp svg { fill: currentColor; stroke-width: 1.3; }
+.ctl .pause, .playing .ctl .play { display: none; } .playing .ctl .pause { display: block; }
+.media:not([hidden]) + .timer { padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.row { display: flex; align-items: center; gap: 8px; }
+.head { color: var(--m); font-size: 12px; } .head b { color: var(--t); font-size: 13px; } .ico { width: 16px; height: 16px; }
+.presets { flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.presets button { padding: 0 10px; }
+.presets button, .pill-b { height: 30px; padding: 0 13px; border-radius: 15px; background: rgba(255, 255, 255, .09); font-weight: 600; font-size: 12.5px; transition: background .15s, transform .1s; }
+.presets button:hover, .pill-b:hover { background: rgba(255, 255, 255, .16); } .presets button:active, .pill-b:active { transform: scale(.95); }
+.pill-b.ghost { background: none; color: var(--m); } .pill-b.accent { background: var(--a); color: #fff; }
+.custom { margin-top: 10px; }
+.round { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, .09); font-size: 17px; line-height: 1; } .round:hover { background: rgba(255, 255, 255, .16); }
+.mins { min-width: 64px; text-align: center; color: var(--m); } .mins b { color: var(--t); font-size: 17px; font-variant-numeric: tabular-nums; }
+.go { margin-left: auto; height: 30px; padding: 0 18px; border-radius: 15px; background: var(--a); color: #fff; font-weight: 700; }
+.run-ui, .timer.running .idle-ui, .timer.paused .idle-ui { display: none; }
+.timer.running .run-ui, .timer.paused .run-ui { display: grid; gap: 10px; }
+.big { display: flex; align-items: baseline; gap: 10px; } .big span { font-size: 38px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+.big small { color: var(--m); font-size: 12px; } .timer.paused .big span { opacity: .55; }
+.bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; } .bar b { display: block; height: 100%; width: 0; background: var(--a); transition: width .4s linear; }
+
+/* time's up */
+.alert { display: flex; align-items: center; gap: 12px; padding: 0 12px 0 20px; }
+.bell { width: 24px; height: 24px; color: var(--a); animation: ring .9s ease-in-out infinite; transform-origin: 50% 10%; }
+@keyframes ring { 0%, 50%, 100% { transform: rotate(0); } 10%, 30% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-14deg); } }
+.alert .txt { display: grid; gap: 2px; flex: 1; } .alert b { font-size: 15px; } .alert span { font-size: 12px; color: var(--m); }
+/* the open and alert faces keep their full width while the shape grows, so they never re-wrap (and measure right) */
+.panel { right: auto; bottom: auto; width: 430px; }
+.alert { right: auto; width: 400px; }

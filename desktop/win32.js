@@ -346,17 +346,27 @@ function releaseEdge(win) { if (load() && !win.isDestroyed()) u.SHAppBarMessage(
 
 // ---------- open windows, for the dock ----------
 const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Windows.UI.Core.CoreWindow']);
+// a process's program file, cached: it never changes while the process lives (pids are cleared now and then)
+const exeCache = new Map();
+let exeCacheAt = Date.now();
 function exeOf(pid) {
+  if (Date.now() - exeCacheAt > 60e3) { exeCache.clear(); exeCacheAt = Date.now(); }
+  if (exeCache.has(pid)) return exeCache.get(pid);
   const h = u.OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
   if (isNull(h)) return '';
-  try { const buf = new Uint16Array(1024), size = [1024]; return u.QueryFullProcessImageNameW(h, 0, buf, size) ? String.fromCharCode(...buf.slice(0, size[0])) : ''; }
-  finally { u.CloseHandle(h); }
+  try {
+    const buf = new Uint16Array(1024), size = [1024];
+    const exe = u.QueryFullProcessImageNameW(h, 0, buf, size) ? String.fromCharCode(...buf.slice(0, size[0])) : '';
+    exeCache.set(pid, exe);
+    return exe;
+  } finally { u.CloseHandle(h); }
 }
-/** Top-level app windows a taskbar would show: visible, not owned, not tool windows, not cloaked. */
+// one callback, registered once (registering a native callback on every call was wasteful)
+let enumCb = null, enumOut = [], enumFg = 0, enumOwn = [];
 function listWindows(ownPids = []) {
   if (!load()) return [];
-  const out = [], fg = Number(u.GetForegroundWindow());
-  const cb = u.koffi.register((hwnd) => {
+  enumOut = []; enumFg = Number(u.GetForegroundWindow()); enumOwn = ownPids;
+  enumCb ||= u.koffi.register((hwnd) => {
     if (!u.IsWindowVisible(hwnd) || !isNull(u.GetWindow(hwnd, 4))) return true; // GW_OWNER
     const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
     if ((ex & 0x80) && !(ex & 0x40000)) return true; // WS_EX_TOOLWINDOW without WS_EX_APPWINDOW
@@ -367,12 +377,12 @@ function listWindows(ownPids = []) {
     const cls = new Uint16Array(128), cn = u.GetClassNameW(hwnd, cls, 128);
     if (SHELL_CLASSES.has(String.fromCharCode(...cls.slice(0, cn)))) return true;
     const pid = [0]; u.GetWindowThreadProcessId(hwnd, pid);
-    if (ownPids.includes(pid[0])) return true;
-    out.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === fg, minimized: !!u.IsIconic(hwnd) });
+    if (enumOwn.includes(pid[0])) return true;
+    enumOut.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === enumFg, minimized: !!u.IsIconic(hwnd) });
     return true;
   }, u.koffi.pointer(u.EnumProc));
-  try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
-  return out;
+  u.EnumWindows(enumCb, 0);
+  return enumOut;
 }
 /** Click on a dock item: bring the window forward, or minimize it if it's already in front. */
 function focusWindow(hwnd, toggle = true) {
