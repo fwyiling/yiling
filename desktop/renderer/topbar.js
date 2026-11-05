@@ -59,6 +59,7 @@ battery(); setInterval(battery, 30e3);
 
 $('logo').onclick = () => { const r = $('logo').getBoundingClientRect(); sd.topbarMenu(Math.round(r.left), Math.round(r.bottom)); };
 $('quick').onclick = () => sd.topbarKeys('quick');
+$('timerBtn').onclick = () => sd.topbarTimer();
 $('clock').onclick = () => sd.topbarKeys('notifications');
 sd.onSettings((n) => { const cityChanged = n.widgets.weather?.city !== s.widgets.weather?.city || n.topbar?.weather !== s.topbar?.weather; s = n; look(); if (cityChanged) weather(); });
 look();

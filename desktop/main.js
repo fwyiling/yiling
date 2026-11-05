@@ -130,6 +130,8 @@ function toggleHome(force, mode = '') {
   homeWin.webContents.send('home-shown', mode);
 }
 
+const hotkeyStatus = { switchKeys: false };
+let lastSwitch = null;
 function registerHotkey() {
   globalShortcut.unregisterAll();
   const key = store.get().home.hotkey;
@@ -138,8 +140,10 @@ function registerHotkey() {
   if (!reg(key, () => toggleHome()) && !reg('Alt+Shift+Space', () => toggleHome())) console.warn('hotkey in use:', key);
   reg('Ctrl+Alt+S', () => openSettings()); // Customize from anywhere
   // bind a three-finger swipe to these in Windows' touchpad settings for MacBook-style switching
-  reg('Ctrl+Alt+Shift+Right', () => switchApp(1));
-  reg('Ctrl+Alt+Shift+Left', () => switchApp(-1));
+  const right = reg('Ctrl+Alt+Shift+Right', () => switchApp(1, 'gesture')), left = reg('Ctrl+Alt+Shift+Left', () => switchApp(-1, 'gesture'));
+  hotkeyStatus.switchKeys = right && left;
+  if (!hotkeyStatus.switchKeys) console.warn('[switch] Ctrl+Alt+Shift+Left/Right is taken by another app');
+  reg('Ctrl+Alt+T', () => openIslandTimer()); // the timer, from anywhere
   reg('Ctrl+Alt+G', () => setGamer(!gamer)); // gamer mode
 }
 
@@ -293,21 +297,23 @@ const TIMER_ACTIONS = {
 // Apps keep a stable left-to-right order (the order they were first seen, like Spaces on a Mac), so
 // swiping right then left always comes back to where you were.
 const appOrder = [];
-function switchApp(dir) {
+function switchApp(dir, via = 'dock') {
+  lastSwitch = { at: new Date().toISOString(), via, dir };
   if (!win32.isWin) return;
   const list = win32.listWindows(ownPids());
   const groups = new Map();
   for (const w of list) { const k = (w.exe || String(w.hwnd)).toLowerCase(); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(w); if (!appOrder.includes(k)) appOrder.push(k); }
   const keys = appOrder.filter((k) => groups.has(k));
-  if (keys.length < 2) return;
+  if (keys.length < 2) { lastSwitch.note = 'fewer than two apps open'; return; }
   const cur = keys.findIndex((k) => groups.get(k).some((w) => w.active));
   const next = keys[((cur < 0 ? 0 : cur) + dir + keys.length) % keys.length];
-  win32.focusWindow(groups.get(next)[0].hwnd, false); // its most recent window
+  const ok = win32.focusWindow(groups.get(next)[0].hwnd, false); // its most recent window
+  lastSwitch.to = next.split('\\').pop(); lastSwitch.ok = ok !== false;
   setTimeout(() => pollWindows(true), 150);
 }
 
 // ---------- top bar (like the macOS menu bar) ----------
-const TOP_H = 30;
+const TOP_H = 24; // the macOS menu bar's height
 let topWin = null, topTimer = null, topApp = '';
 function placeTopbar() {
   if (!topWin || topWin.isDestroyed()) return;
@@ -356,6 +362,7 @@ function topbarMenu(x, y) {
     { label: `Open Home  (${store.get().home.hotkey})`, click: () => toggleHome(true) },
     { label: 'Customize…  (Ctrl+Alt+S)', click: openSettings },
     { type: 'separator' },
+    { label: 'Timer  (Ctrl+Alt+T)', click: openIslandTimer },
     { label: 'Gamer mode  (Ctrl+Alt+G)', type: 'checkbox', checked: gamer, click: () => setGamer(!gamer) },
     { label: 'Show desktop', click: () => win32.pressKeys([0x5B, 0x44]) },
     { label: 'Windows Settings', click: () => shell.openExternal('ms-settings:') },
@@ -383,6 +390,13 @@ function setIsland(on) {
     islandWin.once('ready-to-show', () => { placeIsland(); if (!gamer) islandWin.showInactive(); });
     islandWin.on('closed', () => { islandWin = null; });
   } else if (!on && islandWin) { islandWin.destroy(); islandWin = null; }
+}
+
+// the timer from the top bar, its menu or Ctrl+Alt+T: open the island on its timer
+function openIslandTimer() {
+  if (!islandWin || islandWin.isDestroyed()) { applySettings({ island: { on: true } }); setTimeout(openIslandTimer, 900); return; }
+  if (gamer) setGamer(false);
+  islandWin.webContents.send('island-open', 'timer');
 }
 
 // ---------- lock screen ----------
@@ -449,7 +463,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -466,6 +480,8 @@ function bigIcon(p) {
   }
   file = file.replace(/%([^%]+)%/g, (_m, v) => process.env[v] || '');
   let url = '';
+  const winDir = (process.env.SystemRoot || 'C:\\Windows').toLowerCase() + '\\';
+  if (file.toLowerCase().startsWith(winDir)) { iconCache.set(p, ''); return ''; } // Windows' own apps: their usual icon looks right
   if (/\.(exe|dll|ico)$/i.test(file)) {
     const px = win32.iconPixels(file, index, 256);
     if (px) url = nativeImage.createFromBitmap(px.data, { width: px.width, height: px.height }).resize({ width: 128, height: 128, quality: 'best' }).toDataURL();
@@ -572,8 +588,11 @@ function wireIpc() {
   ipcMain.on('island:mouse', (e, inside) => { if (islandWin && e.sender === islandWin.webContents) islandWin.setIgnoreMouseEvents(!inside, { forward: true }); });
   ipcMain.handle('timer:get', () => timer);
   ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
+  ipcMain.handle('switch:test', () => { switchApp(1, 'test'); return { ...hotkeyStatus, lastSwitch }; });
+  ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch }));
   ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
   ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
+  ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());

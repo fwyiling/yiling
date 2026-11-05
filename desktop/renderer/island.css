@@ -74,3 +74,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 /* the open and alert faces keep their full width while the shape grows, so they never re-wrap (and measure right) */
 .panel { right: auto; bottom: auto; width: 430px; }
 .alert { right: auto; width: 400px; }
+/* idle: a faint outline and a stopwatch, so the pill can be found (and clicked) on a dark bar */
+#island.compact { box-shadow: 0 0 0 1px rgba(255, 255, 255, .16); }
+#island:not(.live) { width: 92px; }
+.idle-ico { display: none; width: 14px; height: 14px; color: rgba(255, 255, 255, .7); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+#island[data-mini="none"] .idle-ico { display: block; }
+#island.compact:hover { box-shadow: 0 0 0 1px var(--a); }

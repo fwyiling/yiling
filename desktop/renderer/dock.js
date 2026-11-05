@@ -88,12 +88,6 @@ async function render() {
     tip(b, open.length ? `${p.name} · ${open[0].title}` : p.name);
     return b;
   }));
-  if (s.dock.pinned) { // + : pin another app (opens Home's search, where every result has a Pin button)
-    const add = document.createElement('button'); add.className = 'item add'; add.dataset.tip = 'Pin an app';
-    add.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>';
-    add.onclick = () => sd.toggleHome(true, 'pin');
-    $('pins').append(add);
-  }
   const rest = [...byExe.entries()].filter(([k]) => !used.has(k));
   $('running').replaceChildren(...rest.map(([k, list]) => {
     const w = list[0], name = (w.exe.split(/[\\/]/).pop() || w.title).replace(/\.exe$/i, '');

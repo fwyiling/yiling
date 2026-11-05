@@ -172,6 +172,14 @@ loadTaskbar();
 // ---------- lock screen ----------
 $('openLock').onclick = (e) => { e.preventDefault(); sd.windowsSettings('lockscreen'); };
 $('openTouchpad').onclick = (e) => { e.preventDefault(); sd.windowsSettings('touchpad'); };
+function showSwitch(st) {
+  const keys = st.switchKeys ? 'Ctrl+Alt+Shift+←/→ are ready.' : 'Ctrl+Alt+Shift+←/→ are taken by another app on this PC, so swipes set to them can\'t reach Syndicates.';
+  const last = st.lastSwitch ? ` Last switch: ${st.lastSwitch.via === 'gesture' ? 'from a swipe / the keys' : st.lastSwitch.via === 'test' ? 'from the Test button' : 'from the dock'}, ${new Date(st.lastSwitch.at).toLocaleTimeString()}${st.lastSwitch.note ? ` (${st.lastSwitch.note})` : st.lastSwitch.ok === false ? ' (Windows didn\'t bring the app forward)' : st.lastSwitch.to ? ` → ${st.lastSwitch.to}` : ''}.` : ' No swipe has arrived yet: if you swiped, the touchpad isn\'t sending the keys (check Advanced gestures).';
+  $('switchStatus').textContent = keys + last;
+}
+sd.switchStatus().then(showSwitch).catch(() => {});
+setInterval(() => { if (document.querySelector('[data-panel=general].on')) sd.switchStatus().then(showSwitch).catch(() => {}); }, 2000);
+$('switchTest').onclick = async () => showSwitch(await sd.switchTest());
 const GESTURE = { apps: 'switch apps with Windows’ picker', desktops: 'switch desktops', volume: 'change the volume', nothing: 'do nothing', custom: 'press custom shortcuts ✓ (the keys above give instant switching)' };
 function showGestures(g) {
   if (!g?.precision) { $('gestureNote').textContent = 'No precision touchpad found: three-finger gestures need one. With a mouse, scroll over the dock to switch apps.'; $('macSwipe').disabled = true; return; }

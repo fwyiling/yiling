@@ -23,8 +23,10 @@ function bind() {
   const user32 = koffi.load('user32.dll');
   const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
   const EnumProc = koffi.proto('bool __stdcall EnumWindowsProc(intptr_t hwnd, intptr_t lparam)');
+  const kernel32 = koffi.load('kernel32.dll');
   u = {
     koffi, RECT, EnumProc,
+    GetCurrentThreadId: kernel32.func('uint32 __stdcall GetCurrentThreadId()'),
     FindWindowW: user32.func('intptr_t __stdcall FindWindowW(str16 cls, str16 name)'),
     FindWindowExW: user32.func('intptr_t __stdcall FindWindowExW(intptr_t parent, intptr_t after, str16 cls, str16 name)'),
     SendMessageTimeoutW: user32.func('intptr_t __stdcall SendMessageTimeoutW(intptr_t hwnd, uint msg, uintptr_t wp, intptr_t lp, uint flags, uint timeout, _Out_ uintptr_t *result)'),
@@ -54,6 +56,8 @@ function bind() {
     SwitchToThisWindow: user32.func('void __stdcall SwitchToThisWindow(intptr_t hwnd, bool altTab)'),
     keybd_event: user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr_t extra)'),
     LockWorkStation: user32.func('bool __stdcall LockWorkStation()'),
+    AttachThreadInput: user32.func('bool __stdcall AttachThreadInput(uint32 from, uint32 to, bool attach)'),
+    BringWindowToTop: user32.func('bool __stdcall BringWindowToTop(intptr_t hwnd)'),
     shell32: koffi.load('shell32.dll'),
     kernel32: koffi.load('kernel32.dll'),
     dwmapi: koffi.load('dwmapi.dll'),
@@ -389,9 +393,17 @@ function focusWindow(hwnd, toggle = true) {
   if (!load()) return;
   if (toggle && Number(u.GetForegroundWindow()) === hwnd && !u.IsIconic(hwnd)) { u.ShowWindow(hwnd, 6); return; } // SW_MINIMIZE
   if (u.IsIconic(hwnd)) u.ShowWindow(hwnd, 9); // SW_RESTORE
-  // Windows only lets the app that got the last input change the foreground window; a tap of Alt counts as that
-  u.keybd_event(0x12, 0, 0x1, 0); u.keybd_event(0x12, 0, 0x1 | 0x2, 0);
-  if (!u.SetForegroundWindow(hwnd)) u.SwitchToThisWindow(hwnd, true);
+  // Windows only lets the app that got the last input change the foreground window. Two ways past that:
+  // share input with the window in front for a moment (AttachThreadInput), and a tap of Alt.
+  const fg = u.GetForegroundWindow(), pid = [0];
+  const fgThread = isNull(fg) ? 0 : u.GetWindowThreadProcessId(fg, pid), me = u.GetCurrentThreadId();
+  const attached = fgThread && fgThread !== me && u.AttachThreadInput(me, fgThread, true);
+  try {
+    u.keybd_event(0x12, 0, 0x1, 0); u.keybd_event(0x12, 0, 0x1 | 0x2, 0);
+    u.BringWindowToTop(hwnd);
+    if (!u.SetForegroundWindow(hwnd)) u.SwitchToThisWindow(hwnd, true);
+  } finally { if (attached) u.AttachThreadInput(me, fgThread, false); }
+  return Number(u.GetForegroundWindow()) === Number(hwnd);
 }
 
 module.exports = {
@@ -408,7 +420,7 @@ module.exports = {
   reserveEdge: safe('reserveEdge', reserveEdge, null),
   releaseEdge: safe('releaseEdge', releaseEdge),
   listWindows: safe('listWindows', listWindows, []),
-  focusWindow: safe('focusWindow', focusWindow),
+  focusWindow: safe('focusWindow', focusWindow, false),
   desktopTree: safe('desktopTree', desktopTree, []),
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),

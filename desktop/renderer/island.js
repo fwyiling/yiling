@@ -10,7 +10,7 @@ function look() {
   applyAccent(s.accent);
   // sit inside the top bar when it's on, a little below the edge otherwise
   document.documentElement.style.setProperty('--top', s.topbar?.on ? '1px' : '8px');
-  document.documentElement.style.setProperty('--ch', s.topbar?.on ? '28px' : '34px');
+  document.documentElement.style.setProperty('--ch', s.topbar?.on ? '22px' : '32px');
 }
 
 // ---------- timer ----------
@@ -75,8 +75,14 @@ function shape() {
   else isl.style.height = '';
 }
 let openT, closeT;
-isl.addEventListener('mouseenter', () => { sd.islandMouse(true); clearTimeout(closeT); openT = setTimeout(() => { open = true; shape(); }, 90); });
-isl.addEventListener('mouseleave', () => { sd.islandMouse(false); clearTimeout(openT); closeT = setTimeout(() => { open = false; shape(); }, 380); });
+let hovered = false;
+isl.addEventListener('mouseenter', () => { hovered = true; sd.islandMouse(true); clearTimeout(closeT); openT = setTimeout(() => { open = true; shape(); }, 90); });
+isl.addEventListener('mouseleave', () => { hovered = false; sd.islandMouse(false); clearTimeout(openT); closeT = setTimeout(() => { open = false; shape(); }, 380); });
+// opened from the top bar's timer button, its menu or Ctrl+Alt+T: stays open until you've been in and out, or 8 s untouched
+sd.onIslandOpen(() => {
+  clearTimeout(closeT); open = true; sd.islandMouse(true); shape();
+  closeT = setTimeout(function wait() { if (hovered) { closeT = setTimeout(wait, 1000); return; } open = false; sd.islandMouse(false); shape(); }, 8000);
+});
 
 // ---------- time's up ----------
 function chime() { // three soft notes
