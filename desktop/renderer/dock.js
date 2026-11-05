@@ -15,9 +15,11 @@ function applyLook() {
   const h = { s: 52, m: 64, l: 78 }[dk.size] || 64;
   document.documentElement.style.setProperty('--h', `${h}px`);
   document.documentElement.style.setProperty('--op', Math.max(0.8, dk.opacity ?? 0.96));
-  $('clock').hidden = !dk.clock;
+  $('clock').hidden = !dk.clock || !!s.topbar?.on; // the top bar shows the time already
   $('start').hidden = dk.start === false; $('home').hidden = dk.homeBtn === false;
-  $('quick').hidden = dk.quick === false; $('gear').hidden = dk.gear === false;
+  // the top bar already shows Wi-Fi, sound and the time: no need for them twice
+  const top = !!s.topbar?.on;
+  $('quick').hidden = dk.quick === false || top; $('gear').hidden = dk.gear === false;
   magnifyOn = dk.magnify !== false; if (!magnifyOn) magnify(null);
   $('pins').hidden = !dk.pinned;
   $('running').hidden = !dk.running;

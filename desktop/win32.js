@@ -196,7 +196,7 @@ function desktopTree() {
 }
 
 /** True when the foreground window covers a whole monitor (a game or full-screen video). */
-function fullscreenAppRunning(displays) {
+function fullscreenAppRunning(displays, ownPids = []) {
   if (!load()) return false;
   const fg = u.GetForegroundWindow();
   if (isNull(fg)) return false;
@@ -205,6 +205,9 @@ function fullscreenAppRunning(displays) {
   const cls = String.fromCharCode(...buf.slice(0, n));
   if (cls === 'Progman' || cls === 'WorkerW' || cls === 'Shell_TrayWnd') return false; // the desktop itself
   if (OVERLAY_CLASSES.has(cls)) return false; // Task View, Start, Alt+Tab cover the screen too, but they aren't games
+  if (systemOverlayActive()) return false; // nor anything else Windows' shell puts in front
+  const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
+  if (ownPids.includes(pid[0])) return false; // our own Home panel covers the screen too
   const r = {};
   if (!u.GetWindowRect(fg, r)) return false;
   return displays.some((d) => r.left <= d.x && r.top <= d.y && r.right >= d.x + d.width && r.bottom >= d.y + d.height);

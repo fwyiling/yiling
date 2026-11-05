@@ -86,10 +86,10 @@ function checkPause() {
   keepIslandAtTop(); // also without the top bar: the taskbar coming and going moves it
   const g = store.get().general;
   const displays = screen.getAllDisplays().map((d) => (win32.isWin ? screen.dipToScreenRect(null, d.bounds) : d.bounds));
-  const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays)) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
+  const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays, ownPids())) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
     || (g.pauseWhenCovered && wallpaperCovered());
   if (g.autoGamer !== false && win32.isWin) { // a full-screen game or video: gamer mode by itself, and off again afterwards
-    const full = win32.fullscreenAppRunning(displays);
+    const full = win32.fullscreenAppRunning(displays, ownPids());
     if (full && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
   }
   const next = userPaused || gamer || auto || overlayOn;
@@ -198,7 +198,7 @@ function dockEdgeCheck() {
   if (mode === 'smart' && !dockBlocked) { clearTimeout(dockHideTimer); dockHideTimer = null; setDockShown(true); return; }
   if (onDisplay && p.y >= bottom - 2) {
     clearTimeout(dockHideTimer); dockHideTimer = null;
-    if (!dockShown && !(win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]))) setDockShown(true); // not over games / full-screen video
+    if (!dockShown && !(win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)], ownPids()))) setDockShown(true); // not over games / full-screen video
   } else if (dockShown && !dockMouseInside && p.y < bottom - h - 12 && !dockHideTimer) {
     dockHideTimer = setTimeout(() => { dockHideTimer = null; setDockShown(false); }, 650);
   } else if (dockMouseInside) { clearTimeout(dockHideTimer); dockHideTimer = null; }
@@ -357,13 +357,13 @@ const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return 
 function topbarTick() {
   if (!topWin || topWin.isDestroyed() || gamer) return;
   const d = screen.getPrimaryDisplay();
-  const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)]);
+  const full = win32.isWin && win32.fullscreenAppRunning([screen.dipToScreenRect(null, d.bounds)], ownPids());
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
   keepTopbarAtTop(); keepIslandAtTop();
   const fg = currentWindows().find((w) => w.active);
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   const vd = win32.isWin ? win32.virtualDesktops() : { count: 1, current: 0 }, key = `${name}|${vd.count}|${vd.current}`;
-  if (vd.current !== lastDesk) { lastDesk = vd.current; checkPause(); } // a new desktop: resume the wallpaper at once if nothing covers it
+  if (vd.current !== lastDesk) { const switched = lastDesk !== -1; lastDesk = vd.current; checkPause(); if (switched && dockWin) setTimeout(() => { if (!win32.systemOverlayActive()) win32.showTaskbar(false); }, 450); } // a new desktop: resume the wallpaper at once if nothing covers it
   if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
 function setTopbar(on) {
