@@ -258,6 +258,9 @@ function showTaskbar(show) {
   return changed;
 }
 
+/** Whether the main Windows taskbar is showing. */
+function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
+
 /** Press a key combination, e.g. [0x5B] (Win: Start menu) or [0x5B, 0x41] (Win+A: quick settings). */
 function pressKeys(keys) {
   if (!load()) return;
@@ -334,6 +337,7 @@ module.exports = {
   desktopTree: safe('desktopTree', desktopTree, []),
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
+  taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
 };

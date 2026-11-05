@@ -42,6 +42,7 @@ const calls = {
   desktopTree: () => w.desktopTree(),
   mediaKey: () => w.mediaKey(0xB3),
   showTaskbar: () => w.showTaskbar(true),
+  taskbarVisible: () => w.taskbarVisible(),
   foregroundRect: () => w.foregroundRect([1]),
   pressKeys: () => w.pressKeys([0x5B, 0x41]),
 };

@@ -8,6 +8,7 @@ const win32 = require('./win32');
 
 const PS = `
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue' # no progress records on stderr
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asOp = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
@@ -19,16 +20,26 @@ $mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMa
 
 # cover art: players often publish it a moment after the title, so this is retried for a while per song
 function Read-Art($p) {
-  if (-not $p.Thumbnail) { return '' }
+  if ($null -eq $p.Thumbnail) { $script:artError = 'the player gives no cover'; return '' }
   try {
     $st = Await ($p.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
-    $size = [uint32]$st.Size
-    if ($size -eq 0 -or $size -gt 2000000) { return '' }
-    $dr = New-Object Windows.Storage.Streams.DataReader($st.GetInputStreamAt(0))
-    [void](Await ($dr.LoadAsync($size)) ([uint32]))
-    $bytes = New-Object byte[] $size
-    $dr.ReadBytes($bytes)
-    $type = if ($st.ContentType) { $st.ContentType } else { 'image/jpeg' }
+    # read in chunks until the end: PowerShell 5.1 often can't see the stream's Size / ContentType
+    $dr = New-Object Windows.Storage.Streams.DataReader($st)
+    $ms = New-Object System.IO.MemoryStream
+    for ($i = 0; $i -lt 64; $i++) {
+      $n = [int](Await ($dr.LoadAsync(65536)) ([uint32]))
+      if ($n -le 0) { break }
+      $chunk = New-Object byte[] $n
+      $dr.ReadBytes($chunk)
+      $ms.Write($chunk, 0, $n)
+      if ($n -lt 65536) { break }
+    }
+    $bytes = $ms.ToArray()
+    if ($bytes.Length -lt 8) { $script:artError = "cover was $($bytes.Length) bytes"; return '' }
+    # the image type from its first bytes
+    $type = if ($bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { 'image/png' } elseif ($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8) { 'image/jpeg' } elseif ($bytes[0] -eq 0x47 -and $bytes[1] -eq 0x49) { 'image/gif' } elseif ($bytes[0] -eq 0x52 -and $bytes[8] -eq 0x57) { 'image/webp' } elseif ($bytes[0] -eq 0x42 -and $bytes[1] -eq 0x4D) { 'image/bmp' } else { '' }
+    if (-not $type) { $script:artError = "unknown cover format ($($bytes[0]) $($bytes[1]))"; return '' }
+    $script:artError = ''
     return 'data:' + $type + ';base64,' + [Convert]::ToBase64String($bytes)
   } catch { $script:artError = $_.Exception.Message; return '' }
 }
@@ -99,7 +110,10 @@ function start() {
     }
   });
   let lastErr = '';
-  child.stderr.on('data', (d) => { lastErr = String(d).trim().split('\n')[0]; console.warn('[media]', lastErr); });
+  child.stderr.on('data', (d) => {
+    const line = String(d).split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#< CLIXML') && !l.startsWith('<Objs')); // PowerShell's progress noise
+    if (line) { lastErr = line; console.warn('[media]', line); }
+  });
   child.on('exit', () => {
     child = null;
     if (stopped) return;

@@ -48,6 +48,18 @@ jobs:
           Write-Output $out
           if ($out -notmatch 'SMOKE ') { throw 'the built app did not finish its smoke run' }
           if ($out -match 'A JavaScript error occurred|Uncaught|Cannot find module') { throw 'the built app hit an error' }
+      - name: With the dock on, the taskbar hides while running and comes back on quit
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:APPDATA 'Syndicates Desktop'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          '{"dock":{"on":true,"hide":"never"}}' | Set-Content -Encoding utf8 (Join-Path $dir 'settings.json')
+          $out = & ".\dist\win-unpacked\Syndicates Desktop.exe" --smoke 2>&1 | Out-String
+          Write-Output $out
+          Remove-Item (Join-Path $dir 'settings.json')
+          if ($out -notmatch '"dock":true') { throw 'the dock did not start' }
+          if ($out -notmatch '"taskbarVisible":false') { throw 'the Windows taskbar stayed visible next to the dock' }
+          node -e "const v = require('./win32').taskbarVisible(); console.log('taskbar visible after quitting:', v); process.exit(v ? 0 : 1)"
       - name: Upload the Windows build
         uses: actions/upload-artifact@v4
         with:

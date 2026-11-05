@@ -22,6 +22,7 @@ const cover = path.join(os.tmpdir(), 'sd-cover.png'); fs.writeFileSync(cover, pn
 
 const PLAYER = `
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asOp = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
 function Await($op, $type) { $t = $asOp.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
@@ -45,16 +46,17 @@ Start-Sleep -Seconds 60
 `;
 const exe = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const player = spawn(exe, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(PLAYER, 'utf16le').toString('base64')], { env: { ...process.env, SD_COVER: cover } });
-player.stderr.on('data', (d) => console.log('[player]', String(d).trim()));
+player.stderr.on('data', (d) => { const t = String(d).trim(); if (t && !t.startsWith('#< CLIXML')) console.log('[player]', t); });
 const done = (code, msg) => { console.log(msg); media.stop(); player.kill(); process.exit(code); };
 setTimeout(() => done(1, 'FAIL: timed out'), 60000);
 
-let sawSong = false, sentToggle = false;
+let sawSong = false, sentToggle = false, lastArtError = '';
 player.stdout.on('data', (d) => {
   if (!String(d).includes('READY') || sawSong) return;
   console.log('fake player is playing');
   media.onChange((st) => {
     console.log('state:', JSON.stringify({ ...st, art: st.art ? `${st.art.slice(0, 30)}… (${st.art.length} chars)` : '' }));
+    if (st.artError) lastArtError = st.artError;
     if (!st.on || !String(st.title).includes('晴天')) return;
     sawSong = true;
     if (!sentToggle && st.art) { sentToggle = true; media.control('toggle'); return; }
@@ -64,5 +66,5 @@ player.stdout.on('data', (d) => {
     }
   });
   media.start();
-  setTimeout(() => { if (sawSong && !sentToggle) done(1, 'FAIL: the song shows but its cover never arrived'); }, 25000);
+  setTimeout(() => { if (sawSong && !sentToggle) done(1, `FAIL: the song shows but its cover never arrived (${lastArtError || 'no reason given'})`); }, 25000);
 });
