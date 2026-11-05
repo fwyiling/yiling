@@ -18,9 +18,16 @@ preview.addEventListener('pointerleave', () => view.pointer(0.5, 0.5));
 
 // drag widgets to place them (stored as fractions of the screen, so any resolution works)
 preview.addEventListener('pointerdown', (e) => {
-  const w = e.target.closest('.wp-widgets > [data-w]');
+  const w = e.target.closest('.wp-widgets [data-w]');
   if (!w || !preview.classList.contains('editing')) return;
-  e.preventDefault(); w.setPointerCapture(e.pointerId); w.classList.add('dragging');
+  e.preventDefault();
+  if ((s.widgets.layout || 'center') !== 'free') { // keep everything where it is, then let this one move freely
+    const pos = view.positions();
+    s = { ...s, widgets: { ...s.widgets, layout: 'free', ...Object.fromEntries(Object.entries(pos).map(([k, p]) => [k, { ...s.widgets[k], ...p }])) } };
+    view.update(s);
+    save({ widgets: { layout: 'free', ...pos } });
+  }
+  w.setPointerCapture(e.pointerId); w.classList.add('dragging');
   const key = w.dataset.w, r = preview.getBoundingClientRect();
   const move = (ev) => {
     const x = Math.min(0.98, Math.max(0.02, (ev.clientX - r.left) / r.width)), y = Math.min(0.98, Math.max(0.02, (ev.clientY - r.top) / r.height));

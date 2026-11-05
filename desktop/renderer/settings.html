@@ -40,7 +40,7 @@
       <label class="switch"><span><b>Follow the mouse</b><small>The wallpaper and widgets drift a little with your cursor.</small></span><input type="checkbox" data-k="wallpaper.parallax"></label>
     </section>
     <section data-panel="widgets">
-      <p class="muted">Drag widgets in the preview above to move them.</p>
+      <label class="field-row"><span>Layout <small>Centered and Left keep everything together; Free lets you drag each widget.</small></span><div class="seg" data-seg="widgets.layout"><button value="center">Centered</button><button value="left">Left</button><button value="free">Free</button></div></label>
       <label class="field-row"><span>Your name <small>(for the greeting)</small></span><input class="field" data-k="name" placeholder="e.g. Steven"></label>
       <div id="wlist" class="wlist"></div>
     </section>
@@ -68,7 +68,7 @@
         <label class="switch"><span><b>Clock</b></span><input type="checkbox" data-k="dock.clock"></label>
         <label class="switch"><span><b>Now playing</b><small>Song and play / pause / skip, whichever app is playing.</small></span><input type="checkbox" data-k="dock.media"></label>
         <label class="switch"><span><b>Keep windows clear of the dock</b><small>Maximized windows stop above it, like with the taskbar.</small></span><input type="checkbox" data-k="dock.reserve"></label>
-        <label class="slider"><span>Opacity</span><input type="range" min="0.3" max="1" step="0.05" data-k="dock.opacity"><em></em></label>
+        <label class="slider"><span>Opacity</span><input type="range" min="0.8" max="1" step="0.01" data-k="dock.opacity"><em></em></label>
       </div>
     </section>
     <section data-panel="lock">

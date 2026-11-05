@@ -13,8 +13,8 @@ function applyLook() {
   document.body.className = dk.style === 'full' ? 'full' : 'floating';
   const h = { s: 52, m: 64, l: 78 }[dk.size] || 64;
   document.documentElement.style.setProperty('--h', `${h}px`);
-  document.documentElement.style.setProperty('--op', dk.opacity ?? 0.85);
-  $('clockBox').hidden = !dk.clock;
+  document.documentElement.style.setProperty('--op', Math.max(0.8, dk.opacity ?? 0.96));
+  $('clock').hidden = !dk.clock; // the gear next to it stays
   $('pins').hidden = !dk.pinned;
   $('running').hidden = !dk.running;
 }
@@ -85,13 +85,20 @@ function renderMedia() {
   $('npTitle').textContent = np.title || 'Unknown title';
   $('npArtist').textContent = np.artist || '';
   $('np').classList.toggle('playing', !!np.playing);
-  $('np').querySelector('.art').style.backgroundImage = /^data:image\//.test(np.art || '') ? `url("${np.art}")` : '';
+  const art = $('np').querySelector('.art'), hasArt = /^data:image\//.test(np.art || '');
+  art.style.backgroundImage = hasArt ? `url("${np.art}")` : ''; art.classList.toggle('none', !hasArt);
 }
 $('np').querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => sd.mediaControl(b.dataset.m); });
 sd.onMedia((m) => { np = m; renderMedia(); });
 sd.media().then((m) => { np = m; renderMedia(); }).catch(() => {});
 
+// the window is a transparent strip; only the dock itself takes clicks
+$('dock').addEventListener('mouseenter', () => sd.dockMouse(true));
+$('dock').addEventListener('mouseleave', () => sd.dockMouse(false));
+
 $('home').onclick = () => sd.toggleHome(true);
+$('gear').onclick = () => sd.openSettings();
+tip($('gear'), 'Customize · Ctrl+Alt+S');
 tip($('home'), `Home · ${s.home.hotkey}`);
 sd.onSettings((n) => { s = n; applyLook(); render(); renderMedia(); });
 sd.onWindows((list) => { wins = list; render(); });

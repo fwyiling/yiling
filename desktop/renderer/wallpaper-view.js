@@ -26,6 +26,11 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const media = el('div', 'wp-media');
   const dim = el('div', 'wp-dim');
   const layer = el('div', 'wp-widgets');
+  // grouped layouts: the time in one hero stack, the info as a row (or column) of matching cards
+  const groups = { hero: el('div', 'wp-group wp-hero'), cards: el('div', 'wp-group wp-cards'), foot: el('div', 'wp-group wp-foot') };
+  const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
+  const ORDER = ['greeting', 'clock', 'date', 'media', 'weather', 'stats', 'quote'];
+  layer.append(groups.hero, groups.cards, groups.foot);
   root.append(canvas, media, dim, layer);
   let scene = null, s = settings, mediaKey = '';
   // the preview in Customize shows a sample so the widget can be placed while nothing plays
@@ -65,18 +70,25 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     clock: () => el('div', 'w-clock'),
     greeting: () => el('div', 'w-greeting'),
     date: () => el('div', 'w-date'),
-    stats: () => el('div', 'w-stats', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
-    weather: () => el('div', 'w-weather', '<b class="t">–</b><span class="d">Set a city in Customize</span>'),
+    stats: () => el('div', 'w-stats w-card', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
+    weather: () => el('div', 'w-weather w-card', '<b class="t">–</b><span class="d">Set a city in Customize</span>'),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
-    media: () => el('div', 'w-media', '<div class="art"></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
+    media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
+  const layout = () => (['center', 'left', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'center');
+  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on) && (k !== 'weather' || preview || !!cfg.city);
   function placeWidgets() {
-    for (const [k, cfg] of Object.entries(s.widgets)) {
-      if (!MAKERS[k]) continue;
-      if (!widgets[k]) { widgets[k] = MAKERS[k](); widgets[k].dataset.w = k; layer.append(widgets[k]); }
+    const mode = layout();
+    layer.dataset.layout = mode;
+    for (const k of ORDER) {
+      const cfg = s.widgets[k];
+      if (!cfg || !MAKERS[k]) continue;
+      if (!widgets[k]) { widgets[k] = MAKERS[k](); widgets[k].dataset.w = k; }
       const e = widgets[k];
-      e.hidden = !cfg.on || (k === 'media' && !nowPlaying.on);
-      e.style.left = `${cfg.x * 100}%`; e.style.top = `${cfg.y * 100}%`;
+      const parent = mode === 'free' ? layer : groups[GROUP_OF[k]];
+      parent.append(e); // keeps ORDER inside each group
+      e.hidden = !visible(k, cfg);
+      e.style.left = mode === 'free' ? `${cfg.x * 100}%` : ''; e.style.top = mode === 'free' ? `${cfg.y * 100}%` : '';
       e.style.setProperty('--scale', cfg.scale || 1);
       if (k === 'clock') e.dataset.style = cfg.style || 'big';
     }
@@ -123,7 +135,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   function renderMedia() {
     const m = widgets.media;
     if (!m) return;
-    m.hidden = !s.widgets.media?.on || !nowPlaying.on;
+    m.hidden = !visible('media', s.widgets.media || {});
     m.querySelector('b').textContent = nowPlaying.title || 'Unknown title';
     m.querySelector('span').textContent = nowPlaying.artist || '';
     m.classList.toggle('playing', !!nowPlaying.playing);
@@ -145,8 +157,19 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
   const dayT = setInterval(() => { if (s.wallpaper.dayCycle) applyBackground(); }, 5 * 60e3);
+  /** Where each visible widget sits now, as screen fractions (to switch to free placement without a jump). */
+  function positions() {
+    const r = root.getBoundingClientRect(), out = {};
+    for (const [k, e] of Object.entries(widgets)) {
+      if (e.hidden) continue;
+      const b = e.getBoundingClientRect();
+      out[k] = { x: +(((b.left + b.width / 2) - r.left) / r.width).toFixed(4), y: +(((b.top + b.height / 2) - r.top) / r.height).toFixed(4) };
+    }
+    return out;
+  }
   return {
     update,
+    positions,
     widgets,
     pause(p) { scene?.pause(p); media.querySelector('video')?.[p ? 'pause' : 'play']?.(); root.classList.toggle('paused', p); },
     pointer(x, y) { scene?.pointer(x, y); root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },

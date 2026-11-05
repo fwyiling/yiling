@@ -17,6 +17,7 @@ const DEFAULTS = {
     dim: 0.15,                // darken the wallpaper so widgets stay readable
   },
   widgets: {
+    layout: 'center',         // center | left (grouped, tidy) or free (drag each widget anywhere)
     clock:    { on: true,  x: 0.5,  y: 0.34, scale: 1, style: 'big' },   // big | minimal | analog
     greeting: { on: true,  x: 0.5,  y: 0.22, scale: 1 },
     date:     { on: true,  x: 0.5,  y: 0.46, scale: 1 },
@@ -28,7 +29,7 @@ const DEFAULTS = {
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '' },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
-  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.85, reserve: true, prevAutoHide: null },
+  dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, reserve: true, prevAutoHide: null },
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
 
@@ -45,6 +46,7 @@ class Store {
     this.file = path.join(dir, 'settings.json');
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch {}
+    if (saved?.dock?.opacity === 0.85) delete saved.dock.opacity; // the old see-through default; text behind bled through
     this.data = merge(DEFAULTS, saved);
   }
   get() { return this.data; }

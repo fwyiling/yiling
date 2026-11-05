@@ -134,7 +134,8 @@ function renderMedia(m) {
   $('npTitle').textContent = m.title || 'Unknown title';
   $('npArtist').textContent = m.artist || m.app.replace(/\.exe$/i, '').split(/[!\\]/).pop() || '';
   $('npCard').classList.toggle('playing', !!m.playing);
-  $('npCard').querySelector('.art').style.backgroundImage = /^data:image\//.test(m.art || '') ? `url("${m.art}")` : '';
+  const art = $('npCard').querySelector('.art'), hasArt = /^data:image\//.test(m.art || '');
+  art.style.backgroundImage = hasArt ? `url("${m.art}")` : ''; art.classList.toggle('none', !hasArt);
 }
 $('npCard').querySelectorAll('[data-m]').forEach((b) => { b.onclick = () => sd.mediaControl(b.dataset.m); });
 sd.onMedia(renderMedia);

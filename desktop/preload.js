@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('sd', {
   media: () => ipcRenderer.invoke('media:get'),
   mediaControl: (cmd) => ipcRenderer.invoke('media:control', cmd),
   onMedia: on('media'),
+  dockMouse: (inside) => ipcRenderer.send('dock:mouse', !!inside),
   onWindows: on('windows'),
   onSettings: on('settings'),
   onPause: on('pause'),

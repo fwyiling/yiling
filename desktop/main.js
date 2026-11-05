@@ -119,15 +119,24 @@ function toggleHome(force) {
 function registerHotkey() {
   globalShortcut.unregisterAll();
   const key = store.get().home.hotkey;
-  try { if (key && !globalShortcut.register(key, () => toggleHome())) console.warn('hotkey in use:', key); } catch (e) { console.warn('bad hotkey', key, e.message); }
+  const reg = (k, fn) => { try { return !!k && globalShortcut.register(k, fn); } catch (e) { console.warn('bad hotkey', k, e.message); return false; } };
+  // Alt+Space is also Windows' window menu and PowerToys Run's key; fall back if something else owns it
+  if (!reg(key, () => toggleHome()) && !reg('Alt+Shift+Space', () => toggleHome())) console.warn('hotkey in use:', key);
+  reg('Ctrl+Alt+S', () => openSettings()); // Customize from anywhere
 }
 
 // ---------- settings window ----------
 function openSettings() {
-  if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); return; }
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    // Windows won't let a background app take the foreground; briefly topmost brings it up anyway
+    settingsWin.show(); settingsWin.setAlwaysOnTop(true); settingsWin.focus(); settingsWin.setAlwaysOnTop(false);
+    return;
+  }
   settingsWin = new BrowserWindow({ width: 1180, height: 800, minWidth: 900, minHeight: 620, title: 'Syndicates Desktop', backgroundColor: '#0f1216', icon: icon(), webPreferences: webPrefs, autoHideMenuBar: true });
   settingsWin.setMenu(null);
   settingsWin.loadURL(ui('settings.html'));
+  settingsWin.once('ready-to-show', () => { settingsWin.show(); settingsWin.focus(); });
 }
 
 // ---------- Syndicates dock (replaces the look of the taskbar) ----------
@@ -159,6 +168,8 @@ async function setDock(on) {
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
     dockWin.once('ready-to-show', () => { placeDock(); dockWin.showInactive(); pollWindows(); });
+    // clicks pass through the transparent strip around the floating pill to the windows behind it
+    dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
     clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 1000);
   } else if (!on && dockWin) {
@@ -278,6 +289,7 @@ function wireIpc() {
     if (!/\.lnk$/i.test(p) || process.platform !== 'win32') return p;
     try { return shell.readShortcutLink(p).target || p; } catch { return p; }
   });
+  ipcMain.on('dock:mouse', (e, inside) => { if (dockWin && e.sender === dockWin.webContents) dockWin.setIgnoreMouseEvents(!inside, { forward: true }); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   ipcMain.handle('settings:open', () => { toggleHome(false); openSettings(); });
@@ -333,15 +345,16 @@ app.whenReady().then(() => {
   setInterval(sendCursor, 50);
   registerHotkey();
   tray = new Tray(icon().resize({ width: 16, height: 16 }));
-  tray.on('click', () => toggleHome(true));
+  tray.on('click', () => openSettings()); // the tray icon is the obvious way in; Home has its own shortcut and dock button
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
   if (store.get().dock.on) setDock(true);
-  if (firstRun && !process.argv.includes('--smoke')) openSettings(); // first run: show what can be customized
+  // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
+  if (!process.argv.includes('--smoke') && !process.argv.includes('--autostart')) openSettings(); // first run: show what can be customized
   // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
   if (process.argv.includes('--smoke')) setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
 });
-app.on('second-instance', () => openSettings());
+app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
 app.on('before-quit', () => {
   app.isQuitting = true;
   media.stop();

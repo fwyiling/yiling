@@ -8,6 +8,7 @@ const win32 = require('./win32');
 
 const PS = `
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asOp = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' } | Select-Object -First 1
 function Await($op, $type) { $t = $asOp.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
@@ -38,7 +39,8 @@ while ($true) {
       $o = [ordered]@{ on = $true; title = $p.Title; artist = $p.Artist; app = $s.SourceAppUserModelId; playing = ($s.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing'); art = $art }
     }
   } catch { $o = [ordered]@{ on = $false; error = $_.Exception.Message } }
-  $j = $o | ConvertTo-Json -Compress
+  # non-ASCII (Chinese, Japanese, emoji…) as \\uXXXX escapes: the text survives whatever the console code page is
+  $j = [regex]::Replace(($o | ConvertTo-Json -Compress), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
   if ($j -ne $last) { [Console]::Out.WriteLine($j); [Console]::Out.Flush(); $last = $j }
   Start-Sleep -Milliseconds 900
 }
@@ -83,7 +85,7 @@ function control(cmd) {
 }
 
 module.exports = {
-  start, stop, control,
+  PS, start, stop, control,
   get: () => state,
   onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
 };

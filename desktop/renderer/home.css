@@ -70,3 +70,4 @@ kbd { font: 600 11px system-ui; padding: 4px 8px; border-radius: 6px; background
 .mctl svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 .mctl .pp svg { fill: currentColor; }
 .mctl .pause, .playing .mctl .play { display: none; } .playing .mctl .pause { display: block; }
+.np .art { display: grid; place-items: center; } .np .art .note { width: 46%; height: 46%; fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; display: none; } .np .art.none .note { display: block; }
