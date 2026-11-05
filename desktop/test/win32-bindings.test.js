@@ -43,6 +43,7 @@ const calls = {
   mediaKey: () => w.mediaKey(0xB3),
   showTaskbar: () => w.showTaskbar(true),
   taskbarVisible: () => w.taskbarVisible(),
+  iconPixels: () => w.iconPixels('C:\\Windows\\explorer.exe'),
   foregroundRect: () => w.foregroundRect([1]),
   pressKeys: () => w.pressKeys([0x5B, 0x41]),
 };

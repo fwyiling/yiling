@@ -29,7 +29,7 @@ const DEFAULTS = {
   },
   name: '',
   home: { hotkey: 'Alt+Space', engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [], github: '' },
-  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 60 },
+  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, opacity: 0.96, hide: 'smart', reserve: true, prevAutoHide: null },
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },
 };
@@ -47,6 +47,7 @@ class Store {
     this.file = path.join(dir, 'settings.json');
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch {}
+    if (saved?.general?.fps === 60 || saved?.general?.fps === '60') delete saved.general.fps; // old default; 30 looks the same for these slow scenes at half the work
     if (saved?.dock?.opacity === 0.85) delete saved.dock.opacity; // the old see-through default; text behind bled through
     this.data = merge(DEFAULTS, saved);
   }

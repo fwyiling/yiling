@@ -57,6 +57,21 @@ function bind() {
     kernel32: koffi.load('kernel32.dll'),
     dwmapi: koffi.load('dwmapi.dll'),
   };
+  // big icons: SHDefExtractIcon gives an HICON at any size (256 for the dock), GDI turns it into pixels
+  const ICONINFO = koffi.struct('ICONINFO', { fIcon: 'int', xHotspot: 'uint32', yHotspot: 'uint32', hbmMask: 'intptr_t', hbmColor: 'intptr_t' });
+  const BITMAPINFOHEADER = koffi.struct('BITMAPINFOHEADER', { biSize: 'uint32', biWidth: 'int32', biHeight: 'int32', biPlanes: 'uint16', biBitCount: 'uint16',
+    biCompression: 'uint32', biSizeImage: 'uint32', biXPelsPerMeter: 'int32', biYPelsPerMeter: 'int32', biClrUsed: 'uint32', biClrImportant: 'uint32' });
+  const gdi32 = koffi.load('gdi32.dll');
+  Object.assign(u, {
+    ICONINFO, BITMAPINFOHEADER,
+    SHDefExtractIconW: u.shell32.func('long __stdcall SHDefExtractIconW(str16 file, int index, uint flags, _Out_ intptr_t *large, _Out_ intptr_t *small, uint size)'),
+    GetIconInfo: user32.func('bool __stdcall GetIconInfo(intptr_t icon, _Out_ ICONINFO *info)'),
+    DestroyIcon: user32.func('bool __stdcall DestroyIcon(intptr_t icon)'),
+    CreateCompatibleDC: gdi32.func('intptr_t __stdcall CreateCompatibleDC(intptr_t hdc)'),
+    DeleteDC: gdi32.func('bool __stdcall DeleteDC(intptr_t hdc)'),
+    DeleteObject: gdi32.func('bool __stdcall DeleteObject(intptr_t obj)'),
+    GetDIBits: gdi32.func('int __stdcall GetDIBits(intptr_t hdc, intptr_t bmp, uint start, uint lines, _Out_ uint8_t *bits, _Inout_ BITMAPINFOHEADER *info, uint usage)'),
+  });
   const APPBARDATA = koffi.struct('APPBARDATA', { cbSize: 'uint32', hWnd: 'intptr_t', uCallbackMessage: 'uint32', uEdge: 'uint32', rc: RECT, lParam: 'intptr_t' });
   Object.assign(u, {
     APPBARDATA,
@@ -258,6 +273,36 @@ function showTaskbar(show) {
   return changed;
 }
 
+/** An icon from an exe/dll/ico file as BGRA pixels at `size` (e.g. 256), or null. Sharp when the dock magnifies it. */
+function iconPixels(file, index = 0, size = 256) {
+  if (!load()) return null;
+  const large = [0], small = [0];
+  if (u.SHDefExtractIconW(file, index, 0, large, small, (16 << 16) | size) !== 0 || isNull(large[0])) return null; // S_OK only
+  if (!isNull(small[0])) u.DestroyIcon(small[0]);
+  const info = {}, dc = u.CreateCompatibleDC(0);
+  try {
+    if (!u.GetIconInfo(large[0], info)) return null;
+    const read = (bmp) => {
+      const hdr = { biSize: 40, biWidth: size, biHeight: -size, biPlanes: 1, biBitCount: 32, biCompression: 0, biSizeImage: 0, biXPelsPerMeter: 0, biYPelsPerMeter: 0, biClrUsed: 0, biClrImportant: 0 };
+      const bits = Buffer.alloc(size * size * 4);
+      return u.GetDIBits(dc, bmp, 0, size, bits, hdr, 0) === size ? bits : null; // DIB_RGB_COLORS, top-down
+    };
+    const px = isNull(info.hbmColor) ? null : read(info.hbmColor);
+    if (!px) return null;
+    let hasAlpha = false;
+    for (let i = 3; i < px.length; i += 4) if (px[i]) { hasAlpha = true; break; }
+    if (!hasAlpha) { // old icons: transparency comes from the mask (white = transparent)
+      const mask = isNull(info.hbmMask) ? null : read(info.hbmMask);
+      for (let i = 0; i < px.length; i += 4) px[i + 3] = mask && mask[i] ? 0 : 255;
+    }
+    return { width: size, height: size, data: px };
+  } finally {
+    if (!isNull(info.hbmColor)) u.DeleteObject(info.hbmColor);
+    if (!isNull(info.hbmMask)) u.DeleteObject(info.hbmMask);
+    u.DeleteDC(dc); u.DestroyIcon(large[0]);
+  }
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -338,6 +383,7 @@ module.exports = {
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
+  iconPixels: safe('iconPixels', iconPixels, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
 };

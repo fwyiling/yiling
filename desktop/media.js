@@ -24,7 +24,9 @@ function Read-Art($p) {
   try {
     $st = Await ($p.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
     # read in chunks until the end: PowerShell 5.1 often can't see the stream's Size / ContentType
-    $dr = New-Object Windows.Storage.Streams.DataReader($st)
+    # PowerShell won't cast the stream to IInputStream itself; .NET reflection does (it asks the object for the interface)
+    $ctor = [Windows.Storage.Streams.DataReader].GetConstructor([type[]]@([Windows.Storage.Streams.IInputStream]))
+    $dr = $ctor.Invoke(@($st))
     $ms = New-Object System.IO.MemoryStream
     for ($i = 0; $i -lt 64; $i++) {
       $n = [int](Await ($dr.LoadAsync(65536)) ([uint32]))

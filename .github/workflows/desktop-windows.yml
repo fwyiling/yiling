@@ -5,6 +5,9 @@ on:
     branches: [syndicates-desktop]
     paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
   workflow_dispatch:
+concurrency: # one run at a time, so two builds never publish the release at once
+  group: desktop-windows
+  cancel-in-progress: false
 permissions:
   contents: write # publish passing builds to the desktop-latest release
 jobs:

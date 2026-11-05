@@ -73,10 +73,19 @@ function buildWallpapers() {
 const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(buildWallpapers, 800); };
 
 // pause when a full-screen app is in front, or on battery
+// Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
+function wallpaperCovered() {
+  if (!win32.isWin || screen.getAllDisplays().length > 1) return false; // with several screens the others may still show it
+  const fg = win32.foregroundRect(ownPids()); if (!fg) return false;
+  const wa = screen.dipToScreenRect(null, screen.getPrimaryDisplay().workArea);
+  const ix = Math.max(0, Math.min(fg.x + fg.width, wa.x + wa.width) - Math.max(fg.x, wa.x)), iy = Math.max(0, Math.min(fg.y + fg.height, wa.y + wa.height) - Math.max(fg.y, wa.y));
+  return ix * iy >= wa.width * wa.height * 0.97;
+}
 function checkPause() {
   const g = store.get().general;
   const displays = screen.getAllDisplays().map((d) => (win32.isWin ? screen.dipToScreenRect(null, d.bounds) : d.bounds));
-  const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays)) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower());
+  const auto = (g.pauseOnFullscreen && win32.fullscreenAppRunning(displays)) || (g.pauseOnBattery && powerMonitor.isOnBatteryPower())
+    || (g.pauseWhenCovered && wallpaperCovered());
   const next = userPaused || auto;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
 }
@@ -281,6 +290,30 @@ function diagnostics() {
   };
 }
 
+// ---------- big app icons ----------
+// Electron's getFileIcon tops out at 32-48 px, which looks soft when the dock magnifies icons. This reads the
+// 256 px icon from the program itself (following shortcuts to their icon file), scaled to 128 px.
+const iconCache = new Map();
+function bigIcon(p) {
+  if (!win32.isWin) return '';
+  if (iconCache.has(p)) return iconCache.get(p);
+  let file = p, index = 0;
+  if (/\.lnk$/i.test(p)) {
+    try { const l = shell.readShortcutLink(p); if (l.icon) { file = l.icon; index = l.iconIndex || 0; } else file = l.target || ''; } catch { file = ''; }
+  }
+  file = file.replace(/%([^%]+)%/g, (_m, v) => process.env[v] || '');
+  let url = '';
+  if (/\.(exe|dll|ico)$/i.test(file)) {
+    const px = win32.iconPixels(file, index, 256);
+    if (px) url = nativeImage.createFromBitmap(px.data, { width: px.width, height: px.height }).resize({ width: 128, height: 128, quality: 'best' }).toDataURL();
+  }
+  iconCache.set(p, url);
+  return url;
+}
+async function iconFor(p, size) {
+  return bigIcon(p) || (await app.getFileIcon(p, { size }).then((i) => i.toDataURL()).catch(() => ''));
+}
+
 // ---------- IPC ----------
 const httpOnly = (u) => { try { return /^https?:$/.test(new URL(u).protocol); } catch { return false; } };
 function wireIpc() {
@@ -303,7 +336,7 @@ function wireIpc() {
   ipcMain.handle('apps', () => (apps ||= system.listApps()));
   ipcMain.handle('app-icon', async (_e, p) => {
     if (!isKnownApp(p)) return '';
-    try { return (await app.getFileIcon(p, { size: 'large' })).toDataURL(); } catch { return ''; }
+    return iconFor(p, 'large');
   });
   // only launch things that came from the Start menu or that you pinned yourself
   ipcMain.handle('launch', (_e, p) => { if (!isKnownApp(p)) throw new Error('unknown app'); toggleHome(false); return shell.openPath(p); });
@@ -329,7 +362,7 @@ function wireIpc() {
   ipcMain.handle('window:focus', (_e, hwnd) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd); setTimeout(pollWindows, 150); });
   ipcMain.handle('exe-icon', async (_e, exe) => {
     if (!windowsList.some((w) => w.exe === exe)) return '';
-    try { return (await app.getFileIcon(exe, { size: 'normal' })).toDataURL(); } catch { return ''; }
+    return iconFor(exe, 'large');
   });
   ipcMain.handle('pin-target', (_e, p) => { // what a pinned shortcut points at, to match it with open windows
     if (!isKnownApp(p)) return '';
