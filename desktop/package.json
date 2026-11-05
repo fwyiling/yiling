@@ -21,15 +21,10 @@
     "appId": "app.syndicates.desktop",
     "productName": "Syndicates Desktop",
     "files": [
-      "main.js",
-      "preload.js",
-      "win32.js",
-      "settings-store.js",
-      "system.js",
-      "taskbar.js",
-      "lockscreen.js",
+      "*.js",
       "renderer/**",
-      "assets/**"
+      "assets/**",
+      "!test/**"
     ],
     "win": {
       "icon": "assets/icon.png",
@@ -40,7 +35,15 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Syndicates Desktop",
+      "runAfterFinish": true,
+      "artifactName": "Syndicates-Desktop-Setup.exe"
+    },
+    "portable": {
+      "artifactName": "Syndicates-Desktop-Portable.exe"
     }
   }
 }

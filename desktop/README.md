@@ -22,17 +22,25 @@ grey-blue style as the Syndicates Client.
 - Pauses itself during games and full-screen video, and on battery. Optional: hide desktop icons,
   start with Windows. Lives in the system tray.
 
-## Run it
+## Install it (recommended)
+
+Open the repository's **Releases** page on GitHub, release **Syndicates Desktop (latest)**, and download
+**`Syndicates-Desktop-Setup.exe`**. It installs like any app: Start menu and desktop shortcut, starts
+with Windows, lives in the tray. No terminal, nothing to keep open. Every build there has passed the
+Windows tests first. (`Syndicates-Desktop-Portable.exe` runs without installing.)
+
+Windows may say "Windows protected your PC" because the app isn't code-signed: **More info → Run anyway**.
+
+## Run it from source
 
 1. Install **Node.js LTS** from <https://nodejs.org> (once).
-2. Double-click **`start.bat`** in this folder. The first start downloads what it needs (a minute or two).
+2. Double-click **`start.bat`** in this folder. The first start downloads what it needs (a minute or two),
+   then the app starts on its own and the window closes; closing it doesn't stop the app.
 
-Or from a terminal in this folder: `npm install`, then `npm start`.
-
-To make an installer and a portable `.exe`: `npm run dist` (files appear in `dist/`).
+To build the installer yourself: `npm run dist` (files appear in `dist/`).
 
 Right-click the tray icon for Customize, Pause, Hide desktop icons, Start with Windows and Quit.
-Quitting gives your desktop icons back if you hid them.
+Quitting gives your desktop icons back if you hid them. Opening the app again while it runs opens Customize.
 
 ## If the desktop stays white or black
 

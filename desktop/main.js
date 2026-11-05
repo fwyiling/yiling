@@ -200,12 +200,21 @@ function updateTray() {
   ]));
 }
 
+// ---------- start with Windows ----------
+// Register the program that should really start: the installed exe, the portable exe itself (not the
+// temporary copy it runs from), or Electron plus this folder when started from source (start.bat).
+function setAutostart(on) {
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const args = app.isPackaged ? ['--autostart'] : [app.getAppPath(), '--autostart'];
+  app.setLoginItemSettings({ openAtLogin: !!on, path: exe, args });
+}
+
 // ---------- settings changes ----------
 function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
-  if (patch.general?.startWithWindows !== undefined) app.setLoginItemSettings({ openAtLogin: !!next.general.startWithWindows });
+  if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else placeDock(); }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
@@ -281,7 +290,11 @@ function isKnownApp(p) {
 
 // ---------- start ----------
 app.whenReady().then(() => {
+  const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
   store = new Store(app.getPath('userData'));
+  // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
+  if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
+  if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating
   protocol.handle('sd', (req) => {
     const u = new URL(req.url);
     if (u.host === 'ui') {
@@ -324,7 +337,7 @@ app.whenReady().then(() => {
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
   if (store.get().dock.on) setDock(true);
-  if (!fs.existsSync(store.file) && !process.argv.includes('--smoke')) openSettings(); // first run: show what can be customized
+  if (firstRun && !process.argv.includes('--smoke')) openSettings(); // first run: show what can be customized
   // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
   if (process.argv.includes('--smoke')) setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
 });
