@@ -28,7 +28,9 @@
       <h2>Scene</h2>
       <div id="scenes" class="scenes"></div>
       <div id="fileRow" class="row" hidden><button id="pick" class="btn">Choose file…</button><span id="fileName" class="muted"></span></div>
+      <div id="winRow" hidden><p class="muted">Windows draws your background itself: nothing of Syndicates runs behind the desktop (the top bar, dock and island stay). Widgets need one of the app's wallpapers.</p><div class="row"><button id="winBg" class="btn">Change Windows background</button><button id="winUse" class="btn ghost" hidden>Use my picture for Windows</button></div></div>
       <div id="urlRow" class="row" hidden><input id="url" class="field" placeholder="https://… a page to use as your wallpaper"><button id="urlSet" class="btn">Use</button></div>
+      <div id="appWpOnly">
       <h2>Colours</h2>
       <div class="row"><div id="presets" class="presets"></div><span class="sep"></span><input type="color" data-color="0"><input type="color" data-color="1"><input type="color" data-color="2"></div>
       <h2>Motion</h2>
@@ -38,6 +40,7 @@
       <label class="switch"><span><b>Shift with the time of day</b><small>Warm at dawn, your colours by day, orange at dusk, deep blue at night.</small></span><input type="checkbox" data-k="wallpaper.dayCycle"></label>
       <label class="switch"><span><b>React to music</b><small>The wallpaper pulses with whatever your PC is playing. Uses system sound only, never the microphone.</small></span><input type="checkbox" data-k="wallpaper.audio"></label>
       <label class="switch"><span><b>Follow the mouse</b><small>The wallpaper and widgets drift a little with your cursor.</small></span><input type="checkbox" data-k="wallpaper.parallax"></label>
+      </div>
     </section>
     <section data-panel="widgets">
       <label class="field-row"><span>Layout <small>Centered and Left keep everything together; Free lets you drag each widget.</small></span><div class="seg" data-seg="widgets.layout"><button value="mac">Mac</button><button value="center">Centered</button><button value="left">Left</button><button value="free">Free</button></div></label>

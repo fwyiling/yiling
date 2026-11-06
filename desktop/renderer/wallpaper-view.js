@@ -58,8 +58,9 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const w = s.wallpaper;
     const tint = w.dayCycle ? dayTint(w.colors) : { colors: w.colors, dark: 0 };
     root.style.setProperty('--dim', Math.min(0.85, w.dim + tint.dark));
-    const animated = !['image', 'video', 'web'].includes(w.scene);
+    const animated = !['image', 'video', 'web', 'windows'].includes(w.scene);
     canvas.hidden = !animated;
+    layer.hidden = w.scene === 'windows'; // widgets live in the app's wallpaper window, which this mode doesn't have
     // music-reactive: the wallpaper itself listens; the small preview in Customize never does
     const wantAudio = !preview && (w.audio || w.scene === 'visualizer');
     if (wantAudio) startAudio(); else if (!preview) stopAudio();
@@ -76,6 +77,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
       const v = el('video'); Object.assign(v, { src: `sd://media/wallpaper?v=${encodeURIComponent(w.fileStamp || w.file)}`, muted: true, loop: true, autoplay: true, playsInline: true }); media.append(v);
     } else if (w.scene === 'web' && /^https?:\/\//i.test(w.url)) {
       const f = el('iframe'); f.src = w.url; f.setAttribute('sandbox', 'allow-scripts allow-same-origin'); f.referrerPolicy = 'no-referrer'; media.append(f);
+    } else if (w.scene === 'windows') {
+      media.append(el('div', 'wp-empty', preview ? 'Windows’ own background' : ''));
     } else if (!animated) {
       media.append(el('div', 'wp-empty', preview ? 'Pick a file or link below' : ''));
     }

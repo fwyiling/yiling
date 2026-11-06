@@ -5,7 +5,7 @@ const path = require('path');
 const DEFAULTS = {
   accent: '#5e7d9c',
   wallpaper: {
-    scene: 'aurora',          // aurora | particles | waves | starfield | image | video | web
+    scene: 'aurora',          // aurora | particles | waves | starfield | image | video | web | windows (Windows' own background, no wallpaper window)
     speed: 1,                 // 0.25 .. 2
     intensity: 0.8,           // 0 .. 1  (how much colour/motion)
     parallax: true,           // drift with the mouse

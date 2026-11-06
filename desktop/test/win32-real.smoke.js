@@ -21,6 +21,7 @@ console.log('ok   virtual desktops:', JSON.stringify(w.virtualDesktops()));
 console.log('ok   refresh rates:', JSON.stringify(w.refreshRates()));
 console.log('ok   wifi scan (adapters asked; 0 on a PC without Wi-Fi):', w.wifiScan());
 console.log('ok   accent colour picked from the wallpaper:', w.autoAccent());
+console.log('ok   repaint desktop (for the Windows-background mode):', w.repaintDesktop());
 // how long the window scans take on this thread (the app keeps them away from desktop slides)
 const time = (name, fn, n = 20) => { const t = process.hrtime.bigint(); for (let i = 0; i < n; i++) fn(); console.log(`ok   ${name}: ${(Number(process.hrtime.bigint() - t) / 1e6 / n).toFixed(2)} ms each`); };
 const scr = { x: 0, y: 0, width: 1024, height: 768 };

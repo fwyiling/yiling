@@ -53,6 +53,7 @@ const calls = {
   refreshRates: () => w.refreshRates(),
   wifiScan: () => w.wifiScan(),
   autoAccent: () => w.autoAccent(),
+  repaintDesktop: () => w.repaintDesktop(),
   makeToolWindow: () => w.makeToolWindow(fakeWin),
   virtualDesktops: () => w.virtualDesktops(),
   foregroundRect: () => w.foregroundRect([1]),

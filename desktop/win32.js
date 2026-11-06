@@ -46,6 +46,7 @@ function bind() {
     // the same Win32 function again, with the last-but-two parameter as a string (koffi: convention, symbol, result, params)
     SendMessageTimeoutStr: user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'str16', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]),
     SystemParametersInfoW: user32.func('bool __stdcall SystemParametersInfoW(uint action, uint param, str16 value, uint flags)'),
+    RedrawWindow: user32.func('bool __stdcall RedrawWindow(intptr_t hwnd, void *rect, intptr_t rgn, uint flags)'),
     IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hwnd)'),
     IsIconic: user32.func('bool __stdcall IsIconic(intptr_t hwnd)'),
     GetWindow: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint cmd)'),
@@ -263,6 +264,17 @@ function setDesktopIcons(show) {
 function setWindowsWallpaper(file) {
   if (!load()) return false;
   return u.SystemParametersInfoW(0x0014, 0, file, 0x01 | 0x02); // SPI_SETDESKWALLPAPER, save + tell everyone
+}
+
+/** Have Explorer draw the desktop again (after the app's wallpaper windows are gone, Windows' own shows). */
+function repaintDesktop() {
+  if (!load()) return false;
+  const progman = u.FindWindowW('Progman', null);
+  if (isNull(progman)) return false;
+  // RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME; the wallpaper itself is left as the user set it
+  u.RedrawWindow(progman, null, 0, 0x585);
+  for (let h = u.FindWindowExW(0, 0, 'WorkerW', null), i = 0; !isNull(h) && i < 20; h = u.FindWindowExW(0, h, 'WorkerW', null), i++) u.RedrawWindow(h, null, 0, 0x585);
+  return true;
 }
 
 // ---------- taskbar ----------
@@ -575,6 +587,7 @@ module.exports = {
   fullscreenAppRunning: safe('fullscreenAppRunning', fullscreenAppRunning, false),
   setDesktopIcons: safe('setDesktopIcons', setDesktopIcons, false),
   setWindowsWallpaper: safe('setWindowsWallpaper', setWindowsWallpaper, false),
+  repaintDesktop: safe('repaintDesktop', repaintDesktop, false),
   taskbarAutoHide: safe('taskbarAutoHide', taskbarAutoHide, false),
   setTaskbarAutoHide: safe('setTaskbarAutoHide', setTaskbarAutoHide, false),
   refreshTaskbar: safe('refreshTaskbar', refreshTaskbar),

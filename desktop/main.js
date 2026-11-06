@@ -42,8 +42,11 @@ const webPrefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation
 
 // ---------- wallpaper ----------
 function buildWallpapers() {
+  const had = wallpapers.size > 0;
   for (const w of wallpapers.values()) if (!w.isDestroyed()) { w.intentional = true; w.destroy(); }
   wallpapers.clear();
+  // "Windows" scene: no wallpaper windows at all; Windows draws its own background
+  if (store.get().wallpaper.scene === 'windows') { if (had && win32.isWin) setTimeout(() => win32.repaintDesktop(), 150); return; }
   for (const d of screen.getAllDisplays()) {
     const w = new BrowserWindow({
       ...d.bounds, frame: false, show: false, skipTaskbar: true, focusable: false, resizable: false, movable: false,
@@ -618,6 +621,7 @@ function setAutostart(on) {
 function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
+  if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
   if (patch.general?.hideSwitchLabel !== undefined) deskWorker?.postMessage({ hideLabel: next.general.hideSwitchLabel !== false });
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
@@ -805,6 +809,12 @@ function wireIpc() {
   ipcMain.handle('timer:get', () => timer);
   ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
   ipcMain.handle('switch:test', () => { switchApp(1, 'test'); return { ...hotkeyStatus, lastSwitch }; });
+  // the picture chosen for the app's wallpaper, as the Windows background too
+  ipcMain.handle('wallpaper:toWindows', () => {
+    const f = store.get().wallpaper.file;
+    if (!win32.isWin || !f || !/\.(jpe?g|png|bmp)$/i.test(f) || !fs.existsSync(f)) return false;
+    return win32.setWindowsWallpaper(f);
+  });
   ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch, autoAccent: win32.isWin && win32.autoAccent(), worker: deskWorkerReady }));
   ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
   // click a desktop dot: step there with Win+Ctrl+Left/Right (Windows' own switch, with its slide animation)

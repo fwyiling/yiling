@@ -68,14 +68,15 @@ document.querySelectorAll('[data-k]').forEach((el) => {
 const GLYPHS = {
   image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>',
   video: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2.5"/><path d="M17 10l4-2.5v9L17 14"/></svg>',
+  windows: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1"/><rect x="13" y="13" width="7.5" height="7.5" rx="1"/></svg>',
   web: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></svg>',
 };
 const minis = [];
-const sceneEls = [...Object.keys(SCENE_NAMES), 'image', 'video', 'web'].map((key) => {
+const sceneEls = [...Object.keys(SCENE_NAMES), 'image', 'video', 'web', 'windows'].map((key) => {
   const b = document.createElement('button'); b.className = 'scene'; b.dataset.scene = key;
   if (SCENE_NAMES[key]) { const c = document.createElement('canvas'); b.append(c); minis.push([key, c]); }
   else b.insertAdjacentHTML('beforeend', `<div class="glyph">${GLYPHS[key]}</div>`);
-  b.insertAdjacentHTML('beforeend', `<span>${SCENE_NAMES[key] || { image: 'Image', video: 'Video', web: 'Web page' }[key]}</span>`);
+  b.insertAdjacentHTML('beforeend', `<span>${SCENE_NAMES[key] || { image: 'Image', video: 'Video', web: 'Web page', windows: 'Windows' }[key]}</span>`);
   b.onclick = () => save({ wallpaper: { scene: key } });
   $('scenes').append(b);
   return b;
@@ -217,6 +218,9 @@ function paint() {
   sceneEls.forEach((b) => b.classList.toggle('on', b.dataset.scene === w.scene));
   $('fileRow').hidden = !['image', 'video'].includes(w.scene);
   $('urlRow').hidden = w.scene !== 'web';
+  $('winRow').hidden = w.scene !== 'windows';
+  $('appWpOnly').hidden = w.scene === 'windows'; // colours and motion are for the app's own wallpapers
+  $('winUse').hidden = !/\.(jpe?g|png|bmp)$/i.test(w.file || '');
   $('pick').textContent = w.scene === 'video' ? 'Choose a video…' : 'Choose an image…';
   $('fileName').textContent = w.file ? w.file.split(/[\\/]/).pop() : 'No file chosen';
   if (document.activeElement !== $('url')) $('url').value = w.url || '';
@@ -240,3 +244,7 @@ function paint() {
   if (tb.supported !== undefined) paintTaskbar();
 }
 paint();
+
+// "Windows" scene: Windows' own background, changed in Windows' Settings
+$('winBg').onclick = (e) => { e.preventDefault(); sd.windowsSettings('background'); };
+$('winUse').onclick = async (e) => { e.preventDefault(); $('winUse').textContent = (await sd.wallpaperToWindows()) ? 'Done ✓' : 'Couldn’t set it'; setTimeout(() => { $('winUse').textContent = 'Use my picture for Windows'; }, 2500); };

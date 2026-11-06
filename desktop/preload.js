@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('sd', {
   onSettings: on('settings'),
   onPause: on('pause'),
   onDeskSlide: on('desk-slide'),
+  wallpaperToWindows: () => ipcRenderer.invoke('wallpaper:toWindows'),
   onSwitching: on('switching'),
   onCursor: on('cursor'),
   onHomeShown: on('home-shown'),
