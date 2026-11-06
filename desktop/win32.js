@@ -47,6 +47,7 @@ function bind() {
     SendMessageTimeoutStr: user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'str16', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]),
     SystemParametersInfoW: user32.func('bool __stdcall SystemParametersInfoW(uint action, uint param, str16 value, uint flags)'),
     RedrawWindow: user32.func('bool __stdcall RedrawWindow(intptr_t hwnd, void *rect, intptr_t rgn, uint flags)'),
+    AllowSetForegroundWindow: user32.func('bool __stdcall AllowSetForegroundWindow(uint32 pid)'),
     IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hwnd)'),
     IsIconic: user32.func('bool __stdcall IsIconic(intptr_t hwnd)'),
     GetWindow: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint cmd)'),
@@ -96,6 +97,16 @@ function bind() {
   const SYSTEM_POWER_STATUS = koffi.struct('SYSTEM_POWER_STATUS', { ACLineStatus: 'uint8', BatteryFlag: 'uint8', BatteryLifePercent: 'uint8', SystemStatusFlag: 'uint8', BatteryLifeTime: 'uint32', BatteryFullLifeTime: 'uint32' });
   u.SYSTEM_POWER_STATUS = SYSTEM_POWER_STATUS;
   u.GetSystemPowerStatus = u.kernel32.func('bool __stdcall GetSystemPowerStatus(_Out_ SYSTEM_POWER_STATUS *status)');
+  // a window being dragged (Windows' move loop) and where the pointer is: for dragging a window onto the next desktop
+  koffi.struct('POINT', { x: 'long', y: 'long' });
+  u.GUITHREADINFO = koffi.struct('GUITHREADINFO', { cbSize: 'uint32', flags: 'uint32', hwndActive: 'intptr_t', hwndFocus: 'intptr_t', hwndCapture: 'intptr_t',
+    hwndMenuOwner: 'intptr_t', hwndMoveSize: 'intptr_t', hwndCaret: 'intptr_t', rcCaret: RECT });
+  u.GetGUIThreadInfo = user32.func('bool __stdcall GetGUIThreadInfo(uint32 thread, _Inout_ GUITHREADINFO *info)');
+  u.GetCursorPos = user32.func('bool __stdcall GetCursorPos(_Out_ POINT *pt)');
+  // blur behind a window (frosted glass): the accent policy Windows' own taskbar uses; works on frameless, transparent windows
+  u.ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { AccentState: 'int32', AccentFlags: 'int32', GradientColor: 'uint32', AnimationId: 'int32' });
+  koffi.struct('WINCOMPATTRDATA', { Attrib: 'int32', pvData: 'void *', cbData: 'size_t' });
+  u.SetWindowCompositionAttribute = user32.func('bool __stdcall SetWindowCompositionAttribute(intptr_t hwnd, WINCOMPATTRDATA *data)');
   const APPBARDATA = koffi.struct('APPBARDATA', { cbSize: 'uint32', hWnd: 'intptr_t', uCallbackMessage: 'uint32', uEdge: 'uint32', rc: RECT, lParam: 'intptr_t' });
   Object.assign(u, {
     APPBARDATA,
@@ -264,6 +275,29 @@ function setDesktopIcons(show) {
 function setWindowsWallpaper(file) {
   if (!load()) return false;
   return u.SystemParametersInfoW(0x0014, 0, file, 0x01 | 0x02); // SPI_SETDESKWALLPAPER, save + tell everyone
+}
+
+/** The window being dragged by its title bar right now (not resized), with the pointer and the whole screen area; else null. */
+function dragState() {
+  if (!load()) return null;
+  const gi = { cbSize: u.koffi.sizeof(u.GUITHREADINFO), flags: 0, hwndActive: 0, hwndFocus: 0, hwndCapture: 0, hwndMenuOwner: 0, hwndMoveSize: 0, hwndCaret: 0, rcCaret: { left: 0, top: 0, right: 0, bottom: 0 } };
+  if (!u.GetGUIThreadInfo(0, gi) || !(gi.flags & 0x2) || isNull(gi.hwndMoveSize)) return null; // the thread in front is in its move/size loop (GUI_INMOVESIZE)
+  const pt = {}, r = {};
+  if (!u.GetCursorPos(pt) || !u.GetWindowRect(gi.hwndMoveSize, r)) return null;
+  // a resize has the pointer on the window's left / right border; a move holds it inside, by the title bar
+  if (pt.x - r.left < 12 || r.right - pt.x < 12) return null;
+  return { hwnd: Number(gi.hwndMoveSize), x: pt.x, y: pt.y,
+    screen: { left: u.GetSystemMetrics(76), top: u.GetSystemMetrics(77), width: u.GetSystemMetrics(78), height: u.GetSystemMetrics(79) } }; // the virtual screen (all monitors)
+}
+
+/** Frosted glass behind a window (true), or nothing (false). */
+function setBlur(win, on) {
+  if (!load()) return false;
+  const ptr = u.koffi.alloc(u.ACCENT_POLICY, 1);
+  try {
+    u.koffi.encode(ptr, u.ACCENT_POLICY, { AccentState: on ? 3 : 0, AccentFlags: 0, GradientColor: 0, AnimationId: 0 }); // ACCENT_ENABLE_BLURBEHIND / DISABLED
+    return !!u.SetWindowCompositionAttribute(hwndOf(win), { Attrib: 19, pvData: ptr, cbData: 16 }); // WCA_ACCENT_POLICY
+  } finally { u.koffi.free(ptr); }
 }
 
 /** Have Explorer draw the desktop again (after the app's wallpaper windows are gone, Windows' own shows). */
@@ -591,6 +625,10 @@ module.exports = {
   setDesktopIcons: safe('setDesktopIcons', setDesktopIcons, false),
   setWindowsWallpaper: safe('setWindowsWallpaper', setWindowsWallpaper, false),
   repaintDesktop: safe('repaintDesktop', repaintDesktop, false),
+  setBlur: safe('setBlur', setBlur, false),
+  dragState: safe('dragState', dragState, null),
+  // the program we're about to start (or an already-running one it hands over to, like Claude) may come to the front
+  allowForeground: safe('allowForeground', () => !!(load() && u.AllowSetForegroundWindow(0xFFFFFFFF)), false), // ASFW_ANY
   taskbarAutoHide: safe('taskbarAutoHide', taskbarAutoHide, false),
   setTaskbarAutoHide: safe('setTaskbarAutoHide', setTaskbarAutoHide, false),
   refreshTaskbar: safe('refreshTaskbar', refreshTaskbar),

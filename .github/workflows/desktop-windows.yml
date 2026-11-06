@@ -32,6 +32,8 @@ jobs:
         run: node test/apps.smoke.js
       - name: System controls helper works (volume, brightness, radios)
         run: node test/sysctl.smoke.js
+      - name: Virtual-desktop helper works (drag a window onto the next desktop)
+        run: node test/vdesk.smoke.js
       - name: Now-playing reader works
         run: node test/media.smoke.js
       - name: Song title, cover and play/pause with a real media session

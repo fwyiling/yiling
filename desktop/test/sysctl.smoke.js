@@ -7,7 +7,9 @@ sysctl.onChange((st) => {
   clearTimeout(t);
   console.log('system state:', JSON.stringify(st));
   sysctl.stop();
-  console.log(typeof st.volume === 'number' ? 'PASS: the system-controls helper works' : 'FAIL: no volume field');
-  process.exit(typeof st.volume === 'number' ? 0 : 1);
+  // the sound outputs (headphones notes) come from the same helper's Core Audio code
+  const ok = typeof st.volume === 'number' && Array.isArray(st.outputs);
+  console.log(ok ? `PASS: the system-controls helper works (${st.outputs.length} sound output(s))` : `FAIL: ${typeof st.volume !== 'number' ? 'no volume field' : 'no outputs list'}`);
+  process.exit(ok ? 0 : 1);
 });
 sysctl.start();

@@ -1,6 +1,11 @@
 // Home panel (Alt+Space): search apps and the web, pinned apps, to-dos, notes, system stats.
 import { greeting, fmtTime, fmtDate, applyAccent, esc, DAYS, weekday, nextClass, byTime } from './common.js';
 const why = (e) => String(e?.message || e || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/^TypeError: fetch failed$|net::ERR_[A-Z_]+/, "can't reach the internet right now");
+// open an app or file; if Windows can't, Home stays open and says why (it used to fail silently)
+async function openItem(p) {
+  try { await sd.launch(p); }
+  catch (e) { const h = document.getElementById('hint'); if (h) h.textContent = `Couldn't open ${String(p).split(/[\\/]/).pop()}: ${why(e) || 'Windows refused'}`; }
+}
 
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -48,7 +53,7 @@ function appTile(a) {
   const pin = Object.assign(document.createElement('button'), { className: 'pin', textContent: isPinned(a) ? '✕' : '＋', title: isPinned(a) ? 'Unpin' : 'Pin' });
   pin.onclick = (e) => { e.stopPropagation(); togglePin(a); };
   b.append(pin);
-  b.onclick = () => sd.launch(a.path);
+  b.onclick = () => openItem(a.path);
   b.oncontextmenu = (e) => { e.preventDefault(); tileMenu(a, e.clientX, e.clientY); };
   return b;
 }
@@ -146,8 +151,8 @@ function renderResults() {
   if (fileQ !== q) searchFilesSoon(q);
   const raw = $('q').value.trim();
   const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw) && !raw.includes(' ');
-  rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => sd.launch(a.path) })),
-    ...files.map((f) => ({ label: f.name, hint: (f.folder ? 'Folder · ' : '') + f.path.replace(/[\\/][^\\/]+$/, ''), app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => sd.launch(f.path) })),
+  rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => openItem(a.path) })),
+    ...files.map((f) => ({ label: f.name, hint: (f.folder ? 'Folder · ' : '') + f.path.replace(/[\\/][^\\/]+$/, ''), app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => openItem(f.path) })),
     isUrl ? { label: raw, hint: 'Open site', run: () => sd.open(/^https?:/i.test(raw) ? raw : `https://${raw}`) } : null,
     { label: `Search the web for “${raw}”`, hint: (s.home.engine || 'google').replace(/^./, (c) => c.toUpperCase()), run: () => sd.open((ENGINES[s.home.engine] || ENGINES.google) + encodeURIComponent(raw)) }].filter(Boolean);
   sel = Math.min(sel, rows.length - 1);
@@ -293,8 +298,8 @@ function renderFiles(list) {
     li.querySelector('b').textContent = f.name;
     li.querySelector('.ft .muted').textContent = f.path.replace(/[\\/][^\\/]+$/, '');
     li.querySelector('.when').textContent = f.time ? ago(f.time) : (f.folder ? 'Folder' : '');
-    li.onclick = () => sd.launch(f.path);
-    li.oncontextmenu = (e) => { e.preventDefault(); resultMenu({ app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => sd.launch(f.path) }, e.clientX, e.clientY); };
+    li.onclick = () => openItem(f.path);
+    li.oncontextmenu = (e) => { e.preventDefault(); resultMenu({ app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => openItem(f.path) }, e.clientX, e.clientY); };
     return li;
   }));
   if (!shown.length) $('fileList').innerHTML = `<li class="empty">${$('fileQ').value ? 'Nothing found.' : 'No recent files of this kind yet. Open a file and it shows up here.'}</li>`;

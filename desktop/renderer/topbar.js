@@ -7,7 +7,8 @@ let s = await sd.get();
 function look() {
   applyAccent(s.accent);
   const t = s.topbar || {};
-  document.documentElement.style.setProperty('--op', t.opacity ?? 0.78);
+  // solid, or glass: a light tint over the desktop, blurred behind by Windows (the main process turns the blur on)
+  document.documentElement.style.setProperty('--op', t.look === 'glass' ? 0.42 : (t.opacity ?? 0.96));
   $('weather').hidden = !t.weather; $('battery').hidden = !t.battery || !hasBattery;
   renderMedia();
 }
@@ -30,7 +31,9 @@ function tick() {
   const d = new Date();
   $('clock').textContent = `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}  ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
-tick(); setInterval(tick, 1000 * 10);
+// on the minute, like Windows' own clock (it used to check every 10 s, so the minute could turn up to 10 s late)
+(function everyMinute() { tick(); setTimeout(everyMinute, 60000 - (Date.now() % 60000) + 30); })();
+document.addEventListener('visibilitychange', tick); // and straight away when the bar shows again (after sleep, gamer mode)
 
 // now playing
 let np = { on: false };

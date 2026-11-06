@@ -9,6 +9,7 @@ const win32 = require('./win32');
 const media = require('./media');
 const sysctl = require('./sysctl');
 const netpower = require('./netpower');
+const vdesk = require('./vdesk');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
@@ -366,7 +367,20 @@ function onDeskSwitch(from, to, count) {
   if (dockWin) for (const ms of [450, 1700]) setTimeout(() => { if (!gamer && !overlayNow()) win32.showTaskbar(false); }, ms); // after the slide, and once more after the empty-desktop grace
 }
 function deskWatchSettings() {
-  return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: store.get().general.hideSwitchLabel !== false };
+  const g = store.get().general;
+  return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported() };
+}
+// a window held against the left / right edge while being dragged: it goes onto the desktop next door, and so do you
+// (Windows' own slide, Win+Ctrl+arrow; straight there if those keys don't get through mid-drag)
+let lastEdgeMove = null;
+async function edgeMove(hwnd, dir) {
+  if (gamer || store.get().general.edgeSwitch === false) return;
+  const before = win32.virtualDesktops().current;
+  const ok = await vdesk.move(hwnd, dir > 0);
+  lastEdgeMove = { at: new Date().toISOString(), dir, ok };
+  if (!ok) return; // no desktop on that side (or Windows refused)
+  win32.pressKeys([0x5B, 0x11, dir > 0 ? 0x27 : 0x25]);
+  setTimeout(() => { if (win32.virtualDesktops().current === before) vdesk.switchTo(dir > 0); }, 450);
 }
 function startDeskWatch() {
   if (!win32.isWin) return;
@@ -377,6 +391,7 @@ function startDeskWatch() {
       if (m.type === 'ready') deskWorkerReady = true;
       else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count);
       else if (m.type === 'label') lastSwitchLabel = m.found;
+      else if (m.type === 'edge') edgeMove(m.hwnd, m.dir);
       else if (m.type === 'fail') { console.warn('[deskwatch]', m.error); deskWorker?.terminate(); }
     });
     deskWorker.on('error', (e) => console.warn('[deskwatch]', e.message));
@@ -435,6 +450,10 @@ function placeTopbar() {
     win32.placeWindow(topWin, phys); // and the bar itself stays ON the reserved strip (it used to be pushed below it)
   }
 }
+// glass: Windows blurs the desktop behind the bar (the page draws only a light tint); solid: no blur at all
+function applyTopbarLook() {
+  if (win32.isWin && topWin && !topWin.isDestroyed()) win32.setBlur(topWin, store.get().topbar.look === 'glass');
+}
 // Windows may push the bar into the work area when the screen or taskbar changes; put it back
 function keepTopbarAtTop() {
   if (!win32.isWin || !topWin || topWin.isDestroyed()) return;
@@ -460,7 +479,7 @@ function setTopbar(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Top Bar', webPreferences: webPrefs });
     topWin.setAlwaysOnTop(true, 'pop-up-menu');
     topWin.loadURL(ui('topbar.html'));
-    topWin.once('ready-to-show', () => { win32.makeToolWindow(topWin); placeTopbar(); topWin.showInactive(); topApp = ''; topbarTick(); });
+    topWin.once('ready-to-show', () => { win32.makeToolWindow(topWin); applyTopbarLook(); placeTopbar(); topWin.showInactive(); topApp = ''; topbarTick(); });
     topWin.on('closed', () => { topWin = null; });
     clearInterval(topTimer); topTimer = setInterval(topbarTick, 1000);
   } else if (!on && topWin) {
@@ -525,6 +544,21 @@ async function setLowPower(on) {
   }
   lowPower = store.get().general.lowPower;
   checkPause();
+}
+
+// headphones / speakers coming and going, straight from Windows' list of sound outputs (checked twice a second);
+// the island's own check (Chromium's devicechange) arrived seconds late
+const GENERIC_OUT = /^(headphones?|headset|earphones?|speakers?|耳机|头戴式耳机|耳麦|扬声器)$/i;
+function outputName(n) {
+  const m = /^(.*?)\s*\((.+)\)\s*$/.exec(String(n || ''));
+  if (!m) return String(n || 'Audio device');
+  return GENERIC_OUT.test(m[1].trim()) && !/realtek|high definition|intel|amd|nvidia|smart sound/i.test(m[2]) ? m[2].trim() : m[1].trim(); // "Headphones (AirPods Pro)" -> AirPods Pro
+}
+function outputsChanged(st, prev) {
+  if (!Array.isArray(st?.outputs) || !Array.isArray(prev?.outputs)) return;
+  const was = new Map(prev.outputs.map((o) => [o.id, o.name])), now = new Map(st.outputs.map((o) => [o.id, o.name]));
+  for (const [id, name] of now) if (!was.has(id)) return osd({ kind: 'device', name: outputName(name), connected: true });
+  for (const [id, name] of was) if (!now.has(id)) return osd({ kind: 'device', name: outputName(name), connected: false });
 }
 
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
@@ -622,11 +656,15 @@ function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
   if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
-  if (patch.general?.hideSwitchLabel !== undefined) deskWorker?.postMessage({ hideLabel: next.general.hideSwitchLabel !== false });
+  if (patch.general?.hideSwitchLabel !== undefined || patch.general?.edgeSwitch !== undefined) {
+    if (next.general.edgeSwitch !== false) vdesk.start();
+    deskWorker?.postMessage(deskWatchSettings());
+  }
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
+  if (patch.topbar?.look !== undefined) applyTopbarLook();
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
@@ -642,7 +680,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -758,7 +796,17 @@ function wireIpc() {
     return iconFor(p, 'large');
   });
   // only launch things that came from the Start menu or that you pinned yourself
-  ipcMain.handle('launch', (_e, p) => { if (!isKnownApp(p)) throw new Error('unknown app'); toggleHome(false); return launchApp(p); });
+  // Home stays in front until the program has been started: Windows only lets a program take the front if the one
+  // starting it is in front. Hiding Home first left new windows behind, and apps already running (Claude…) only
+  // flashed in the taskbar or stayed on another desktop. If opening fails, Home stays open and says why.
+  ipcMain.handle('launch', async (_e, p) => {
+    if (!isKnownApp(p)) throw new Error('unknown app');
+    win32.allowForeground();
+    await launchApp(p);
+    setTimeout(() => toggleHome(false), 150);
+    bringForward(p);
+    return '';
+  });
   ipcMain.handle('open', (_e, url) => { if (!httpOnly(url)) throw new Error('only web links'); toggleHome(false); return shell.openExternal(url); });
   ipcMain.handle('pick-file', async (e, kind) => {
     const filters = kind === 'video' ? [{ name: 'Videos', extensions: ['mp4', 'webm', 'mkv', 'mov'] }]
@@ -924,6 +972,34 @@ async function launchApp(p) {
   return '';
 }
 
+// The exe a launch ends up in, to bring its window forward if Windows kept it back (single-instance apps hand the
+// request to the copy already running, which Windows often won't let come to the front by itself).
+function launchTarget(p) {
+  const store = /\\WindowsApps\\([^_\\]+)_/i.exec(p);
+  if (store) return (exe) => new RegExp(`\\\\WindowsApps\\\\${store[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_`, 'i').test(exe);
+  if (p.startsWith('shell:AppsFolder\\')) {
+    const fam = p.slice(17).split('_')[0];
+    return fam ? (exe) => exe.toLowerCase().includes(`\\windowsapps\\${fam.toLowerCase()}_`) : null;
+  }
+  let target = p, args = '';
+  if (/\.lnk$/i.test(p)) { try { const l = shell.readShortcutLink(p); target = l.target || ''; args = l.args || ''; } catch { return null; } }
+  // Squirrel-installed apps (Claude, Discord, Slack…) start through Update.exe --processStart "app.exe"
+  const ps = /--processStart\s+"?([^"\s]+\.exe)/i.exec(args);
+  const name = (ps ? ps[1] : /\.exe$/i.test(target) ? path.basename(target) : '').toLowerCase();
+  return name ? (exe) => path.basename(exe).toLowerCase() === name : null;
+}
+function bringForward(p) {
+  if (!win32.isWin) return;
+  const match = launchTarget(p);
+  if (!match) return; // a document: its program opens it, allowed to come forward above
+  let tries = 0;
+  const t = setInterval(() => {
+    const list = win32.listWindows(ownPids()).filter((w) => match(w.exe || ''));
+    if (list.some((w) => w.active) || ++tries > 10) { clearInterval(t); return; } // it came forward by itself (or gave up after 3 s)
+    if (tries >= 3 && list.length) { win32.focusWindow(list[0].hwnd, false); clearInterval(t); } // still behind after ~1 s: bring it
+  }, 300);
+}
+
 // ---------- start ----------
 app.whenReady().then(() => {
   const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
@@ -962,7 +1038,7 @@ app.whenReady().then(() => {
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
   // system controls: the control centre shows them, the island pops up when volume / brightness change
-  sysctl.onChange((st) => broadcast('sys', st)); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)
+  sysctl.onChange((st, prev) => { broadcast('sys', st); outputsChanged(st, prev); }); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)
   sysctl.start();
   // Caps Lock: a little pop-up in the island when it changes
   let caps = win32.capsLock();
@@ -975,6 +1051,7 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
   startDeskWatch();
+  if (store.get().general.edgeSwitch !== false) vdesk.start(); // ready before the first drag (it takes a moment to start)
   setInterval(watchDesktops, 100); // only while the worker isn't running
   setInterval(() => { if (!quiet()) checkPause(); }, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive() && !win32.foregroundNull(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
@@ -1007,6 +1084,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   deskWorker?.terminate();
+  vdesk.stop();
   if (win32.isWin && store?.get().dock.on) win32.showTaskbar(true); // last word: the taskbar is visible when we're gone
 });
 app.on('window-all-closed', () => {}); // keep running in the tray

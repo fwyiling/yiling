@@ -136,10 +136,12 @@ function showOsd(info) {
 sd.onOsd(showOsd);
 // headphones / speakers coming and going (Bluetooth, USB, jack)
 let outputs = null;
+let coreAudio = false; // the app watches Windows' sound outputs itself (faster); this check is only the fallback
+sd.onSys?.((st) => { if (Array.isArray(st?.outputs)) coreAudio = true; });
 async function scanOutputs(announce) {
   const list = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'audiooutput' && !['default', 'communications'].includes(d.deviceId));
   const now = new Map(list.map((d) => [d.deviceId, d.label]));
-  if (announce && outputs) {
+  if (announce && outputs && !coreAudio) {
     for (const [id, label] of now) if (!outputs.has(id)) { showOsd({ kind: 'device', name: label.replace(/\s*\(.*\)$/, ''), connected: true }); break; }
     for (const [id, label] of outputs) if (!now.has(id)) { showOsd({ kind: 'device', name: label.replace(/\s*\(.*\)$/, ''), connected: false }); break; }
   }
