@@ -423,21 +423,6 @@ function setTopbar(on) {
     topWin.destroy(); topWin = null;
   }
 }
-function topbarMenu(x, y) {
-  Menu.buildFromTemplate([
-    { label: `Open Home  (${store.get().home.hotkey})`, click: () => toggleHome(true) },
-    { label: 'Customize…  (Ctrl+Alt+S)', click: openSettings },
-    { type: 'separator' },
-    { label: 'Timer  (Ctrl+Alt+T)', click: openIslandTimer },
-    { label: 'Gamer mode  (Ctrl+Alt+G)', type: 'checkbox', checked: gamer, click: () => setGamer(!gamer) },
-    { label: 'New desktop  (Win+Ctrl+D)', click: () => win32.pressKeys([0x5B, 0x11, 0x44]) },
-    { label: 'Show desktop', click: () => win32.pressKeys([0x5B, 0x44]) },
-    { label: 'Windows Settings', click: () => shell.openExternal('ms-settings:') },
-    { label: 'Task Manager', click: () => win32.pressKeys([0x11, 0x10, 0x1B]) },
-    { type: 'separator' },
-    { label: 'Lock', click: () => win32.lock() },
-  ]).popup({ window: topWin, x, y });
-}
 
 // ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
 // After DynamicWin (Windows) and boring.notch (macOS): a transparent window at the top centre; only the pill takes clicks.
@@ -479,22 +464,26 @@ function openIslandTimer() {
 function osd(info) { if (islandWin && !islandWin.isDestroyed() && store.get().general.ownOsd !== false) islandWin.webContents.send('osd', info); }
 // ---------- low power mode (from the battery in the top bar) ----------
 // Best power efficiency, the lowest refresh rate, the wallpaper paused; everything goes back as it was when switched off.
+// Saved in settings (it survives restarts and can't drift from what the panel shows). It doesn't touch the
+// refresh rate: changing that blanks many screens for a moment (pick a rate yourself in the same panel).
 let lowPower = null;
 async function setLowPower(on) {
-  if (on && !lowPower) {
-    lowPower = { mode: await netpower.powerMode(), hz: win32.refreshRates().current };
+  const cur = store.get().general.lowPower || null;
+  if (on && !cur) {
+    const prevMode = await netpower.powerMode();
     await netpower.setPowerMode('efficiency');
-    const r = win32.refreshRates(); if (r.rates.length && r.rates[0] < r.current) win32.setRefreshRate(r.rates[0]);
-  } else if (!on && lowPower) {
-    const prev = lowPower; lowPower = null;
-    await netpower.setPowerMode(prev.mode || 'balanced');
-    if (prev.hz && win32.refreshRates().current !== prev.hz) win32.setRefreshRate(prev.hz);
+    store.set({ general: { lowPower: { prevMode } } });
+  } else if (!on && cur) {
+    store.set({ general: { lowPower: null } });
+    await netpower.setPowerMode(cur.prevMode && cur.prevMode !== 'efficiency' ? cur.prevMode : 'balanced');
   }
+  lowPower = store.get().general.lowPower;
   checkPause();
 }
 
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
+let flyHiddenAt = 0, flyShownAt = 0;
 const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 380 }, calendar: { w: 360, h: 600 } };
 function openFlyout(panel, anchorX) {
   if (!FLY[panel]) return;
@@ -503,18 +492,36 @@ function openFlyout(panel, anchorX) {
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel !== panel) flyWin.hide(); // one panel at a time, never two on top of each other
   const bounds = { x, y: d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel === panel) { flyWin.hide(); return; } // a second click closes it
+  // the click on the button already closed it (the panel lost focus a moment ago): don't open it again
+  if (flyWin && !flyWin.isDestroyed() && flyWin.panel === panel && Date.now() - flyHiddenAt < 350) return;
   if (!flyWin || flyWin.isDestroyed()) {
     flyWin = new BrowserWindow({ ...bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
       alwaysOnTop: true, backgroundColor: '#00000000', title: 'Syndicates Panel', webPreferences: webPrefs });
     flyWin.setAlwaysOnTop(true, 'pop-up-menu');
-    flyWin.on('blur', () => flyWin?.hide());
+    // the click that opened it can blur it a moment later (the top bar takes focus): only a real click away closes it
+    flyWin.on('blur', () => { if (Date.now() - flyShownAt < 300) return; flyWin?.hide(); flyHiddenAt = Date.now(); });
+    flyWin.once('ready-to-show', () => win32.makeToolWindow(flyWin));
     flyWin.loadURL(ui('flyout.html'));
     flyWin.panel = panel;
-    flyWin.once('ready-to-show', () => { win32.makeToolWindow(flyWin); flyWin.webContents.send('flyout', panel); flyWin.show(); flyWin.focus(); });
+    flyReveal(1500);
     return;
   }
   flyWin.panel = panel;
-  flyWin.setBounds(bounds); flyWin.webContents.send('flyout', panel); flyWin.show(); flyWin.focus();
+  flyWin.setBounds(bounds); flyWin.webContents.send('flyout', panel);
+  flyReveal(400);
+}
+// shown only once the page has drawn the asked-for panel, so the previous one never flashes first
+// (that flash, then the real panel, looked like it popped up twice)
+let flyPending = null;
+function flyReveal(fallbackMs) {
+  clearTimeout(flyPending);
+  flyPending = setTimeout(flyShow, fallbackMs);
+}
+function flyShow() {
+  if (!flyPending) return;
+  clearTimeout(flyPending); flyPending = null;
+  if (!flyWin || flyWin.isDestroyed()) return;
+  flyShownAt = Date.now(); flyWin.show(); flyWin.focus();
 }
 const FLY_ACTIONS = {
   home: () => toggleHome(true), customize: openSettings, timer: openIslandTimer, gamer: () => setGamer(!gamer),
@@ -720,7 +727,7 @@ function wireIpc() {
   ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerDesktops());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
-    const pages = { home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
+    const pages = { location: 'ms-settings:privacy-location', home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
     if (!pages[page]) throw new Error('unknown page');
     return shell.openExternal(pages[page]);
   });
@@ -756,7 +763,6 @@ function wireIpc() {
   ipcMain.handle('switch:test', () => { switchApp(1, 'test'); return { ...hotkeyStatus, lastSwitch }; });
   ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch }));
   ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
-  ipcMain.handle('topbar:menu', (e, x, y) => { if (topWin && e.sender === topWin.webContents) topbarMenu(x, y); });
   // click a desktop dot: step there with Win+Ctrl+Left/Right (Windows' own switch, with its slide animation)
   ipcMain.handle('topbar:desk', async (e, target) => {
     if (!topWin || e.sender !== topWin.webContents || !win32.isWin) return;
@@ -768,19 +774,27 @@ function wireIpc() {
   ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
   ipcMain.handle('flyout:action', (_e, what) => { flyWin?.hide(); if (FLY_ACTIONS[what]) setTimeout(FLY_ACTIONS[what], 60); });
   ipcMain.handle('flyout:state', () => ({ gamer, hotkey: store.get().home.hotkey }));
+  ipcMain.on('flyout:ready', flyShow);
   ipcMain.handle('flyout:panel', () => flyWin?.panel || 'menu'); // the page asks once it's ready (the first message can come too early)
   ipcMain.handle('sys:get', () => sysctl.get());
-  ipcMain.handle('net:wifi', () => netpower.wifiList());
+  ipcMain.handle('net:wifi', async (_e, scan) => { const list = await netpower.wifiList(!!scan); return { list, needsLocation: !!netpower.wifiList.needsLocation }; });
   ipcMain.handle('net:connect', (_e, ssid, password, secure) => netpower.wifiConnect(ssid, password, secure));
-  ipcMain.handle('power:get', async () => ({ battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!lowPower }));
+  ipcMain.handle('power:get', async () => {
+    const mode = await netpower.powerMode();
+    // power mode changed in Windows' own Settings while low power mode was on: the switch follows Windows
+    if (store.get().general.lowPower && mode && mode !== 'efficiency') { store.set({ general: { lowPower: null } }); lowPower = null; checkPause(); }
+    return { battery: win32.battery(), mode, display: win32.refreshRates(), low: !!store.get().general.lowPower };
+  });
   ipcMain.handle('power:set', async (_e, what, value) => {
-    if (what === 'mode') await netpower.setPowerMode(String(value));
+    if (what === 'mode') { // picking another mode ends low power mode, so the switch never disagrees with the mode
+      if (store.get().general.lowPower && value !== 'efficiency') { store.set({ general: { lowPower: null } }); lowPower = null; checkPause(); }
+      await netpower.setPowerMode(String(value));
+    }
     else if (what === 'hz') win32.setRefreshRate(Number(value));
     else if (what === 'low') await setLowPower(!!value);
-    return { battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!lowPower };
+    return { battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!store.get().general.lowPower };
   });
   ipcMain.handle('sys:set', (_e, what, value) => sysctl.set(what, value));
-  ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
@@ -898,7 +912,7 @@ app.whenReady().then(() => {
   sysctl.start();
   // Caps Lock: a little pop-up in the island when it changes
   let caps = win32.capsLock();
-  setInterval(() => { const c = win32.capsLock(); if (c !== caps) { caps = c; osd({ kind: 'caps', on: c }); } }, 200);
+  setInterval(() => { const c = win32.capsLock(); if (c !== caps) { caps = c; osd({ kind: 'caps', on: c }); } }, 300);
   media.start();
   buildWallpapers();
   screen.on('display-added', displaysChanged);
@@ -915,6 +929,7 @@ app.whenReady().then(() => {
   tray.on('click', () => openSettings()); // the tray icon is the obvious way in; Home has its own shortcut and dock button
   updateTray();
   if (store.get().general.hideDesktopIcons) win32.setDesktopIcons(false);
+  lowPower = store.get().general.lowPower || null;
   if (store.get().topbar.on) setTopbar(true);
   if (store.get().island.on) setIsland(true);
   if (store.get().dock.on) setDock(true);

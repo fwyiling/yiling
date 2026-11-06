@@ -73,12 +73,26 @@ sd.onMedia((m) => { np = m; renderMedia(); });
 const bars = (sig) => { const n = sig >= 75 ? 3 : sig >= 45 ? 2 : sig >= 20 ? 1 : 0; return `<svg viewBox="0 0 24 24">${['M2.5 9.5a14 14 0 0 1 19 0', 'M5.8 13a9 9 0 0 1 12.4 0', 'M9.2 16.4a4 4 0 0 1 5.6 0'].map((d, i) => `<path d="${d}" opacity="${3 - i <= n ? 1 : .3}"/>`).join('')}<circle cx="12" cy="19.6" r=".9"/></svg>`; };
 const LOCK = '<svg viewBox="0 0 24 24" class="lock"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 let openNet = '';
+let wifiSeq = 0;
 async function renderWifi(rescan = true) {
   $('wifiOn').checked = !!sys?.wifi?.on;
-  if (!sys?.wifi?.on && sys) { $('nets').innerHTML = '<li class="empty">Wi-Fi is off.</li>'; $('wifiNote').textContent = ''; return; }
-  if (rescan) $('wifiNote').textContent = 'Looking for networks…';
-  const list = await sd.wifiList().catch(() => []);
-  $('wifiNote').textContent = list.length ? `${list.length} networks` : '';
+  if (sys && !sys.wifi?.on) { $('nets').innerHTML = '<li class="empty">Wi-Fi is off.</li>'; $('wifiNote').textContent = ''; return; }
+  const seq = ++wifiSeq;
+  if (rescan) { // what Windows knows right away, then again after a fresh scan
+    $('wifiNote').textContent = 'Scanning…';
+    drawNets(await sd.wifiList(false).catch(() => ({ list: [] })));
+    const r = await sd.wifiList(true).catch(() => ({ list: [] }));
+    if (seq === wifiSeq) drawNets(r, true);
+  } else drawNets(await sd.wifiList(false).catch(() => ({ list: [] })), true);
+}
+function drawNets(r, done) {
+  const list = r.list || [];
+  $('wifiNote').textContent = done ? (list.length ? `${list.length} network${list.length > 1 ? 's' : ''}` : '') : 'Scanning…';
+  if (r.needsLocation && list.length <= 1) { // Windows 11 hides nearby networks from apps without location access
+    $('nets').innerHTML = '<li class="empty">Windows only lists nearby networks to apps when <b>Location</b> is on for desktop apps.<br><button class="link" id="locBtn">Open location settings</button></li>';
+    $('locBtn').onclick = () => { sd.windowsSettings('location'); sd.flyoutAction('close'); };
+    return;
+  }
   $('nets').replaceChildren(...list.map((n) => {
     const li = document.createElement('li'); if (n.connected) li.className = 'on';
     li.innerHTML = `<button class="n">${bars(n.signal)}<span></span>${n.secure ? LOCK : ''}${n.connected ? '<small>Connected</small>' : ''}</button>`;
@@ -86,13 +100,13 @@ async function renderWifi(rescan = true) {
     const go = async (password) => {
       li.querySelector('.msg')?.remove();
       $('wifiNote').textContent = `Connecting to ${n.ssid}…`;
-      const r = await sd.wifiConnect(n.ssid, password, n.secure).catch((e) => ({ ok: false, error: String(e) }));
-      if (r.needPassword) { openNet = n.ssid; renderWifi(false); return; }
-      $('wifiNote').textContent = r.ok ? `Connected to ${n.ssid}` : '';
-      if (!r.ok) li.insertAdjacentHTML('beforeend', `<div class="msg"></div>`), li.querySelector('.msg').textContent = r.error || 'couldn’t connect';
+      const res = await sd.wifiConnect(n.ssid, password, n.secure).catch((e) => ({ ok: false, error: String(e) }));
+      if (res.needPassword) { openNet = n.ssid; renderWifi(false); return; }
+      $('wifiNote').textContent = res.ok ? `Connected to ${n.ssid}` : '';
+      if (!res.ok) { li.insertAdjacentHTML('beforeend', '<div class="msg"></div>'); li.querySelector('.msg').textContent = res.error || 'couldn’t connect'; }
       else { openNet = ''; renderWifi(false); }
     };
-    li.querySelector('.n').onclick = () => { if (n.connected) return; if (n.secure && !n.known) { openNet = openNet === n.ssid ? '' : n.ssid; renderWifi(false); } else go(); };
+    li.querySelector('.n').onclick = () => { if (n.connected) return; if (n.secure && !n.known) { openNet = openNet === n.ssid ? '' : n.ssid; drawNets(r, done); } else go(); };
     if (openNet === n.ssid) { // a new protected network: its password, right here
       const f = document.createElement('form'); f.className = 'pw';
       f.innerHTML = '<input type="password" placeholder="Password" autocomplete="off"><button>Connect</button>';
@@ -101,7 +115,7 @@ async function renderWifi(rescan = true) {
     }
     return li;
   }));
-  if (!list.length) $('nets').innerHTML = '<li class="empty">No networks found.</li>';
+  if (!list.length) $('nets').innerHTML = `<li class="empty">${done ? 'No networks found.' : 'Scanning…'}</li>`;
 }
 $('wifiOn').onchange = () => { sd.setSys('wifi', $('wifiOn').checked); setTimeout(() => renderWifi(), 2500); };
 $('wifiRefresh').onclick = () => renderWifi();
@@ -116,6 +130,7 @@ async function renderBatteryPanel(p) {
   $('batFill').style.width = `${b.present ? b.percent : 100}%`;
   document.querySelector('.bat').classList.toggle('charging', !!b.charging); document.querySelector('.bat').classList.toggle('low', b.present && b.percent <= 20 && !b.plugged);
   $('lowPower').checked = !!p.low;
+  $('lowPower').closest('.row-sw').querySelector('small').textContent = 'Best power efficiency and the wallpaper paused. Everything goes back when you switch it off.';
   $('powerMode').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.value === p.mode));
   const d = p.display || { rates: [] };
   $('hzGrp').hidden = (d.rates || []).length < 2;
@@ -173,7 +188,10 @@ $('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('cl
 
 // ---------- which panel ----------
 const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar'];
+let lastPanel = '', lastShown = 0;
 function showPanel(panel) {
+  if (panel === lastPanel && Date.now() - lastShown < 300) return; // the same request twice (message + ask): draw once
+  lastPanel = panel; lastShown = Date.now();
   for (const p of PANELS) $(p).hidden = p !== panel;
   if (panel === 'menu') renderMenu();
   else if (panel === 'control') { renderSys(); renderMedia(); renderBattery(); }
@@ -181,6 +199,8 @@ function showPanel(panel) {
   else if (panel === 'battery') renderBatteryPanel();
   else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
 }
-sd.onFlyout(showPanel);
-sd.flyoutPanel().then(showPanel);
+// drawn: the window may appear (straight away; a hidden window gets no animation frames to wait for)
+const drawAndReady = (p) => { showPanel(p); setTimeout(() => sd.flyoutReady(), 0); };
+sd.onFlyout(drawAndReady);
+sd.flyoutPanel().then(drawAndReady);
 addEventListener('keydown', (e) => { if (e.key === 'Escape') sd.flyoutAction('close'); });

@@ -82,6 +82,15 @@ function bind() {
     GetDIBits: gdi32.func('int __stdcall GetDIBits(intptr_t hdc, intptr_t bmp, uint start, uint lines, _Out_ uint8_t *bits, _Inout_ BITMAPINFOHEADER *info, uint usage)'),
   });
   const advapi32 = koffi.load('advapi32.dll');
+  // Wi-Fi: ask the adapter for a fresh scan (netsh only shows the last scan's results)
+  try {
+    const wlan = koffi.load('wlanapi.dll');
+    u.WlanOpenHandle = wlan.func('uint32 __stdcall WlanOpenHandle(uint32 version, void *reserved, _Out_ uint32_t *negotiated, _Out_ intptr_t *handle)');
+    u.WlanEnumInterfaces = wlan.func('uint32 __stdcall WlanEnumInterfaces(intptr_t handle, void *reserved, _Out_ void **list)');
+    u.WlanScan = wlan.func('uint32 __stdcall WlanScan(intptr_t handle, uint8_t *guid, void *ssid, void *ie, void *reserved)');
+    u.WlanFreeMemory = wlan.func('void __stdcall WlanFreeMemory(void *mem)');
+    u.WlanCloseHandle = wlan.func('uint32 __stdcall WlanCloseHandle(intptr_t handle, void *reserved)');
+  } catch { /* no Wi-Fi service on this PC (desktops without Wi-Fi) */ }
   u.RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t hkey, str16 sub, str16 value, uint32 flags, void *type, _Out_ uint8_t *data, _Inout_ uint32_t *size)');
   const SYSTEM_POWER_STATUS = koffi.struct('SYSTEM_POWER_STATUS', { ACLineStatus: 'uint8', BatteryFlag: 'uint8', BatteryLifePercent: 'uint8', SystemStatusFlag: 'uint8', BatteryLifeTime: 'uint32', BatteryFullLifeTime: 'uint32' });
   u.SYSTEM_POWER_STATUS = SYSTEM_POWER_STATUS;
@@ -409,6 +418,7 @@ function hideSwitchLabel(screenRect) {
 
 // DEVMODEW offsets: dmSize 68, dmFields 72, dmBitsPerPel 168, dmPelsWidth 172, dmPelsHeight 176, dmDisplayFrequency 184
 const DEVMODE_SIZE = 220;
+let rateCache = { key: '', rates: [] };
 function devmode() { const b = Buffer.alloc(DEVMODE_SIZE); b.writeUInt16LE(DEVMODE_SIZE, 68); return b; }
 /** The main screen's refresh rate now, and the rates it supports at its current resolution. */
 function refreshRates() {
@@ -416,12 +426,29 @@ function refreshRates() {
   const cur = devmode();
   if (!u.EnumDisplaySettingsW(null, 0xFFFFFFFF, cur)) return { current: 0, rates: [] }; // ENUM_CURRENT_SETTINGS
   const w = cur.readUInt32LE(172), h = cur.readUInt32LE(176), bpp = cur.readUInt32LE(168), rates = new Set();
+  const current = cur.readUInt32LE(184), key = `${w}x${h}x${bpp}`;
+  // the driver's list only changes with the resolution (or another screen): test each mode once, not on every open
+  if (rateCache.key === key && rateCache.rates.includes(current)) return { current, rates: rateCache.rates, width: w, height: h };
   for (let i = 0; i < 500; i++) {
     const m = devmode();
     if (!u.EnumDisplaySettingsW(null, i, m)) break;
-    if (m.readUInt32LE(172) === w && m.readUInt32LE(176) === h && m.readUInt32LE(168) === bpp && m.readUInt32LE(184) > 1) rates.add(m.readUInt32LE(184));
+    if (m.readUInt32LE(172) !== w || m.readUInt32LE(176) !== h || m.readUInt32LE(168) !== bpp) continue;
+    const hz = m.readUInt32LE(184);
+    if (hz <= 1 || (m.readUInt32LE(180) & 0x2)) continue; // "default" and interlaced modes
+    // only what the screen really takes: Windows' dry run (CDS_TEST) must accept it
+    m.writeUInt32LE(0x400000 | 0x80000 | 0x100000, 72); // DM_DISPLAYFREQUENCY | DM_PELSWIDTH | DM_PELSHEIGHT
+    if (u.ChangeDisplaySettingsExW(null, m, 0, 0x2, null) === 0) rates.add(hz);
   }
-  return { current: cur.readUInt32LE(184), rates: [...rates].sort((a, b) => a - b), width: w, height: h };
+  // 59 / 60, 119 / 120, 143 / 144…: one entry each (the one in use, or the rounder one)
+  const merged = [];
+  for (const r of [...rates].sort((a, b) => a - b)) {
+    const last = merged[merged.length - 1];
+    if (last && r - last <= 1) merged[merged.length - 1] = r === current ? r : last === current ? last : Math.max(last, r);
+    else merged.push(r);
+  }
+  if (!merged.includes(current) && current > 1) { merged.push(current); merged.sort((a, b) => a - b); } // the rate in use is real, whatever the dry run said
+  rateCache = { key, rates: merged };
+  return { current, rates: merged, width: w, height: h };
 }
 /** Switch the main screen to another refresh rate (one it supports). True when Windows accepted it. */
 function setRefreshRate(hz) {
@@ -431,6 +458,23 @@ function setRefreshRate(hz) {
   m.writeUInt32LE(hz >>> 0, 184);
   m.writeUInt32LE(0x400000, 72); // DM_DISPLAYFREQUENCY
   return u.ChangeDisplaySettingsExW(null, m, 0, 0x1, null) === 0; // CDS_UPDATEREGISTRY, DISP_CHANGE_SUCCESSFUL
+}
+
+/** Start a Wi-Fi scan on every adapter (results show up in netsh a few seconds later). Number of adapters asked. */
+function wifiScan() {
+  if (!load() || !u.WlanOpenHandle) return 0;
+  const neg = [0], h = [0];
+  if (u.WlanOpenHandle(2, null, neg, h) !== 0) return 0;
+  const listPtr = [null];
+  let n = 0;
+  try {
+    if (u.WlanEnumInterfaces(h[0], null, listPtr) !== 0 || !listPtr[0]) return 0;
+    // WLAN_INTERFACE_INFO_LIST: count, index, then entries of GUID (16) + description (512) + state (4)
+    const count = u.koffi.decode(listPtr[0], 'uint32');
+    const raw = Buffer.from(u.koffi.decode(listPtr[0], 'uint8_t', 8 + count * 532));
+    for (let i = 0; i < count; i++) if (u.WlanScan(h[0], raw.subarray(8 + i * 532, 8 + i * 532 + 16), null, null, null) === 0) n++;
+  } finally { if (listPtr[0]) u.WlanFreeMemory(listPtr[0]); u.WlanCloseHandle(h[0], null); }
+  return n;
 }
 
 /** Whether the main Windows taskbar is showing. */
@@ -541,6 +585,7 @@ module.exports = {
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),
   refreshRates: safe('refreshRates', refreshRates, { current: 0, rates: [] }),
+  wifiScan: safe('wifiScan', wifiScan, 0),
   setRefreshRate: safe('setRefreshRate', setRefreshRate, false),
   makeToolWindow: safe('makeToolWindow', makeToolWindow),
   virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0 }),

@@ -19,9 +19,12 @@ async function currentSsid() {
   return m ? m[1].trim() : '';
 }
 /** Networks in range: [{ ssid, signal, secure, known, connected }], connected first, then strongest. */
-async function wifiList() {
+async function wifiList(scan = false) {
   if (!win32.isWin) return [];
+  if (scan && win32.wifiScan()) await new Promise((r) => setTimeout(r, 3500)); // a fresh scan takes a few seconds
   const [nets, profiles, cur] = await Promise.all([netshUtf8('wlan show networks mode=bssid'), netshUtf8('wlan show profiles'), currentSsid()]);
+  // Windows 11 24H2: listing networks needs "Let desktop apps access your location"
+  wifiList.needsLocation = !/SSID\s+\d+\s*:/.test(nets) && /location|位置|定位/i.test(nets);
   const known = new Set(profiles.split(/\r?\n/).filter((l) => /:\s*\S/.test(l) && /^\s{2,}/.test(l)).map((l) => l.split(':').slice(1).join(':').trim()));
   const list = [];
   let n = null;

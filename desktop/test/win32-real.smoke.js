@@ -19,5 +19,6 @@ assert.ok(opaque > 256 * 256 * 0.15, 'the big icon came out empty');
 console.log('ok   battery:', JSON.stringify(w.battery()));
 console.log('ok   virtual desktops:', JSON.stringify(w.virtualDesktops()));
 console.log('ok   refresh rates:', JSON.stringify(w.refreshRates()));
+console.log('ok   wifi scan (adapters asked; 0 on a PC without Wi-Fi):', w.wifiScan());
 assert.strictEqual(w.status().error, '');
 console.log('real Windows bindings fine');

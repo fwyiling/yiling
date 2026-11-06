@@ -83,9 +83,9 @@ while ($true) {
     }
     $rd = $in.ReadAsync($buf, 0, $buf.Length)
   }
-  if (($tick % 40) -eq 0 -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit 0 }
-  if (($tick % 8) -eq 4) { $bright = Brightness }      # every 2 s (laptop screens only; $null elsewhere)
-  if (($tick % 24) -eq 12) { $wifi = Wifi }            # every 6 s
+  if (($tick % 20) -eq 0 -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit 0 }
+  if (($tick % 4) -eq 2) { $bright = Brightness }      # every 2 s (laptop screens only; $null elsewhere)
+  if (($tick % 12) -eq 6) { $wifi = Wifi }             # every 6 s
   $vol = -1; $muted = $false
   try { $vol = [math]::Round([SdAudio]::Get() * 100); $muted = [SdAudio]::Muted() } catch {}
   $w = Radio 'WiFi'; $b = Radio 'Bluetooth'
@@ -98,7 +98,7 @@ while ($true) {
   $j = [regex]::Replace(($o | ConvertTo-Json -Compress -Depth 4), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
   if ($j -ne $last) { [Console]::Out.WriteLine($j); [Console]::Out.Flush(); $last = $j }
   $tick++
-  Start-Sleep -Milliseconds 250
+  Start-Sleep -Milliseconds 500 # twice a second is plenty for the control centre
 }
 `;
 
