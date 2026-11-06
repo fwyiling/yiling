@@ -125,10 +125,23 @@ const WEATHER_CODES = { 0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'C
   61: 'Rain', 63: 'Rain', 65: 'Heavy rain', 71: 'Snow', 73: 'Snow', 75: 'Heavy snow', 80: 'Showers', 81: 'Showers', 82: 'Heavy showers', 95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' };
 const weatherCache = new Map();
 // no city set: where the internet connection is (GeoJS, free, no key) — roughly the right town
+// The internet connection's location is wrong behind a VPN; the PC's own time zone isn't. When they disagree,
+// the main city of the PC's time zone is used (Asia/Shanghai -> Shanghai).
+const sysTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } };
+async function geocode(name) {
+  const g = await (await web(`https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(name)}`)).json();
+  return g.results?.[0] || null;
+}
 async function locate() {
-  const j = await (await web('https://get.geojs.io/v1/ip/geo.json')).json();
-  if (!j.latitude) throw new Error('location unknown; set a city in Customize');
-  return { name: j.city || j.region || j.country || 'Here', latitude: +j.latitude, longitude: +j.longitude };
+  const tz = sysTz();
+  let j = null;
+  try { j = await (await web('https://get.geojs.io/v1/ip/geo.json')).json(); } catch {}
+  if (j?.latitude && (!tz || !j.timezone || j.timezone === tz)) return { name: j.city || j.region || j.country || 'Here', latitude: +j.latitude, longitude: +j.longitude };
+  const city = tz.includes('/') ? tz.split('/').pop().replace(/_/g, ' ') : '';
+  const p = city ? await geocode(city) : null;
+  if (p) return { name: p.name, latitude: p.latitude, longitude: p.longitude };
+  if (j?.latitude) return { name: j.city || 'Here', latitude: +j.latitude, longitude: +j.longitude };
+  throw new Error('location unknown; set a city in Customize');
 }
 async function weather(city = '') {
   city = String(city || '').trim();
@@ -136,14 +149,15 @@ async function weather(city = '') {
   if (hit && Date.now() - hit.t < 15 * 60e3) return hit.v;
   let place;
   if (city) {
-    const g = await (await web(`https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(city)}`)).json();
-    place = g.results?.[0];
+    place = await geocode(city);
     if (!place) throw new Error(`couldn't find “${city}”`);
   } else place = await locate();
-  const w = await (await web(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto`)).json();
+  const w = await (await web(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=${encodeURIComponent(sysTz() || 'auto')}`)).json();
   // the next six hours, from the current hour (the Mac-style weather widget shows them)
-  const nowHour = (w.current?.time || '').slice(0, 13);
-  const start = Math.max(0, (w.hourly?.time || []).findIndex((t) => t.slice(0, 13) === nowHour));
+  const nowHour = (w.current?.time || '').slice(0, 13); // in the PC's time zone (asked for above)
+  let start = (w.hourly?.time || []).findIndex((t) => t.slice(0, 13) === nowHour);
+  if (start < 0) { const h = new Date().getHours(); start = (w.hourly?.time || []).findIndex((t) => +t.slice(11, 13) === h); } // fallback: the PC's clock
+  start = Math.max(0, start);
   const hourly = (w.hourly?.time || []).slice(start + 1, start + 7).map((t, i) => ({ hour: +t.slice(11, 13), temp: Math.round(w.hourly.temperature_2m[start + 1 + i]), code: w.hourly.weather_code[start + 1 + i] }));
   const v = { place: place.name, temp: Math.round(w.current.temperature_2m), unit: w.current_units?.temperature_2m || '°C', text: WEATHER_CODES[w.current.weather_code] || '',
     code: w.current.weather_code, day: w.current.is_day !== 0, hi: Math.round(w.daily?.temperature_2m_max?.[0]), lo: Math.round(w.daily?.temperature_2m_min?.[0]), hourly };
