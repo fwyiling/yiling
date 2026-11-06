@@ -12,15 +12,20 @@ let edgeSwitch = workerData?.edgeSwitch !== false;
 parentPort.on('message', (m) => {
   if (m && m.screen) screenRect = m.screen;
   if (m && typeof m.hideLabel === 'boolean') hideLabel = m.hideLabel;
-  if (m && typeof m.edgeSwitch === 'boolean') edgeSwitch = m.edgeSwitch;
+  if (m && typeof m.edgeSwitch === 'boolean') { edgeSwitch = m.edgeSwitch; if (!edgeSwitch && snapPaused) { snapPaused = false; win32.edgeSnap(true); } }
 });
 // A window dragged against the far left / right edge of the screen and held there: onto the desktop next door,
 // like Spaces on a Mac (the main thread moves it). Held on, it keeps going a desktop at a time.
+// Windows' own snap-to-half at that edge would fight it, so it's paused while the window is near the left / right
+// edge, and back on as soon as it isn't (dragging to the top to maximize, Win+arrows and snap layouts stay).
 const EDGE_HOLD = 550, EDGE_AGAIN = 1100;
-let edgeSince = 0, edgeDir = 0, lastEdge = -Infinity;
+let edgeSince = 0, edgeDir = 0, lastEdge = -Infinity, snapPaused = false;
 function watchEdge(now) {
   const d = edgeSwitch ? win32.dragState() : null;
   const s = d && d.screen;
+  const zone = s ? Math.max(160, s.width * 0.15) : 0; // reached before the pointer can get to the edge
+  const near = !!d && (d.x <= s.left + zone || d.x >= s.left + s.width - 1 - zone);
+  if (near !== snapPaused) { snapPaused = near; win32.edgeSnap(!near); }
   const dir = !d ? 0 : d.x <= s.left ? -1 : d.x >= s.left + s.width - 1 ? 1 : 0;
   if (!dir || dir !== edgeDir) { edgeSince = dir ? now : 0; edgeDir = dir; return; }
   if (now - edgeSince >= EDGE_HOLD && now - lastEdge >= EDGE_AGAIN) {
@@ -35,8 +40,9 @@ if (!win32.isWin || !st.ready) {
 } else {
   parentPort.postMessage({ type: 'ready' });
   let current = -1, hunt = 0, sinceFound = -1;
+  win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
+  setInterval(() => watchEdge(Date.now()), 25); // often: snapping has to be paused before the pointer reaches the edge
   setInterval(() => {
-    watchEdge(Date.now());
     const vd = win32.virtualDesktops(); // two small registry reads
     if (vd.current !== current) {
       const from = current;

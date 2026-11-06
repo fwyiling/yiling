@@ -370,17 +370,21 @@ function deskWatchSettings() {
   const g = store.get().general;
   return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported() };
 }
-// a window held against the left / right edge while being dragged: it goes onto the desktop next door, and so do you
-// (Windows' own slide, Win+Ctrl+arrow; straight there if those keys don't get through mid-drag)
+// a window held against the left / right edge while being dragged: you go to the desktop next door and the window
+// comes with you, staying in your hand while Windows slides (Win+Ctrl+arrow; straight there if those keys don't get
+// through mid-drag), then it's put on the desktop you arrived at
 let lastEdgeMove = null;
 async function edgeMove(hwnd, dir) {
   if (gamer || store.get().general.edgeSwitch === false) return;
   const before = win32.virtualDesktops().current;
-  const ok = await vdesk.move(hwnd, dir > 0);
+  const ok = await vdesk.carry(hwnd, dir > 0);
   lastEdgeMove = { at: new Date().toISOString(), dir, ok };
   if (!ok) return; // no desktop on that side (or Windows refused)
   win32.pressKeys([0x5B, 0x11, dir > 0 ? 0x27 : 0x25]);
-  setTimeout(() => { if (win32.virtualDesktops().current === before) vdesk.switchTo(dir > 0); }, 450);
+  setTimeout(async () => {
+    if (win32.virtualDesktops().current === before) await vdesk.switchTo(dir > 0);
+    await vdesk.settle(hwnd); // after the slide: the window belongs to the new desktop again
+  }, 500);
 }
 function startDeskWatch() {
   if (!win32.isWin) return;
@@ -1085,6 +1089,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   deskWorker?.terminate();
   vdesk.stop();
+  if (win32.isWin) win32.edgeSnap(true); // Windows' snap-to-edge back as the user had it, even if quitting mid-drag
   if (win32.isWin && store?.get().dock.on) win32.showTaskbar(true); // last word: the taskbar is visible when we're gone
 });
 app.on('window-all-closed', () => {}); // keep running in the tray

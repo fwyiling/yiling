@@ -56,6 +56,7 @@ const calls = {
   repaintDesktop: () => w.repaintDesktop(),
   setBlur: () => w.setBlur(fakeWin, true),
   dragState: () => w.dragState(),
+  edgeSnap: () => w.edgeSnap(true),
   allowForeground: () => w.allowForeground(),
   makeToolWindow: () => w.makeToolWindow(fakeWin),
   virtualDesktops: () => w.virtualDesktops(),

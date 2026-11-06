@@ -17,6 +17,9 @@ const deadline = Date.now() + 20000;
   const bogus = await vdesk.move(0x7ffffff0, true);
   console.log('ok   a window that does not exist is refused:', bogus === false);
   assert.strictEqual(bogus, false);
+  assert.strictEqual(await vdesk.carry(0x7ffffff0, true), false, 'carry took a window that does not exist');
+  assert.strictEqual(await vdesk.settle(0x7ffffff0), false, 'settle found a window it never carried');
+  console.log('ok   carry / settle refuse windows that do not exist');
   const sw = await vdesk.switchTo(true); // with a single desktop there is nothing to the right
   console.log('ok   switch right with', st.count, 'desktop(s):', sw);
   if (st.count === 1) assert.strictEqual(sw, false);

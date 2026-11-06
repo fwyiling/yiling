@@ -46,6 +46,7 @@ function bind() {
     // the same Win32 function again, with the last-but-two parameter as a string (koffi: convention, symbol, result, params)
     SendMessageTimeoutStr: user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'str16', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]),
     SystemParametersInfoW: user32.func('bool __stdcall SystemParametersInfoW(uint action, uint param, str16 value, uint flags)'),
+    SystemParametersInfoGetInt: user32.func('__stdcall', 'SystemParametersInfoW', 'bool', ['uint', 'uint', koffi.out(koffi.pointer('int')), 'uint']),
     RedrawWindow: user32.func('bool __stdcall RedrawWindow(intptr_t hwnd, void *rect, intptr_t rgn, uint flags)'),
     AllowSetForegroundWindow: user32.func('bool __stdcall AllowSetForegroundWindow(uint32 pid)'),
     IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr_t hwnd)'),
@@ -288,6 +289,24 @@ function dragState() {
   if (pt.x - r.left < 12 || r.right - pt.x < 12) return null;
   return { hwnd: Number(gi.hwndMoveSize), x: pt.x, y: pt.y,
     screen: { left: u.GetSystemMetrics(76), top: u.GetSystemMetrics(77), width: u.GetSystemMetrics(78), height: u.GetSystemMetrics(79) } }; // the virtual screen (all monitors)
+}
+
+// Windows' "snap a window when it's dragged to the edge of the screen" (SPI_GETDOCKMOVING / SPI_SETDOCKMOVING). Turned
+// off only while a window is being dragged near the left / right edge (that edge moves it to the next desktop instead)
+// and on again straight after. Never written to the registry, so it can't outlive the app: the user's own choice,
+// HKCU\Control Panel\Desktop\DockMoving, is what Windows starts with, and what the app puts back.
+function userDockMoving() {
+  const buf = Buffer.alloc(16), size = [buf.length];
+  if (u.RegGetValueW(-2147483647, 'Control Panel\\Desktop', 'DockMoving', 0x2, null, buf, size) !== 0) return true; // RRF_RT_REG_SZ; not set: on
+  return buf.toString('utf16le', 0, size[0]).replace(/\0+$/, '').trim() !== '0';
+}
+function edgeSnap(on) {
+  if (!load()) return false;
+  const cur = [0];
+  if (!u.SystemParametersInfoGetInt(0x0090, 0, cur, 0)) return false; // SPI_GETDOCKMOVING
+  const want = on ? userDockMoving() : false; // "on" means: back to what the user chose
+  if (!!cur[0] !== want) u.SystemParametersInfoW(0x0091, want ? 1 : 0, null, 0); // SPI_SETDOCKMOVING, this session only, no broadcast
+  return want;
 }
 
 /** Frosted glass behind a window (true), or nothing (false). */
@@ -627,6 +646,7 @@ module.exports = {
   repaintDesktop: safe('repaintDesktop', repaintDesktop, false),
   setBlur: safe('setBlur', setBlur, false),
   dragState: safe('dragState', dragState, null),
+  edgeSnap: safe('edgeSnap', edgeSnap, false),
   // the program we're about to start (or an already-running one it hands over to, like Claude) may come to the front
   allowForeground: safe('allowForeground', () => !!(load() && u.AllowSetForegroundWindow(0xFFFFFFFF)), false), // ASFW_ANY
   taskbarAutoHide: safe('taskbarAutoHide', taskbarAutoHide, false),

@@ -38,11 +38,22 @@ interface IVirtualDesktopManagerInternal {
   [PreserveSig] int GetAdjacentDesktop(IVirtualDesktop from, int direction, out IVirtualDesktop desktop);
   void SwitchDesktop(IVirtualDesktop desktop);
 }
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("4CE81583-1E4C-4632-A621-07A53543148F")]
+interface IVirtualDesktopPinnedApps {
+  bool IsAppIdPinned([MarshalAs(UnmanagedType.LPWStr)] string appId);
+  void PinAppID([MarshalAs(UnmanagedType.LPWStr)] string appId);
+  void UnpinAppID([MarshalAs(UnmanagedType.LPWStr)] string appId);
+  bool IsViewPinned(IApplicationView view);
+  void PinView(IApplicationView view);
+  void UnpinView(IApplicationView view);
+}
 [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("6D5140C1-7436-11CE-8034-00AA006009FA")]
 interface IServiceProvider10 { [return: MarshalAs(UnmanagedType.IUnknown)] object QueryService(ref Guid service, ref Guid riid); }
 public static class SdDesk {
   static IVirtualDesktopManagerInternal mgr;
   static IApplicationViewCollection views;
+  static IVirtualDesktopPinnedApps pins;
+  static System.Collections.Generic.Dictionary<long, bool> carried = new System.Collections.Generic.Dictionary<long, bool>();
   static void Init() {
     if (mgr != null) return;
     var shell = (IServiceProvider10)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("C2F03A33-21F5-47FA-B4BB-156362A2F239"))); // ImmersiveShell
@@ -50,6 +61,7 @@ public static class SdDesk {
     mgr = (IVirtualDesktopManagerInternal)shell.QueryService(ref svc, ref iid);
     Guid vsvc = typeof(IApplicationViewCollection).GUID, viid = typeof(IApplicationViewCollection).GUID;
     views = (IApplicationViewCollection)shell.QueryService(ref vsvc, ref viid);
+    try { Guid psvc = new Guid("B5A399E7-1C87-46B8-88E9-FC5747B171BD"), piid = typeof(IVirtualDesktopPinnedApps).GUID; pins = (IVirtualDesktopPinnedApps)shell.QueryService(ref psvc, ref piid); } catch { pins = null; }
   }
   static IVirtualDesktop Next(bool right) {
     IVirtualDesktop target;
@@ -65,6 +77,31 @@ public static class SdDesk {
     mgr.MoveViewToDesktop(view, target);
     return true;
   }
+  // Like Spaces on a Mac: the window stays in your hand while the desktops slide. It's shown on every desktop for the
+  // slide (pinned), then Settle puts it on the desktop you arrived at. Without pinning, it's moved first (old way).
+  public static bool Carry(IntPtr hwnd, bool right) {
+    Init();
+    IApplicationView view;
+    if (views.GetViewForHwnd(hwnd, out view) != 0 || view == null) return false;
+    var target = Next(right); if (target == null) return false;
+    if (pins == null) { mgr.MoveViewToDesktop(view, target); return true; }
+    bool ours = false;
+    if (!pins.IsViewPinned(view)) { pins.PinView(view); ours = true; } // a window you pinned yourself stays pinned
+    carried[hwnd.ToInt64()] = ours;
+    return true;
+  }
+  public static bool Settle(IntPtr hwnd) {
+    Init();
+    bool ours; long key = hwnd.ToInt64();
+    if (!carried.TryGetValue(key, out ours)) return false;
+    carried.Remove(key);
+    if (!ours) return true;
+    IApplicationView view;
+    if (views.GetViewForHwnd(hwnd, out view) != 0 || view == null) return false;
+    pins.UnpinView(view);
+    mgr.MoveViewToDesktop(view, mgr.GetCurrentDesktop());
+    return true;
+  }
   // straight to the desktop next door (no slide): only when Windows' own Win+Ctrl+arrow didn't get through
   public static bool Switch(bool right) { Init(); var target = Next(right); if (target == null) return false; mgr.SwitchDesktop(target); return true; }
 }
@@ -78,6 +115,8 @@ while ($true) {
   try {
     $ok = switch ($p[1]) {
       'move' { [SdDesk]::Move([IntPtr][long]$p[2], $p[3] -eq 'right') }
+      'carry' { [SdDesk]::Carry([IntPtr][long]$p[2], $p[3] -eq 'right') }
+      'settle' { [SdDesk]::Settle([IntPtr][long]$p[2]) }
       'switch' { [SdDesk]::Switch($p[2] -eq 'right') }
       'count' { [SdDesk]::Count() -gt 0 }
       default { $false }
@@ -131,5 +170,7 @@ module.exports = {
   stop: () => { stopped = true; child?.kill(); child = null; ready = false; },
   status: () => ({ supported: supported(), ready, count, error: lastError }),
   move: (hwnd, right) => ask(`move ${Math.trunc(Number(hwnd))} ${right ? 'right' : 'left'}`),
+  carry: (hwnd, right) => ask(`carry ${Math.trunc(Number(hwnd))} ${right ? 'right' : 'left'}`),
+  settle: (hwnd) => ask(`settle ${Math.trunc(Number(hwnd))}`),
   switchTo: (right) => ask(`switch ${right ? 'right' : 'left'}`),
 };
