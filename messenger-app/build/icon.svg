@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="planet"><circle cx="246" cy="266" r="196"/></clipPath>
+    <radialGradient id="ocean" cx="38%" cy="32%" r="75%">
+      <stop offset="0" stop-color="#8fe0d6"/>
+      <stop offset="1" stop-color="#3fa9a6"/>
+    </radialGradient>
+    <radialGradient id="shade" cx="35%" cy="30%" r="80%">
+      <stop offset="0.55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0b2b2b" stop-opacity="0.35"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="246" cy="266" r="196" fill="url(#ocean)"/>
+
+  <g clip-path="url(#planet)" stroke="#1f3a3a" stroke-width="10" stroke-linejoin="round">
+    <path d="M120 120 C170 95 235 110 250 150 C262 185 230 200 238 232 C246 262 205 280 170 268 C130 255 140 215 105 200 C75 188 80 140 120 120 Z" fill="#7dbb6e"/>
+    <path d="M150 140 C178 128 210 138 214 160 C218 180 196 190 176 184 C156 178 136 160 150 140 Z" fill="#a9d38f" stroke="none"/>
+    <path d="M300 250 C340 225 405 235 440 270 L460 360 C430 390 375 395 345 370 C320 350 335 320 305 305 C280 292 278 263 300 250 Z" fill="#d8cc9f"/>
+    <path d="M330 280 C352 270 384 276 396 296 C404 312 388 326 366 322 C344 318 318 296 330 280 Z" fill="#7dbb6e" stroke="none"/>
+    <path d="M140 365 C175 345 225 352 240 380 C252 404 230 440 190 450 L120 440 C100 410 110 380 140 365 Z" fill="#7dbb6e"/>
+    <path d="M330 110 C350 100 372 108 372 126 C372 142 352 148 336 140 C320 132 316 118 330 110 Z" fill="#d8cc9f"/>
+  </g>
+
+  <circle cx="246" cy="266" r="196" fill="url(#shade)"/>
+  <path d="M120 190 A150 150 0 0 1 200 110" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="246" cy="266" r="196" fill="none" stroke="#1f3a3a" stroke-width="14"/>
+
+  <g transform="translate(372 58) rotate(14)">
+    <rect x="0" y="0" width="118" height="82" rx="12" fill="#f6f1e2" stroke="#1f3a3a" stroke-width="10"/>
+    <path d="M8 10 L59 48 L110 10" fill="none" stroke="#1f3a3a" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="96" cy="64" r="9" fill="#e0703f"/>
+  </g>
+</svg>
