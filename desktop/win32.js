@@ -74,17 +74,11 @@ function bind() {
   const BITMAPINFOHEADER = koffi.struct('BITMAPINFOHEADER', { biSize: 'uint32', biWidth: 'int32', biHeight: 'int32', biPlanes: 'uint16', biBitCount: 'uint16',
     biCompression: 'uint32', biSizeImage: 'uint32', biXPelsPerMeter: 'int32', biYPelsPerMeter: 'int32', biClrUsed: 'uint32', biClrImportant: 'uint32' });
   const gdi32 = koffi.load('gdi32.dll');
-  // Mac window buttons: the colour of a window's title bar, read off the screen; its scale; maximized or not
-  u.GetDC = user32.func('intptr_t __stdcall GetDC(intptr_t hwnd)');
-  u.ReleaseDC = user32.func('int __stdcall ReleaseDC(intptr_t hwnd, intptr_t hdc)');
-  u.GetPixel = gdi32.func('uint32 __stdcall GetPixel(intptr_t hdc, int x, int y)');
-  u.IsZoomed = user32.func('bool __stdcall IsZoomed(intptr_t hwnd)');
   // the input method of the window in front: Chinese (Pinyin) or English mode, for the top bar's 拼 / EN
   u.GetKeyboardLayout = user32.func('uintptr_t __stdcall GetKeyboardLayout(uint32 thread)');
   u.GetAsyncKeyState = user32.func('short __stdcall GetAsyncKeyState(int vk)');
   u.SendMessageTimeoutNum = user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'intptr_t', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]);
   try { u.ImmGetDefaultIMEWnd = koffi.load('imm32.dll').func('intptr_t __stdcall ImmGetDefaultIMEWnd(intptr_t hwnd)'); } catch {}
-  try { u.GetDpiForWindow = user32.func('uint32 __stdcall GetDpiForWindow(intptr_t hwnd)'); } catch {} // Windows 10 1607+
   Object.assign(u, {
     ICONINFO, BITMAPINFOHEADER,
     SHDefExtractIconW: u.shell32.func('long __stdcall SHDefExtractIconW(str16 file, int index, uint flags, _Out_ intptr_t *large, _Out_ intptr_t *small, uint size)'),
@@ -344,46 +338,6 @@ function emptyBin() {
   return u.SHEmptyRecycleBinW(0, null, 0) === 0;
 }
 
-// ---------- Mac window buttons (traffic lights) over the window in front ----------
-// Windows draws every app's minimize / maximize / close itself; another app can't restyle them. So the lights are
-// a small window laid exactly over those three buttons (where Windows says they are, or where they sit in a
-// standard title bar), in the title bar's own colour.
-const LIGHT_SKIP = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', '#32770', 'ConsoleWindowClass']); // desktop, taskbar, dialogs; the console draws its own
-let lightCache = { key: '', color: 0 };
-function captionButtons(ownPids = []) {
-  if (!load()) return null;
-  const fg = u.GetForegroundWindow();
-  if (isNull(fg) || u.IsIconic(fg)) return null;
-  const buf = new Uint16Array(128), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 128)));
-  if (LIGHT_SKIP.has(cls) || OVERLAY_CLASSES.has(cls)) return null;
-  const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
-  if (ownPids.includes(pid[0])) return null;
-  const style = Number(u.GetWindowLongPtrW(fg, GWL_STYLE)) >>> 0;
-  if (!(style & 0x80000) || !(style & 0x30000)) return null; // WS_SYSMENU and a minimize / maximize box: it has caption buttons
-  const r = {}, f = {};
-  if (!u.GetWindowRect(fg, r)) return null;
-  if (u.DwmGetFrameRect(fg, 9, f, 16) !== 0) Object.assign(f, r); // DWMWA_EXTENDED_FRAME_BOUNDS: the visible frame
-  if (f.right - f.left < 260 || f.bottom - f.top < 120) return null;
-  const scale = (u.GetDpiForWindow ? u.GetDpiForWindow(fg) || 96 : 96) / 96;
-  const max = !!u.IsZoomed(fg);
-  let b = null;
-  const cb = {};
-  if (!max && u.DwmGetFrameRect(fg, 5, cb, 16) === 0 && cb.right - cb.left >= 60 * scale && cb.bottom - cb.top >= 16 * scale && cb.bottom - cb.top <= 60 * scale) // DWMWA_CAPTION_BUTTON_BOUNDS (window-relative)
-    b = { left: r.left + cb.left, top: r.top + cb.top, right: r.left + cb.right, bottom: r.top + cb.bottom };
-  else b = { left: f.right - Math.round(138 * scale), top: f.top, right: f.right, bottom: f.top + Math.round(30 * scale) }; // a standard title bar: 3 × 46 px
-  b.right = Math.min(b.right, f.right); b.top = Math.max(b.top, f.top); // never past the visible frame
-  // the title bar's colour just left of the buttons (read again only when the window or its size changes)
-  const key = `${fg}|${b.left}|${b.top}|${b.right}|${max}`;
-  if (key !== lightCache.key) {
-    const dc = u.GetDC(0);
-    const px = u.GetPixel(dc, b.left - Math.round(12 * scale), Math.round((b.top + b.bottom) / 2)); // inside the title bar, left of the buttons
-    u.ReleaseDC(0, dc);
-    lightCache = { key, color: px === 0xFFFFFFFF ? -1 : px }; // CLR_INVALID: off screen
-  }
-  const c = lightCache.color;
-  return { hwnd: Number(fg), x: b.left, y: b.top, width: b.right - b.left, height: b.bottom - b.top, max, scale,
-    color: c < 0 ? '' : `rgb(${c & 255}, ${(c >> 8) & 255}, ${(c >> 16) & 255})` }; // COLORREF is 0x00BBGGRR
-}
 /** The window in front's input: its language and, with a Chinese / Japanese / Korean input method, whether it types
  *  in that language (Pinyin's Chinese mode) or English (Shift switches). { hwnd, lang, ime, native } or null. */
 function inputMode() {
@@ -406,20 +360,6 @@ function inputMode() {
   if (!ok1 && !ok2) return { hwnd: Number(fg), lang, ime: true, native: true }; // didn't answer: assume the language's own mode
   return { hwnd: Number(fg), lang, ime: true, native: !!Number(open[0]) && (Number(conv[0]) & 1) === 1 }; // IME_CMODE_NATIVE
 }
-/** Close / minimize / zoom a window, the way its own buttons would. */
-function windowCommand(hwnd, what) {
-  if (!load()) return false;
-  const SC = { close: 0xF060, minimize: 0xF020, zoom: u.IsZoomed(hwnd) ? 0xF120 : 0xF030 }; // SC_CLOSE, SC_MINIMIZE, SC_RESTORE / SC_MAXIMIZE
-  if (!SC[what]) return false;
-  return !!u.PostMessageW(hwnd, 0x0112, SC[what], 0); // WM_SYSCOMMAND
-}
-/** True while the window in front is being moved or resized. */
-function inMoveSize() {
-  if (!load()) return false;
-  const gi = { cbSize: u.koffi.sizeof(u.GUITHREADINFO), flags: 0, hwndActive: 0, hwndFocus: 0, hwndCapture: 0, hwndMenuOwner: 0, hwndMoveSize: 0, hwndCaret: 0, rcCaret: { left: 0, top: 0, right: 0, bottom: 0 } };
-  return !!u.GetGUIThreadInfo(0, gi) && !!(gi.flags & 0x2);
-}
-
 /** Frosted glass behind a window (true), or nothing (false). */
 function setBlur(win, on) {
   if (!load()) return false;
@@ -759,10 +699,7 @@ module.exports = {
   dragState: safe('dragState', dragState, null),
   edgeSnap: safe('edgeSnap', edgeSnap, false),
   regString: safe('regString', regString, ''),
-  captionButtons: safe('captionButtons', captionButtons, null),
   inputMode: safe('inputMode', inputMode, null),
-  windowCommand: safe('windowCommand', windowCommand, false),
-  inMoveSize: safe('inMoveSize', inMoveSize, false),
   recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
   emptyBin: safe('emptyBin', emptyBin, false),
   // the program we're about to start (or an already-running one it hands over to, like Claude) may come to the front

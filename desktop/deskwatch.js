@@ -9,13 +9,10 @@ const win32 = require('./win32');
 let screenRect = workerData?.screen || null;
 let hideLabel = workerData?.hideLabel !== false;
 let edgeSwitch = workerData?.edgeSwitch !== false;
-let lights = !!workerData?.lights, ownPids = workerData?.ownPids || [];
 let imeOn = workerData?.ime !== false;
 parentPort.on('message', (m) => {
   if (m && m.screen) screenRect = m.screen;
   if (m && typeof m.hideLabel === 'boolean') hideLabel = m.hideLabel;
-  if (m && typeof m.lights === 'boolean') { lights = m.lights; if (!lights) sendLights(null); }
-  if (m && Array.isArray(m.ownPids)) ownPids = m.ownPids;
   if (m && typeof m.ime === 'boolean') imeOn = m.ime;
   if (m && typeof m.edgeSwitch === 'boolean') { edgeSwitch = m.edgeSwitch; if (!edgeSwitch && snapPaused) { snapPaused = false; win32.edgeSnap(true); } }
 });
@@ -39,20 +36,6 @@ function watchEdge(now) {
   }
 }
 
-// Mac window buttons: where the window in front has its minimize / maximize / close, so the main thread can lay the
-// lights over them. Sent only when that changes; hidden while a window is being dragged or resized.
-let lastLights = '';
-function sendLights(b) {
-  const key = b ? `${b.hwnd}|${b.x}|${b.y}|${b.width}|${b.height}|${b.max}|${b.color}` : '';
-  if (key === lastLights) return;
-  lastLights = key;
-  parentPort.postMessage({ type: 'lights', b });
-}
-function watchLights() {
-  if (!lights) return;
-  sendLights(win32.inMoveSize() ? null : win32.captionButtons(ownPids));
-}
-
 // the input method in front: Pinyin (Chinese) or English, for the top bar; sent when it changes
 let lastIme = '';
 function watchIme() {
@@ -72,7 +55,6 @@ if (!win32.isWin || !st.ready) {
   let current = -1, hunt = 0, sinceFound = -1;
   win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
   setInterval(() => watchEdge(Date.now()), 25);
-  setInterval(watchLights, 50);
   setInterval(watchIme, 250); // often: snapping has to be paused before the pointer reaches the edge
   setInterval(() => {
     const vd = win32.virtualDesktops(); // two small registry reads

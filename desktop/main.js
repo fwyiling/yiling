@@ -309,7 +309,6 @@ function setGamer(on, auto = false) {
     if (!w || w.isDestroyed()) continue;
     if (on) w.hide(); else w.showInactive();
   }
-  if (on) lightsWin?.hide(); else onLights(lightsTarget);
   // Ctrl+Alt+G by hand: the Windows taskbar while the dock is away. Not when a full-screen game / video / F11 turned
   // gamer mode on by itself: the blue taskbar then flashed up behind it, and again for 3 s after leaving full screen.
   if (on) { if (dockWin && win32.isWin && !auto) win32.showTaskbar(true); }
@@ -373,7 +372,7 @@ function onDeskSwitch(from, to, count) {
 function deskWatchSettings() {
   const g = store.get().general;
   return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported(),
-    lights: g.macButtons === true, ownPids: ownPids(), ime: store.get().topbar.ime !== false };
+    ime: store.get().topbar.ime !== false };
 }
 
 // ---------- the input method (Pinyin / English) in the top bar ----------
@@ -385,29 +384,7 @@ function onIme(m) {
   if (prev && m.ime && prev.ime && prev.hwnd === m.hwnd && prev.native !== m.native) osd({ kind: 'ime', native: m.native, lang: m.lang });
 }
 
-// ---------- Mac window buttons (traffic lights) over the window in front ----------
-// The desk-watcher thread finds the window in front and where its minimize / maximize / close are; a small window
-// with the three lights is laid over them, in the title bar's colour. Clicks do what Windows' own buttons do.
-let lightsWin = null, lightsTarget = null;
-function setLights(on) {
-  if (!win32.isWin) return;
-  if (!on) { lightsWin?.destroy(); lightsWin = null; lightsTarget = null; return; }
-  if (lightsWin && !lightsWin.isDestroyed()) return;
-  lightsWin = new BrowserWindow({ width: 138, height: 30, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
-    alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Lights', webPreferences: webPrefs });
-  lightsWin.setAlwaysOnTop(true, 'pop-up-menu');
-  lightsWin.loadURL(ui('lights.html'));
-  lightsWin.once('ready-to-show', () => { win32.makeToolWindow(lightsWin); onLights(lightsTarget); }); // on every virtual desktop
-  lightsWin.on('closed', () => { lightsWin = null; });
-}
-function onLights(b) {
-  lightsTarget = b;
-  if (!lightsWin || lightsWin.isDestroyed()) return;
-  if (!b || gamer || fullNow) { if (lightsWin.isVisible()) lightsWin.hide(); return; }
-  lightsWin.webContents.send('lights', { color: b.color, max: b.max });
-  win32.placeWindow(lightsWin, { x: b.x, y: b.y, width: b.width, height: b.height }); // physical pixels, exactly over the buttons
-  if (!lightsWin.isVisible()) lightsWin.showInactive();
-}
+
 // a window held against the left / right edge while being dragged: you go to the desktop next door and the window
 // comes with you, staying in your hand while Windows slides (Win+Ctrl+arrow; straight there if those keys don't get
 // through mid-drag), then it's put on the desktop you arrived at
@@ -434,7 +411,6 @@ function startDeskWatch() {
       else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count);
       else if (m.type === 'label') lastSwitchLabel = m.found;
       else if (m.type === 'edge') edgeMove(m.hwnd, m.dir);
-      else if (m.type === 'lights') onLights(m.b);
       else if (m.type === 'ime') onIme(m.m);
       else if (m.type === 'fail') { console.warn('[deskwatch]', m.error); deskWorker?.terminate(); }
     });
@@ -494,7 +470,7 @@ function watchFullscreen() {
   fullNow = next;
   if (topWin && !topWin.isDestroyed()) { if (fullNow) topWin.hide(); else if (!fullSteady) topWin.showInactive(); }
   if (islandWin && !islandWin.isDestroyed()) { if (fullNow) islandWin.hide(); else islandWin.showInactive(); }
-  if (fullNow) { flyWin?.hide(); lightsWin?.hide(); }
+  if (fullNow) flyWin?.hide();
 }
 
 // ---------- top bar (like the macOS menu bar) ----------
@@ -743,7 +719,6 @@ function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
   if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
-  if (patch.general?.macButtons !== undefined) { setLights(next.general.macButtons === true); deskWorker?.postMessage({ lights: next.general.macButtons === true }); }
   if (patch.general?.hideSwitchLabel !== undefined || patch.general?.edgeSwitch !== undefined) {
     if (next.general.edgeSwitch !== false) vdesk.start();
     deskWorker?.postMessage(deskWatchSettings());
@@ -983,11 +958,6 @@ function wireIpc() {
     for (const f of files) await shell.openPath(f);
     return files.length;
   });
-  ipcMain.handle('lights:act', (e, what) => {
-    if (!lightsWin || e.sender !== lightsWin.webContents || !lightsTarget) return;
-    win32.windowCommand(lightsTarget.hwnd, String(what));
-    if (what !== 'zoom') lightsWin.hide(); // the window is going away; the watcher brings the lights to the next one
-  });
   // Bin: how full, open it, empty it (Windows asks), send files there (they can be restored from it)
   ipcMain.handle('bin:get', () => (win32.isWin ? (binState = win32.recycleBin()) : binState));
   ipcMain.handle('bin:open', () => { if (win32.isWin) require('child_process').spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref(); });
@@ -1192,8 +1162,6 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
   startDeskWatch();
-  setLights(store.get().general.macButtons === true);
-  setInterval(() => deskWorker?.postMessage({ ownPids: ownPids() }), 10000); // the app's own windows never get lights
   if (store.get().general.edgeSwitch !== false) vdesk.start(); // ready before the first drag (it takes a moment to start)
   setInterval(watchDesktops, 100); // only while the worker isn't running
   setInterval(() => { if (!quiet()) checkPause(); }, 700);
