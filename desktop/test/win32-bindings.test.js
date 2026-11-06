@@ -52,6 +52,7 @@ const calls = {
   capsLock: () => w.capsLock(),
   refreshRates: () => w.refreshRates(),
   wifiScan: () => w.wifiScan(),
+  autoAccent: () => w.autoAccent(),
   makeToolWindow: () => w.makeToolWindow(fakeWin),
   virtualDesktops: () => w.virtualDesktops(),
   foregroundRect: () => w.foregroundRect([1]),

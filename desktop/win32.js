@@ -357,6 +357,15 @@ function regBinary(sub, name) {
   const buf = Buffer.alloc(16 * 64), size = [buf.length];
   return u.RegGetValueW(-2147483647, sub, name, 0x8, null, buf, size) === 0 ? buf.subarray(0, size[0]) : null; // HKEY_CURRENT_USER, RRF_RT_REG_BINARY
 }
+// Settings > Personalization > Colours > Accent colour "Automatic": Windows picks it from the wallpaper again on
+// every desktop switch, which can make the slide stutter (and with Syndicates the Windows wallpaper isn't seen anyway)
+function autoAccent() {
+  if (!load()) return false;
+  const buf = Buffer.alloc(64), size = [buf.length];
+  if (u.RegGetValueW(-2147483647, 'Control Panel\\Desktop', 'AutoColorization', 0xFFFF, null, buf, size) !== 0) return false; // RRF_RT_ANY
+  if (size[0] === 4) return buf.readUInt32LE(0) === 1; // REG_DWORD
+  return buf.toString('utf16le', 0, size[0]).replace(/\0+$/, '').trim() === '1'; // stored as text on some PCs
+}
 function virtualDesktops() {
   if (!load()) return { count: 1, current: 0 };
   const ids = regBinary(VD_KEY, 'VirtualDesktopIDs'), cur = regBinary(VD_KEY, 'CurrentVirtualDesktop');
@@ -586,6 +595,7 @@ module.exports = {
   battery: safe('battery', battery, { present: false }),
   refreshRates: safe('refreshRates', refreshRates, { current: 0, rates: [] }),
   wifiScan: safe('wifiScan', wifiScan, 0),
+  autoAccent: safe('autoAccent', autoAccent, false),
   setRefreshRate: safe('setRefreshRate', setRefreshRate, false),
   makeToolWindow: safe('makeToolWindow', makeToolWindow),
   virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0 }),

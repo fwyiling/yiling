@@ -73,7 +73,7 @@ function buildWallpapers() {
     wallpapers.set(d.id, w);
   }
 }
-const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); }, 800); };
+const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); deskWorker?.postMessage(deskWatchSettings()); }, 800); };
 
 // pause when a full-screen app is in front, or on battery
 // Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
@@ -259,6 +259,7 @@ function currentWindows(maxAge = 900) {
 }
 async function pollWindows(fresh = false) {
   if (!dockWin || dockWin.isDestroyed() || app.isQuitting || gamer) return; // never hide the taskbar again once quitting has begun
+  if (quiet() && !fresh) return; // not during a desktop slide: the next second is soon enough
   hideTaskbar(); // Explorer brings it back now and then (Start menu, display changes)
   if (!store.get().dock.running) return;
   const list = currentWindows(fresh ? 0 : 900);
@@ -341,23 +342,55 @@ const TIMER_ACTIONS = {
 };
 
 // ---------- switching desktops ----------
-// Watched ten times a second (two cheap registry reads), so the app reacts while Windows is still sliding:
-// the wallpaper drifts along with the slide, Windows' "Desktop N" label and the taskbar it brings back are hidden.
-let deskNow = -1, lastSwitchLabel = [];
+// Watched on a worker thread (deskwatch.js), so the main thread, which also answers Windows' messages for every
+// app window, is free while Windows slides the desktops. If the worker can't start, the same watch runs here.
+// Around a switch the heavy window scans pause ("quiet"), and the island's endless animations stop for a moment,
+// so Windows has nothing extra to compose during the slide.
+let deskNow = -1, lastSwitchLabel = [], quietUntil = 0, deskWorker = null, deskWorkerReady = false;
+const QUIET_MS = 750; // Windows' slide, with a little to spare
+const quiet = () => Date.now() < quietUntil;
+function onDeskSwitch(from, to, count) {
+  deskNow = to;
+  if (gamer) return;
+  quietUntil = Date.now() + QUIET_MS;
+  const dir = Math.sign(to - from);
+  // first, before anything slower: the wallpaper's glide starts with Windows' slide
+  if (dir && store.get().general.deskMotion !== false && !lowPower) for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('desk-slide', dir);
+  if (islandWin && !islandWin.isDestroyed()) islandWin.webContents.send('switching', QUIET_MS);
+  // the top bar's desktop dots at once, without a window scan (the app name stays as it was)
+  if (topWin && !topWin.isDestroyed()) { const name = topApp.split('|')[0] || 'Desktop'; topApp = `${name}|${count}|${to}`; lastDesk = to; topWin.webContents.send('topbar', { app: name, desks: { count, current: to } }); }
+  setTimeout(checkPause, QUIET_MS); // resume the wallpaper / check for full-screen apps once the slide is over
+  if (dockWin) for (const ms of [450, 1700]) setTimeout(() => { if (!gamer && !overlayNow()) win32.showTaskbar(false); }, ms); // after the slide, and once more after the empty-desktop grace
+}
+function deskWatchSettings() {
+  return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: store.get().general.hideSwitchLabel !== false };
+}
+function startDeskWatch() {
+  if (!win32.isWin) return;
+  try {
+    const { Worker } = require('worker_threads');
+    deskWorker = new Worker(path.join(__dirname, 'deskwatch.js'), { workerData: deskWatchSettings() });
+    deskWorker.on('message', (m) => {
+      if (m.type === 'ready') deskWorkerReady = true;
+      else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count);
+      else if (m.type === 'label') lastSwitchLabel = m.found;
+      else if (m.type === 'fail') { console.warn('[deskwatch]', m.error); deskWorker?.terminate(); }
+    });
+    deskWorker.on('error', (e) => console.warn('[deskwatch]', e.message));
+    deskWorker.on('exit', () => { deskWorker = null; deskWorkerReady = false; }); // back to watching here
+  } catch (e) { console.warn('[deskwatch] worker unavailable:', e.message); deskWorker = null; }
+}
+// the fallback, on the main thread
 function watchDesktops() {
-  if (!win32.isWin || gamer) return;
+  if (!win32.isWin || deskWorkerReady) return;
   const vd = win32.virtualDesktops();
   if (vd.current === deskNow) return;
-  const first = deskNow === -1, dir = Math.sign(vd.current - deskNow);
+  const from = deskNow;
   deskNow = vd.current;
-  if (first) return;
-  // first, before anything slower: the wallpaper's drift should start with Windows' slide
-  if (dir && store.get().general.deskMotion !== false && !lowPower) for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('desk-slide', dir);
-  checkPause();
-  if (store.get().general.hideSwitchLabel !== false) {
-    // the label is a small Explorer window that shows up within a few frames: look for it briefly, and stop
-    // soon after it's gone (each look walks every window on the thread that also runs the bars)
-    const scr = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+  if (from === -1) return;
+  onDeskSwitch(from, vd.current, vd.count);
+  if (!gamer && store.get().general.hideSwitchLabel !== false) {
+    const scr = deskWatchSettings().screen;
     let n = 0, found = -1;
     const t = setInterval(() => {
       const h = win32.hideSwitchLabel(scr);
@@ -365,7 +398,6 @@ function watchDesktops() {
       if (++n >= 14 || (found >= 0 && n - found > 3)) clearInterval(t);
     }, 70);
   }
-  if (dockWin) for (const ms of [450, 1700]) setTimeout(() => { if (!gamer && !overlayNow()) win32.showTaskbar(false); }, ms); // after the slide, and once more after the empty-desktop grace
 }
 
 // ---------- MacBook-style switching: straight to the next / previous app, no picker ----------
@@ -408,7 +440,7 @@ function keepTopbarAtTop() {
 }
 const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return n ? n.charAt(0).toUpperCase() + n.slice(1) : ''; };
 function topbarTick() {
-  if (!topWin || topWin.isDestroyed() || gamer) return;
+  if (!topWin || topWin.isDestroyed() || gamer || quiet()) return;
   const d = screen.getPrimaryDisplay();
   const full = fullSteady; // the same 3-second rule as gamer mode (checkPause keeps it current)
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
@@ -586,6 +618,7 @@ function setAutostart(on) {
 function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
+  if (patch.general?.hideSwitchLabel !== undefined) deskWorker?.postMessage({ hideLabel: next.general.hideSwitchLabel !== false });
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
@@ -605,7 +638,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -772,7 +805,7 @@ function wireIpc() {
   ipcMain.handle('timer:get', () => timer);
   ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
   ipcMain.handle('switch:test', () => { switchApp(1, 'test'); return { ...hotkeyStatus, lastSwitch }; });
-  ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch }));
+  ipcMain.handle('switch:status', () => ({ ...hotkeyStatus, lastSwitch, autoAccent: win32.isWin && win32.autoAccent(), worker: deskWorkerReady }));
   ipcMain.handle('gamer', (_e, on) => { setGamer(on === undefined ? !gamer : !!on); return gamer; });
   // click a desktop dot: step there with Win+Ctrl+Left/Right (Windows' own switch, with its slide animation)
   ipcMain.handle('topbar:desk', async (e, target) => {
@@ -931,8 +964,9 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', displaysChanged);
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
-  setInterval(watchDesktops, 100);
-  setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
+  startDeskWatch();
+  setInterval(watchDesktops, 100); // only while the worker isn't running
+  setInterval(() => { if (!quiet()) checkPause(); }, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive() && !win32.foregroundNull(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
   setInterval(sendCursor, 50);
   registerHotkey();
@@ -962,6 +996,7 @@ app.on('before-quit', () => {
 });
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  deskWorker?.terminate();
   if (win32.isWin && store?.get().dock.on) win32.showTaskbar(true); // last word: the taskbar is visible when we're gone
 });
 app.on('window-all-closed', () => {}); // keep running in the tray

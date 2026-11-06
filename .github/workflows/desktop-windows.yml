@@ -55,6 +55,7 @@ jobs:
           Write-Output $out
           if ($out -notmatch 'SMOKE ') { throw 'the built app did not finish its smoke run' }
           if ($out -match 'A JavaScript error occurred|Uncaught|Cannot find module') { throw 'the built app hit an error' }
+          if ($out -notmatch '"deskWorker":true') { throw 'the desktop watcher did not start on its worker thread in the built app' }
       - name: With the dock on, the taskbar hides while running and comes back on quit
         shell: pwsh
         run: |

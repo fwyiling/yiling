@@ -95,3 +95,6 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 #island.osding.note .o-bar, #island.osding.note .o-val { display: none; }
 #island.osding:not(.note) .o-txt { display: none; }
 .osd.on .o-ic { color: var(--a); }
+
+/* a desktop slide is playing: nothing moves here for that moment */
+.switching *, .switching *::before, .switching *::after { animation-play-state: paused !important; }

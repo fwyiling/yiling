@@ -162,3 +162,8 @@ sd.onMedia((m) => { np = m; renderMedia(); shape(); });
 sd.media().then((m) => { np = m; renderMedia(); shape(); }).catch(() => {});
 sd.onSettings((n) => { s = n; look(); });
 look(); setMins(mins); onTimer(timer);
+
+// switching desktops: endless animations (equaliser, glow) hold still for the slide, so Windows has one
+// window fewer to compose every frame while it animates
+let switchT = 0;
+sd.onSwitching?.((ms) => { document.body.classList.add('switching'); clearTimeout(switchT); switchT = setTimeout(() => document.body.classList.remove('switching'), ms || 750); });

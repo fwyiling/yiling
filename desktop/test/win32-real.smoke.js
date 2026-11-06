@@ -20,5 +20,22 @@ console.log('ok   battery:', JSON.stringify(w.battery()));
 console.log('ok   virtual desktops:', JSON.stringify(w.virtualDesktops()));
 console.log('ok   refresh rates:', JSON.stringify(w.refreshRates()));
 console.log('ok   wifi scan (adapters asked; 0 on a PC without Wi-Fi):', w.wifiScan());
+console.log('ok   accent colour picked from the wallpaper:', w.autoAccent());
+// how long the window scans take on this thread (the app keeps them away from desktop slides)
+const time = (name, fn, n = 20) => { const t = process.hrtime.bigint(); for (let i = 0; i < n; i++) fn(); console.log(`ok   ${name}: ${(Number(process.hrtime.bigint() - t) / 1e6 / n).toFixed(2)} ms each`); };
+const scr = { x: 0, y: 0, width: 1024, height: 768 };
+time('virtualDesktops', () => w.virtualDesktops(), 200);
+time('listWindows', () => w.listWindows([process.pid]));
+time('fullscreenAppRunning', () => w.fullscreenAppRunning([scr]));
+time('hideSwitchLabel (nothing to hide)', () => w.hideSwitchLabel({ x: 0, y: 100000, width: 1, height: 1 }));
 assert.strictEqual(w.status().error, '');
 console.log('real Windows bindings fine');
+// the desktop watcher runs on a worker thread: the bindings must load there as well
+const { Worker } = require('worker_threads');
+const worker = new Worker(require('path').join(__dirname, '..', 'deskwatch.js'), { workerData: { screen: scr, hideLabel: false } });
+const to = setTimeout(() => { console.error('FAIL desk watcher worker never got ready'); process.exit(1); }, 15000);
+worker.on('error', (e) => { console.error('FAIL desk watcher worker:', e.message); process.exit(1); });
+worker.on('message', (m) => {
+  if (m.type === 'fail') { console.error('FAIL desk watcher worker:', m.error); process.exit(1); }
+  if (m.type === 'ready') { clearTimeout(to); console.log('ok   desk watcher runs on a worker thread'); worker.terminate().then(() => process.exit(0)); }
+});
