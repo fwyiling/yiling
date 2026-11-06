@@ -242,7 +242,10 @@ function overlayNow() {
 function hideTaskbar() {
   if (!win32.isWin) return;
   const ov = overlayNow();
-  if (ov !== overlayOn) { overlayOn = ov; checkPause(); } // pause the wallpaper while Windows animates (Task View, switching desktops)
+  // pause the wallpaper under Task View, Start and the like; not for the moment in between of a desktop switch
+  // ("nothing in front"): frozen during the slide and starting again after it looked choppy
+  const covered = ov && !win32.foregroundNull();
+  if (covered !== overlayOn) { overlayOn = covered; checkPause(); }
   if (ov) { overlayAt = Date.now(); return; }
   if (Date.now() - overlayAt < 800) return; // just after Task View / a desktop switch: let Windows finish first
   if (win32.taskbarVisible()) win32.showTaskbar(false);
@@ -338,21 +341,29 @@ const TIMER_ACTIONS = {
 };
 
 // ---------- switching desktops ----------
-// Watched four times a second (two registry reads): right after a switch, hide Windows' "Desktop N" label and
-// the taskbar Windows brings back, and resume the wallpaper.
+// Watched ten times a second (two cheap registry reads), so the app reacts while Windows is still sliding:
+// the wallpaper drifts along with the slide, Windows' "Desktop N" label and the taskbar it brings back are hidden.
 let deskNow = -1, lastSwitchLabel = [];
 function watchDesktops() {
   if (!win32.isWin || gamer) return;
   const vd = win32.virtualDesktops();
   if (vd.current === deskNow) return;
-  const first = deskNow === -1;
+  const first = deskNow === -1, dir = Math.sign(vd.current - deskNow);
   deskNow = vd.current;
   if (first) return;
+  // first, before anything slower: the wallpaper's drift should start with Windows' slide
+  if (dir && store.get().general.deskMotion !== false && !lowPower) for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('desk-slide', dir);
   checkPause();
   if (store.get().general.hideSwitchLabel !== false) {
+    // the label is a small Explorer window that shows up within a few frames: look for it briefly, and stop
+    // soon after it's gone (each look walks every window on the thread that also runs the bars)
     const scr = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
-    let n = 0;
-    const t = setInterval(() => { const h = win32.hideSwitchLabel(scr); if (h.length) lastSwitchLabel = h; if (++n >= 20) clearInterval(t); }, 80);
+    let n = 0, found = -1;
+    const t = setInterval(() => {
+      const h = win32.hideSwitchLabel(scr);
+      if (h.length) { lastSwitchLabel = h; found = n; }
+      if (++n >= 14 || (found >= 0 && n - found > 3)) clearInterval(t);
+    }, 70);
   }
   if (dockWin) for (const ms of [450, 1700]) setTimeout(() => { if (!gamer && !overlayNow()) win32.showTaskbar(false); }, ms); // after the slide, and once more after the empty-desktop grace
 }
@@ -920,9 +931,9 @@ app.whenReady().then(() => {
   screen.on('display-metrics-changed', displaysChanged);
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
-  setInterval(watchDesktops, 250);
+  setInterval(watchDesktops, 100);
   setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
-  setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
+  setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive() && !win32.foregroundNull(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
   setInterval(sendCursor, 50);
   registerHotkey();
   tray = new Tray(icon().resize({ width: 16, height: 16 }));

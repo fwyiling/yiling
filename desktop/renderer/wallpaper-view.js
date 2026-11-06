@@ -235,6 +235,17 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     positions,
     widgets,
     pause(p) { scene?.pause(p); media.querySelector('video')?.[p ? 'pause' : 'play']?.(); root.classList.toggle('paused', p); },
+    // switching desktops: the wallpaper glides a little the way the windows go, then settles back (depth: the
+    // widgets in front move a bit more than the picture behind). Added on top of the parallax transforms, on the
+    // compositor only, so it costs nothing on the main thread; off when Windows' animation effects are off.
+    slide(dir) {
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const go = (e, dist) => e && !e.hidden && e.animate(
+        // eased per half: glide out with the slide, then settle back softly (one curve over the whole thing jerked)
+        [{ transform: 'translateX(0)', easing: 'cubic-bezier(.33,0,.2,1)' }, { transform: `translateX(${dir > 0 ? "-" : ""}${dist})`, offset: 0.38, easing: 'cubic-bezier(.4,0,.2,1)' }, { transform: 'translateX(0)' }],
+        { duration: 800, composite: 'add' });
+      go(canvas, '1.6%'); go(media, '1.1%'); go(layer, '2.2cqw');
+    },
     pointer(x, y) { scene?.pointer(x, y); root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
     destroy() { clearInterval(clockT); clearInterval(todayT); clearInterval(statsT); clearInterval(weatherT); clearInterval(dayT); scene?.destroy(); root.replaceChildren(); },
   };

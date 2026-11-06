@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('sd', {
   onWindows: on('windows'),
   onSettings: on('settings'),
   onPause: on('pause'),
+  onDeskSlide: on('desk-slide'),
   onCursor: on('cursor'),
   onHomeShown: on('home-shown'),
   onApps: on('apps'),
