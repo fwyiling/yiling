@@ -310,7 +310,9 @@ function setGamer(on, auto = false) {
     if (on) w.hide(); else w.showInactive();
   }
   if (on) lightsWin?.hide(); else onLights(lightsTarget);
-  if (on) { if (dockWin && win32.isWin) win32.showTaskbar(true); }
+  // Ctrl+Alt+G by hand: the Windows taskbar while the dock is away. Not when a full-screen game / video / F11 turned
+  // gamer mode on by itself: the blue taskbar then flashed up behind it, and again for 3 s after leaving full screen.
+  if (on) { if (dockWin && win32.isWin && !auto) win32.showTaskbar(true); }
   else pollWindows(true);
   checkPause();
   broadcast('gamer', gamer);
@@ -371,7 +373,7 @@ function onDeskSwitch(from, to, count) {
 function deskWatchSettings() {
   const g = store.get().general;
   return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported(),
-    lights: g.macButtons !== false, ownPids: ownPids(), ime: store.get().topbar.ime !== false };
+    lights: g.macButtons === true, ownPids: ownPids(), ime: store.get().topbar.ime !== false };
 }
 
 // ---------- the input method (Pinyin / English) in the top bar ----------
@@ -741,7 +743,7 @@ function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
   if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
-  if (patch.general?.macButtons !== undefined) { setLights(next.general.macButtons !== false); deskWorker?.postMessage({ lights: next.general.macButtons !== false }); }
+  if (patch.general?.macButtons !== undefined) { setLights(next.general.macButtons === true); deskWorker?.postMessage({ lights: next.general.macButtons === true }); }
   if (patch.general?.hideSwitchLabel !== undefined || patch.general?.edgeSwitch !== undefined) {
     if (next.general.edgeSwitch !== false) vdesk.start();
     deskWorker?.postMessage(deskWatchSettings());
@@ -1190,7 +1192,7 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
   startDeskWatch();
-  setLights(store.get().general.macButtons !== false);
+  setLights(store.get().general.macButtons === true);
   setInterval(() => deskWorker?.postMessage({ ownPids: ownPids() }), 10000); // the app's own windows never get lights
   if (store.get().general.edgeSwitch !== false) vdesk.start(); // ready before the first drag (it takes a moment to start)
   setInterval(watchDesktops, 100); // only while the worker isn't running

@@ -73,7 +73,7 @@ if (!win32.isWin || !st.ready) {
   win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
   setInterval(() => watchEdge(Date.now()), 25);
   setInterval(watchLights, 50);
-  setInterval(watchIme, 150); // often: snapping has to be paused before the pointer reaches the edge
+  setInterval(watchIme, 250); // often: snapping has to be paused before the pointer reaches the edge
   setInterval(() => {
     const vd = win32.virtualDesktops(); // two small registry reads
     if (vd.current !== current) {

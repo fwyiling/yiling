@@ -81,6 +81,7 @@ function bind() {
   u.IsZoomed = user32.func('bool __stdcall IsZoomed(intptr_t hwnd)');
   // the input method of the window in front: Chinese (Pinyin) or English mode, for the top bar's 拼 / EN
   u.GetKeyboardLayout = user32.func('uintptr_t __stdcall GetKeyboardLayout(uint32 thread)');
+  u.GetAsyncKeyState = user32.func('short __stdcall GetAsyncKeyState(int vk)');
   u.SendMessageTimeoutNum = user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'intptr_t', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]);
   try { u.ImmGetDefaultIMEWnd = koffi.load('imm32.dll').func('intptr_t __stdcall ImmGetDefaultIMEWnd(intptr_t hwnd)'); } catch {}
   try { u.GetDpiForWindow = user32.func('uint32 __stdcall GetDpiForWindow(intptr_t hwnd)'); } catch {} // Windows 10 1607+
@@ -367,7 +368,7 @@ function captionButtons(ownPids = []) {
   const max = !!u.IsZoomed(fg);
   let b = null;
   const cb = {};
-  if (u.DwmGetFrameRect(fg, 5, cb, 16) === 0 && cb.right - cb.left >= 60 * scale && cb.bottom - cb.top >= 16 * scale && cb.bottom - cb.top <= 60 * scale) // DWMWA_CAPTION_BUTTON_BOUNDS (window-relative)
+  if (!max && u.DwmGetFrameRect(fg, 5, cb, 16) === 0 && cb.right - cb.left >= 60 * scale && cb.bottom - cb.top >= 16 * scale && cb.bottom - cb.top <= 60 * scale) // DWMWA_CAPTION_BUTTON_BOUNDS (window-relative)
     b = { left: r.left + cb.left, top: r.top + cb.top, right: r.left + cb.right, bottom: r.top + cb.bottom };
   else b = { left: f.right - Math.round(138 * scale), top: f.top, right: f.right, bottom: f.top + Math.round(30 * scale) }; // a standard title bar: 3 × 46 px
   b.right = Math.min(b.right, f.right); b.top = Math.max(b.top, f.top); // never past the visible frame
@@ -375,7 +376,7 @@ function captionButtons(ownPids = []) {
   const key = `${fg}|${b.left}|${b.top}|${b.right}|${max}`;
   if (key !== lightCache.key) {
     const dc = u.GetDC(0);
-    const px = u.GetPixel(dc, b.left - Math.round(6 * scale), b.top + Math.round(8 * scale));
+    const px = u.GetPixel(dc, b.left - Math.round(12 * scale), Math.round((b.top + b.bottom) / 2)); // inside the title bar, left of the buttons
     u.ReleaseDC(0, dc);
     lightCache = { key, color: px === 0xFFFFFFFF ? -1 : px }; // CLR_INVALID: off screen
   }
@@ -387,6 +388,9 @@ function captionButtons(ownPids = []) {
  *  in that language (Pinyin's Chinese mode) or English (Shift switches). { hwnd, lang, ime, native } or null. */
 function inputMode() {
   if (!load()) return null;
+  // never while Shift, Ctrl, Alt or Win is held: asking the input method in the middle of a Shift press could get in
+  // the way of Pinyin's own Shift switch. Asked again once the keys are up.
+  for (const vk of [0x10, 0x11, 0x12, 0x5B, 0x5C]) if (u.GetAsyncKeyState(vk) & 0x8000) return null;
   const fg = u.GetForegroundWindow();
   if (isNull(fg)) return null;
   const pid = [0], tid = u.GetWindowThreadProcessId(fg, pid);
