@@ -72,6 +72,28 @@ function focusGroup(list) {
 }
 async function pinTarget(p) { if (!targets.has(p)) targets.set(p, sd.pinTarget(p).catch(() => p)); return targets.get(p); }
 
+// Dragging files like on a Mac: hold them over an app in the dock and it comes forward (so you can drop them into
+// its window), or let go on the icon to open them in that app. The taskbar did the first; the dock replaced it.
+function springLoad(b, open, target, name) {
+  let t = 0;
+  const files = (e) => e.dataTransfer?.types.includes('Files');
+  b.addEventListener('dragenter', (e) => {
+    if (!files(e)) return;
+    b.classList.add('drop'); clearTimeout(t);
+    if (open.length) t = setTimeout(() => { b.classList.add('sprung'); sd.focusWindow((open.find((w) => w.active) || open[0]).hwnd, false).catch(() => {}); }, 650);
+  });
+  b.addEventListener('dragover', (e) => { if (files(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  const done = () => { clearTimeout(t); b.classList.remove('drop', 'sprung'); };
+  b.addEventListener('dragleave', (e) => { if (!b.contains(e.relatedTarget)) done(); });
+  b.addEventListener('drop', async (e) => {
+    if (!files(e)) return;
+    e.preventDefault(); done();
+    const n = await sd.dockOpenWith(target, [...e.dataTransfer.files]).catch(() => 0);
+    if (n) flashTip(b, `Opening ${n} file${n > 1 ? 's' : ''} in ${name}`);
+  });
+}
+
+const launching = new Map(); // pinned apps starting up: path -> timer
 async function render() {
   const pins = s.home.pins || [];
   const pinExes = await Promise.all(pins.map((p) => pinTarget(p.path)));
@@ -85,14 +107,21 @@ async function render() {
     b.className = 'item' + (open.length ? ' running' : '') + (open.some((w) => w.active) ? ' active' : '');
     b.append(iconFor(`pin:${p.path}`, () => sd.appIcon(p.path), p.name));
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
-    b.onclick = () => (open.length ? focusGroup(open) : sd.launch(p.path).catch((e) => flashTip(b, `Couldn't open ${p.name}: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`)));
+    if (open.length) launching.delete(p.path); else if (launching.has(p.path)) b.classList.add('launching'); // its window is up: stop bouncing
+    b.onclick = () => {
+      if (open.length) return focusGroup(open);
+      // like a Mac: the icon bounces until the app's window shows (at most a few seconds)
+      launching.set(p.path, setTimeout(() => { launching.delete(p.path); render(); }, 4000)); b.classList.add('launching');
+      sd.launch(p.path).catch((e) => { clearTimeout(launching.get(p.path)); launching.delete(p.path); b.classList.remove('launching'); flashTip(b, `Couldn't open ${p.name}: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`); });
+    };
     b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Move left', () => movePin(i, -1)], ['Move right', () => movePin(i, 1)], ['Unpin', () => sd.unpin(p.path)]]); };
     // drag pinned icons to reorder them
     b.draggable = true;
     b.ondragstart = (e) => { e.dataTransfer.setData('text/x-pin', String(i)); e.dataTransfer.effectAllowed = 'move'; hideTip(); };
     b.ondragover = (e) => { if (e.dataTransfer.types.includes('text/x-pin')) { e.preventDefault(); b.classList.add('dropbefore'); } };
     b.ondragleave = () => b.classList.remove('dropbefore');
-    b.ondrop = (e) => { e.preventDefault(); b.classList.remove('dropbefore'); const from = +e.dataTransfer.getData('text/x-pin'); if (from !== i) reorderPins(from, i); };
+    b.ondrop = (e) => { if (!e.dataTransfer.types.includes('text/x-pin')) return; e.preventDefault(); b.classList.remove('dropbefore'); const from = +e.dataTransfer.getData('text/x-pin'); if (from !== i) reorderPins(from, i); };
+    springLoad(b, open, p.path, p.name);
     tip(b, open.length ? `${p.name} · ${open[0].title}` : p.name);
     return b;
   }));
@@ -105,6 +134,7 @@ async function render() {
     if (list.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${list.length}</span>`);
     b.onclick = () => focusGroup(list);
     b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Pin to dock', () => sd.dockPin(w.exe)]]); };
+    springLoad(b, list, w.exe, name);
     tip(b, list.length > 1 ? `${name} · ${list.length} windows` : w.title);
     return b;
   }));
@@ -145,7 +175,7 @@ $('bin').ondrop = async (e) => {
   e.preventDefault(); $('bin').classList.remove('drop');
   const pin = e.dataTransfer.getData('text/x-pin');
   if (pin !== '') { const p = (s.home.pins || [])[+pin]; if (p) sd.unpin(p.path); return; }
-  const n = await sd.trashFiles(e.dataTransfer.files).catch(() => 0);
+  const n = await sd.trashFiles([...e.dataTransfer.files]).catch(() => 0);
   if (n) flashTip($('bin'), `Moved ${n} item${n > 1 ? 's' : ''} to the Bin`);
 };
 sd.onBin(renderBin); sd.bin().then(renderBin).catch(() => {});

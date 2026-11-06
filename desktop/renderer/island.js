@@ -117,6 +117,7 @@ const ICONS = {
   volume: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/>',
   muted: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/>',
   brightness: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  ime: '<rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M7 10h.01M10.5 10h.01M14 10h.01M17 10h.01M8 14h8"/>',
   caps: '<path d="M12 4l7 8h-4v4H9v-4H5z"/><path d="M9 20h6"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="6.5" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="1.5"/>',
 };
@@ -125,9 +126,11 @@ function showOsd(info) {
   const o = document.querySelector('.osd');
   const kind = info.kind === 'volume' && (info.muted || info.value === 0) ? 'muted' : info.kind === 'device' ? 'headphones' : info.kind;
   o.querySelector('.o-ic').innerHTML = ICONS[kind] || ICONS.volume;
-  o.classList.toggle('on', info.kind === 'caps' ? !!info.on : info.kind === 'device' ? !!info.connected : false);
-  const note = info.kind === 'caps' || info.kind === 'device';
-  if (note) o.querySelector('.o-txt').textContent = info.kind === 'caps' ? `Caps Lock ${info.on ? 'on' : 'off'}` : `${info.name || 'Audio device'} ${info.connected ? 'connected' : 'disconnected'}`;
+  o.classList.toggle('on', info.kind === 'caps' ? !!info.on : info.kind === 'device' ? !!info.connected : info.kind === 'ime' ? !!info.native : false);
+  const note = info.kind === 'caps' || info.kind === 'device' || info.kind === 'ime';
+  if (note) o.querySelector('.o-txt').textContent = info.kind === 'caps' ? `Caps Lock ${info.on ? 'on' : 'off'}`
+    : info.kind === 'ime' ? (info.native ? ({ 0x11: '日本語', 0x12: '한국어' }[info.lang & 0x3FF] || '中文 · 拼音') : 'English')
+    : `${info.name || 'Audio device'} ${info.connected ? 'connected' : 'disconnected'}`;
   else { o.querySelector('.o-bar b').style.width = `${info.value}%`; o.querySelector('.o-val').textContent = info.kind === 'volume' && info.muted ? 'Off' : info.value; }
   osdInfo = { ...info, note };
   clearTimeout(osdT); osdT = setTimeout(() => { osdInfo = null; shape(); }, note ? 2400 : 1500);

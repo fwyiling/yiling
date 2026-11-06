@@ -28,3 +28,7 @@ button:focus { outline: none; }
 #desks button { min-width: 18px; height: 16px; padding: 0 5px; border-radius: 5px; font-size: 10.5px; font-weight: 700; color: var(--m); background: rgba(255, 255, 255, .06); }
 #desks button.on { background: var(--a); color: #fff; }
 #desks button:hover:not(.on) { background: rgba(255, 255, 255, .14); color: var(--t); }
+/* input method: 拼 while Pinyin types Chinese, EN in English (like the input source in the macOS menu bar) */
+.seg.ime { min-width: 22px; height: 16px; padding: 0 5px; justify-content: center; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .2px;
+  box-shadow: inset 0 0 0 1.2px rgba(255, 255, 255, .72); transition: background .15s, color .15s; }
+.seg.ime.native { background: rgba(255, 255, 255, .88); color: #15181d; box-shadow: none; font-size: 11px; }

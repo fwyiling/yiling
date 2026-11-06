@@ -309,6 +309,7 @@ function setGamer(on, auto = false) {
     if (!w || w.isDestroyed()) continue;
     if (on) w.hide(); else w.showInactive();
   }
+  if (on) lightsWin?.hide(); else onLights(lightsTarget);
   if (on) { if (dockWin && win32.isWin) win32.showTaskbar(true); }
   else pollWindows(true);
   checkPause();
@@ -369,7 +370,41 @@ function onDeskSwitch(from, to, count) {
 }
 function deskWatchSettings() {
   const g = store.get().general;
-  return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported() };
+  return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported(),
+    lights: g.macButtons !== false, ownPids: ownPids(), ime: store.get().topbar.ime !== false };
+}
+
+// ---------- the input method (Pinyin / English) in the top bar ----------
+// Shown as 拼 / EN; switching with Shift in the same window also gets a short note in the island.
+let imeNow = null;
+function onIme(m) {
+  const prev = imeNow; imeNow = m;
+  if (topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', m);
+  if (prev && m.ime && prev.ime && prev.hwnd === m.hwnd && prev.native !== m.native) osd({ kind: 'ime', native: m.native, lang: m.lang });
+}
+
+// ---------- Mac window buttons (traffic lights) over the window in front ----------
+// The desk-watcher thread finds the window in front and where its minimize / maximize / close are; a small window
+// with the three lights is laid over them, in the title bar's colour. Clicks do what Windows' own buttons do.
+let lightsWin = null, lightsTarget = null;
+function setLights(on) {
+  if (!win32.isWin) return;
+  if (!on) { lightsWin?.destroy(); lightsWin = null; lightsTarget = null; return; }
+  if (lightsWin && !lightsWin.isDestroyed()) return;
+  lightsWin = new BrowserWindow({ width: 138, height: 30, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
+    alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Lights', webPreferences: webPrefs });
+  lightsWin.setAlwaysOnTop(true, 'pop-up-menu');
+  lightsWin.loadURL(ui('lights.html'));
+  lightsWin.once('ready-to-show', () => { win32.makeToolWindow(lightsWin); onLights(lightsTarget); }); // on every virtual desktop
+  lightsWin.on('closed', () => { lightsWin = null; });
+}
+function onLights(b) {
+  lightsTarget = b;
+  if (!lightsWin || lightsWin.isDestroyed()) return;
+  if (!b || gamer || fullNow) { if (lightsWin.isVisible()) lightsWin.hide(); return; }
+  lightsWin.webContents.send('lights', { color: b.color, max: b.max });
+  win32.placeWindow(lightsWin, { x: b.x, y: b.y, width: b.width, height: b.height }); // physical pixels, exactly over the buttons
+  if (!lightsWin.isVisible()) lightsWin.showInactive();
 }
 // a window held against the left / right edge while being dragged: you go to the desktop next door and the window
 // comes with you, staying in your hand while Windows slides (Win+Ctrl+arrow; straight there if those keys don't get
@@ -397,6 +432,8 @@ function startDeskWatch() {
       else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count);
       else if (m.type === 'label') lastSwitchLabel = m.found;
       else if (m.type === 'edge') edgeMove(m.hwnd, m.dir);
+      else if (m.type === 'lights') onLights(m.b);
+      else if (m.type === 'ime') onIme(m.m);
       else if (m.type === 'fail') { console.warn('[deskwatch]', m.error); deskWorker?.terminate(); }
     });
     deskWorker.on('error', (e) => console.warn('[deskwatch]', e.message));
@@ -442,6 +479,22 @@ function switchApp(dir, via = 'dock') {
   setTimeout(() => pollWindows(true), 150);
 }
 
+// ---------- full screen (F11, full-screen video): the top bar and island go at once, like macOS ----------
+// A maximized window keeps them (it ends below the top bar). Gamer mode keeps its own 3-second rule.
+let fullNow = false, fullSeen = 0;
+function watchFullscreen() {
+  if (!win32.isWin || gamer) return;
+  const displays = screen.getAllDisplays().map((d) => screen.dipToScreenRect(null, d.bounds));
+  const full = win32.fullscreenAppRunning(displays, ownPids());
+  fullSeen = full ? fullSeen + 1 : 0;
+  const next = fullSeen >= 2; // two checks in a row (~0.3 s): not for a split-second flash
+  if (next === fullNow) return;
+  fullNow = next;
+  if (topWin && !topWin.isDestroyed()) { if (fullNow) topWin.hide(); else if (!fullSteady) topWin.showInactive(); }
+  if (islandWin && !islandWin.isDestroyed()) { if (fullNow) islandWin.hide(); else islandWin.showInactive(); }
+  if (fullNow) { flyWin?.hide(); lightsWin?.hide(); }
+}
+
 // ---------- top bar (like the macOS menu bar) ----------
 const TOP_H = 24; // the macOS menu bar's height
 let topWin = null, topTimer = null, topApp = '', lastDesk = -1;
@@ -469,7 +522,7 @@ const prettyExe = (exe) => { const n = path.basename(exe || '', '.exe'); return 
 function topbarTick() {
   if (!topWin || topWin.isDestroyed() || gamer || quiet()) return;
   const d = screen.getPrimaryDisplay();
-  const full = fullSteady; // the same 3-second rule as gamer mode (checkPause keeps it current)
+  const full = fullNow || fullSteady; // F11 / full-screen video: out of the way at once (see watchFullscreen)
   if (full && topWin.isVisible()) topWin.hide(); else if (!full && !topWin.isVisible()) topWin.showInactive(); // out of the way of games and video
   keepTopbarAtTop(); keepIslandAtTop();
   const fg = currentWindows().find((w) => w.active);
@@ -688,6 +741,7 @@ function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
   if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
+  if (patch.general?.macButtons !== undefined) { setLights(next.general.macButtons !== false); deskWorker?.postMessage({ lights: next.general.macButtons !== false }); }
   if (patch.general?.hideSwitchLabel !== undefined || patch.general?.edgeSwitch !== undefined) {
     if (next.general.edgeSwitch !== false) vdesk.start();
     deskWorker?.postMessage(deskWatchSettings());
@@ -697,6 +751,7 @@ function applySettings(patch) {
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.topbar?.look !== undefined) applyTopbarLook();
+  if (patch.topbar?.ime !== undefined) deskWorker?.postMessage({ ime: next.topbar.ime !== false });
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
@@ -855,7 +910,7 @@ function wireIpc() {
   ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerDesktops());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
-    const pages = { location: 'ms-settings:privacy-location', home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
+    const pages = { location: 'ms-settings:privacy-location', home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', language: 'ms-settings:regionlanguage', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
     if (!pages[page]) throw new Error('unknown page');
     return shell.openExternal(pages[page]);
   });
@@ -904,8 +959,33 @@ function wireIpc() {
     for (let i = 0; i < Math.abs(steps); i++) { win32.pressKeys([0x5B, 0x11, steps > 0 ? 0x27 : 0x25]); await new Promise((r) => setTimeout(r, 260)); }
     topApp = ''; topbarTick();
   });
+  ipcMain.handle('ime:get', () => imeNow);
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
   ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
+  // files dropped on an app in the dock: opened in that app (a Store app or one started through a launcher: each file
+  // opens in its usual app instead)
+  ipcMain.handle('dock:openWith', async (e, target, files) => {
+    if (!dockWin || e.sender !== dockWin.webContents) return 0;
+    const pin = store.get().home.pins.find((p) => p.path === target), run = windowsList.find((w) => w.exe === target);
+    if (!pin && !run) throw new Error('not on the dock');
+    files = (Array.isArray(files) ? files : []).filter((f) => typeof f === 'string' && path.isAbsolute(f) && fs.existsSync(f)).slice(0, 50);
+    if (!files.length) return 0;
+    let exe = run ? run.exe : '';
+    if (pin && /\.exe$/i.test(pin.path)) exe = pin.path;
+    else if (pin && /\.lnk$/i.test(pin.path)) { try { const l = shell.readShortcutLink(pin.path); if (/\.exe$/i.test(l.target) && !/\\Update\.exe$/i.test(l.target)) exe = l.target; } catch {} }
+    if (win32.isWin && exe && !/\\WindowsApps\\/i.test(exe) && fs.existsSync(exe)) {
+      win32.allowForeground();
+      require('child_process').spawn(exe, files, { detached: true, stdio: 'ignore' }).unref();
+      return files.length;
+    }
+    for (const f of files) await shell.openPath(f);
+    return files.length;
+  });
+  ipcMain.handle('lights:act', (e, what) => {
+    if (!lightsWin || e.sender !== lightsWin.webContents || !lightsTarget) return;
+    win32.windowCommand(lightsTarget.hwnd, String(what));
+    if (what !== 'zoom') lightsWin.hide(); // the window is going away; the watcher brings the lights to the next one
+  });
   // Bin: how full, open it, empty it (Windows asks), send files there (they can be restored from it)
   ipcMain.handle('bin:get', () => (win32.isWin ? (binState = win32.recycleBin()) : binState));
   ipcMain.handle('bin:open', () => { if (win32.isWin) require('child_process').spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref(); });
@@ -1110,9 +1190,12 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
   powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
   startDeskWatch();
+  setLights(store.get().general.macButtons !== false);
+  setInterval(() => deskWorker?.postMessage({ ownPids: ownPids() }), 10000); // the app's own windows never get lights
   if (store.get().general.edgeSwitch !== false) vdesk.start(); // ready before the first drag (it takes a moment to start)
   setInterval(watchDesktops, 100); // only while the worker isn't running
-  setInterval(() => { if (!quiet()) checkPause(); }, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
+  setInterval(() => { if (!quiet()) checkPause(); }, 700);
+  setInterval(watchFullscreen, 150); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive() && !win32.foregroundNull(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
   setInterval(sendCursor, 50);
   registerHotkey();

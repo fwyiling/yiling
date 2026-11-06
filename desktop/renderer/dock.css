@@ -96,3 +96,10 @@ button:focus, button:focus-visible { outline: none; } /* no white focus rings af
 .item.bin.full svg.can .paper { display: block; }
 .item.bin.full svg.can .lid { transform: rotate(-8deg) translate(-1px, -2px); transform-origin: 38px 12px; }
 .item.drop { background: color-mix(in srgb, var(--a) 32%, transparent); border-radius: 12px; }
+/* a file held over an app: it lights up, then springs forward (a little bounce), like a Mac */
+.item.drop:not(.bin) { background: color-mix(in srgb, var(--a) 26%, transparent); }
+.item.sprung { animation: spring .35s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes spring { 40% { transform: scale(calc(var(--s) * 1.12)) translateY(-4px); } }
+/* an app starting up bounces, like the Mac dock */
+.item.launching { animation: launch .9s cubic-bezier(.3, .6, .4, 1) infinite; }
+@keyframes launch { 0%, 100% { translate: 0 0; } 35% { translate: 0 -14px; } 60% { translate: 0 0; } 75% { translate: 0 -4px; } }

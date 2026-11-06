@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Syndicates Lights</title>
+  <link rel="stylesheet" href="lights.css">
+</head>
+<body>
+  <!-- Mac window buttons, laid over the window in front's own minimize / maximize / close -->
+  <div id="bar"><div class="lights">
+    <button data-a="close" class="close" aria-label="Close"><svg viewBox="0 0 12 12"><path d="M3.6 3.6l4.8 4.8M8.4 3.6l-4.8 4.8"/></svg></button>
+    <button data-a="minimize" class="min" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M3 6h6"/></svg></button>
+    <button data-a="zoom" class="zoom" aria-label="Zoom"><svg viewBox="0 0 12 12"><path class="fill" d="M3.2 8.8V5.2l3.6 3.6zM8.8 3.2v3.6L5.2 3.2z"/></svg></button>
+  </div></div>
+  <script type="module" src="lights.js"></script>
+</body>
+</html>

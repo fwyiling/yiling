@@ -23,6 +23,8 @@ console.log('ok   wifi scan (adapters asked; 0 on a PC without Wi-Fi):', w.wifiS
 console.log('ok   accent colour picked from the wallpaper:', w.autoAccent());
 console.log('ok   repaint desktop (for the Windows-background mode):', w.repaintDesktop());
 console.log('ok   recycle bin:', JSON.stringify(w.recycleBin()));
+console.log('ok   window buttons of the window in front:', JSON.stringify(w.captionButtons([])));
+console.log('ok   input method in front:', JSON.stringify(w.inputMode()));
 console.log('ok   screenshots folder (if moved):', JSON.stringify(w.regString('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders', '{B7BEDE81-DF94-4682-A7D8-57A52620B86F}')));
 // how long the window scans take on this thread (the app keeps them away from desktop slides)
 const time = (name, fn, n = 20) => { const t = process.hrtime.bigint(); for (let i = 0; i < n; i++) fn(); console.log(`ok   ${name}: ${(Number(process.hrtime.bigint() - t) / 1e6 / n).toFixed(2)} ms each`); };

@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('sd', {
   sys: () => ipcRenderer.invoke('sys:get'),
   setSys: (what, value) => ipcRenderer.invoke('sys:set', what, value),
   onSys: on('sys'),
+  onLights: on('lights'),
+  onIme: on('ime'),
+  ime: () => ipcRenderer.invoke('ime:get'),
+  lightsAct: (what) => ipcRenderer.invoke('lights:act', what),
   bin: () => ipcRenderer.invoke('bin:get'),
   onBin: on('bin'),
   openBin: () => ipcRenderer.invoke('bin:open'),
@@ -44,6 +48,7 @@ contextBridge.exposeInMainWorld('sd', {
   shotsFolder: () => ipcRenderer.invoke('shots:folder'),
   takeShot: () => ipcRenderer.invoke('shots:take'),
   dragShot: (p) => ipcRenderer.send('shots:drag', p),
+  dockOpenWith: (target, files) => ipcRenderer.invoke('dock:openWith', target, [...files].map((f) => webUtils.getPathForFile(f)).filter(Boolean)), // files dropped on a dock app
   onOsd: on('osd'),
   wifiList: (scan) => ipcRenderer.invoke('net:wifi', scan),
   wifiConnect: (ssid, password, secure) => ipcRenderer.invoke('net:connect', ssid, password, secure),

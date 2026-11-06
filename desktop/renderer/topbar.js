@@ -80,3 +80,18 @@ $('wifiBtn').onclick = () => sd.flyout('wifi', anchor($('wifiBtn')));
 $('battery').onclick = () => sd.flyout('battery', anchor($('battery')));
 sd.onSettings((n) => { const cityChanged = n.widgets.weather?.city !== s.widgets.weather?.city || n.topbar?.weather !== s.topbar?.weather; s = n; look(); if (cityChanged) weather(); });
 look();
+
+// ---------- input method: Pinyin (拼) or English (EN), switched with Shift ----------
+const IME_NATIVE = { 0x04: '拼', 0x11: 'あ', 0x12: '한' }; // Chinese, Japanese, Korean input methods in their own mode
+function renderIme(m) {
+  const b = $('ime');
+  b.hidden = !m || s.topbar?.ime === false;
+  if (b.hidden) return;
+  const own = m.ime && m.native ? IME_NATIVE[m.lang & 0x3FF] : '';
+  b.textContent = own || 'EN';
+  b.classList.toggle('native', !!own);
+  b.title = own ? 'Typing Chinese (Pinyin). Shift switches to English.' : m.ime ? 'Typing English. Shift switches to Pinyin.' : 'English keyboard';
+}
+sd.onIme?.(renderIme);
+sd.ime?.().then(renderIme).catch(() => {});
+$('ime').onclick = () => sd.windowsSettings?.('language');
