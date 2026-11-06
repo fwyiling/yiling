@@ -52,12 +52,12 @@ $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
 $last = ''; $lastKey = ''; $art = ''; $artTries = 0; $artError = ''; $cmdResult = ''; $tick = 0
 while ($true) {
-  $poll = ($tick % 4) -eq 0
+  $poll = ($tick % 2) -eq 0 # about twice a second
   if ($rd.IsCompleted) {
     $n = 0; try { $n = $rd.Result } catch {}
     if ($n -le 0) { exit 0 } # the app closed
     foreach ($c in ([Text.Encoding]::ASCII.GetString($buf, 0, $n) -split [char]10)) {
-      $c = $c.Trim(); if (-not $c) { continue }
+      $c = $c.Trim(); if (-not $c -or $c -eq 'poll') { continue } # 'poll': just read the state again (below)
       try {
         $s = $mgr.GetCurrentSession(); $op = $null
         if ($s) {
@@ -135,7 +135,7 @@ const KEYS = { toggle: 0xB3, next: 0xB0, prev: 0xB1 };
 // the media keys are only the fallback when the reader isn't running.
 function control(cmd) {
   if (!KEYS[cmd]) throw new Error('unknown media command');
-  if (child && child.stdin.writable) child.stdin.write(cmd + '\n');
+  if (child && child.stdin.writable) { child.stdin.write(cmd + '\n'); setTimeout(() => child?.stdin.writable && child.stdin.write('poll\n'), 450); }
   else win32.mediaKey(KEYS[cmd]);
 }
 

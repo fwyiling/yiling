@@ -22,7 +22,7 @@
     <div class="cols">
       <section class="apps main">
         <nav class="tabs">
-          <button data-t="apps" class="on">Apps</button><button data-t="time">Timetable</button><button data-t="books">Books</button><button data-t="gh">GitHub</button>
+          <button data-t="apps" class="on">Apps</button><button data-t="time">Timetable</button><button data-t="books">Books</button><button data-t="files">Files</button>
         </nav>
         <div data-p="apps">
           <div class="sec-h"><h2 id="appsTitle">Pinned</h2><div><button id="allBtn" class="chip">All apps</button><button id="addPin" class="chip" title="Pin an app or file">+ Pin</button></div></div>
@@ -46,11 +46,11 @@
           <div class="sec-h"><h2 id="bookResH">Popular</h2></div>
           <div id="bookRes" class="books"></div>
         </div>
-        <div data-p="gh" hidden>
-          <form id="ghForm" class="addrow"><input id="ghUser" placeholder="Your GitHub username" autocomplete="off" spellcheck="false"><button class="chip on">Save</button></form>
-          <div id="ghLinks" class="ghlinks"></div>
-          <div class="sec-h"><h2>Recent repositories</h2><span id="ghNote" class="muted"></span></div>
-          <ul id="ghRepos" class="rows"></ul>
+        <div data-p="files" hidden>
+          <div class="sec-h"><div id="fileKinds" class="days">
+            <button class="chip on" data-kind="all">All</button><button class="chip" data-kind="pdf">PDFs</button><button class="chip" data-kind="doc">Documents</button><button class="chip" data-kind="img">Images</button>
+          </div><input id="fileQ" class="mini-search" placeholder="Search files…" autocomplete="off" spellcheck="false"></div>
+          <ul id="fileList" class="rows files"></ul>
         </div>
       </section>
       <aside class="side">

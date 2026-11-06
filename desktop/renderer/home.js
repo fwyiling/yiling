@@ -209,7 +209,7 @@ document.querySelectorAll('.tabs [data-t]').forEach((b) => b.onclick = () => {
   document.querySelectorAll('.tabs [data-t]').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('[data-p]').forEach((p) => { p.hidden = p.dataset.p !== tab; });
   if (tab === 'books' && !$('bookRes').children.length) searchBooks('');
-  if (tab === 'gh') renderGithub();
+  if (tab === 'files') loadFiles();
 });
 
 // ---------- timetable ----------
@@ -280,31 +280,34 @@ async function searchBooks(q, redraw = false) {
 }
 $('bookForm').onsubmit = (e) => { e.preventDefault(); searchBooks($('bookQ').value.trim()); };
 
-// ---------- GitHub ----------
-const GH_LINKS = [['Profile', (u) => `https://github.com/${u}`], ['Repositories', (u) => `https://github.com/${u}?tab=repositories`], ['Pull requests', () => 'https://github.com/pulls'],
-  ['Issues', () => 'https://github.com/issues'], ['Notifications', () => 'https://github.com/notifications'], ['New repository', () => 'https://github.com/new']];
-async function renderGithub() {
-  const u = s.home.github || '';
-  $('ghUser').value = u;
-  $('ghLinks').replaceChildren(...GH_LINKS.filter(([n]) => u || !['Profile', 'Repositories'].includes(n)).map(([name, url]) => {
-    const b = Object.assign(document.createElement('button'), { className: 'chip', textContent: name, type: 'button' });
-    b.onclick = () => sd.open(url(u)); return b;
+// ---------- files (recent, filter, search) ----------
+const KINDS = { pdf: /\.pdf$/i, doc: /\.(docx?|pptx?|xlsx?|txt|md|rtf|odt|ods|odp|csv|wps|et|dps)$/i, img: /\.(png|jpe?g|gif|webp|bmp|heic|svg)$/i };
+let fileKind = 'all', recent = [], fileQT = 0;
+const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${Math.max(1, m)} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString(); };
+function renderFiles(list) {
+  const shown = list.filter((f) => fileKind === 'all' || (!f.folder && KINDS[fileKind].test(f.name))).slice(0, 40);
+  $('fileList').replaceChildren(...shown.map((f) => {
+    const li = document.createElement('li'); li.className = 'file';
+    li.append(iconEl({ name: f.name, path: f.path }));
+    li.insertAdjacentHTML('beforeend', '<div class="ft"><b></b><span class="muted"></span></div><span class="muted when"></span>');
+    li.querySelector('b').textContent = f.name;
+    li.querySelector('.ft .muted').textContent = f.path.replace(/[\\/][^\\/]+$/, '');
+    li.querySelector('.when').textContent = f.time ? ago(f.time) : (f.folder ? 'Folder' : '');
+    li.onclick = () => sd.launch(f.path);
+    li.oncontextmenu = (e) => { e.preventDefault(); resultMenu({ app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => sd.launch(f.path) }, e.clientX, e.clientY); };
+    return li;
   }));
-  if (!u) { $('ghRepos').innerHTML = '<li class="empty">Add your username to see your repositories here.</li>'; $('ghNote').textContent = ''; return; }
-  $('ghNote').textContent = 'public repositories';
-  try {
-    const repos = await sd.githubRepos(u);
-    $('ghRepos').replaceChildren(...repos.map((x) => {
-      const li = document.createElement('li'); li.className = 'repo';
-      li.innerHTML = '<b></b><span class="muted desc"></span><span class="muted meta"></span>';
-      li.querySelector('b').textContent = x.name; li.querySelector('.desc').textContent = x.desc;
-      li.querySelector('.meta').textContent = [x.lang, x.stars ? `★ ${x.stars}` : '', new Date(x.pushed).toLocaleDateString()].filter(Boolean).join(' · ');
-      li.onclick = () => sd.open(x.url); return li;
-    }));
-    if (!repos.length) $('ghRepos').innerHTML = '<li class="empty">No public repositories.</li>';
-  } catch (e) { $('ghRepos').innerHTML = `<li class="empty">${esc(why(e))}</li>`; }
+  if (!shown.length) $('fileList').innerHTML = `<li class="empty">${$('fileQ').value ? 'Nothing found.' : 'No recent files of this kind yet. Open a file and it shows up here.'}</li>`;
 }
-$('ghForm').onsubmit = async (e) => { e.preventDefault(); s = await sd.set({ home: { github: $('ghUser').value.trim().replace(/^@/, '') } }); renderGithub(); };
+async function loadFiles() {
+  const q = $('fileQ').value.trim();
+  if (q.length >= 2) { renderFiles(await sd.searchFiles(q).catch(() => [])); return; }
+  recent = await sd.recentFiles().catch(() => []); renderFiles(recent);
+}
+$('fileKinds').querySelectorAll('[data-kind]').forEach((b) => b.onclick = () => {
+  fileKind = b.dataset.kind; $('fileKinds').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); loadFiles();
+});
+$('fileQ').oninput = () => { clearTimeout(fileQT); fileQT = setTimeout(loadFiles, 300); };
 
 // ---------- places (instead of desktop icons) ----------
 document.querySelectorAll('[data-place]').forEach((b) => b.onclick = () => sd.openPlace(b.dataset.place));

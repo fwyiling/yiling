@@ -56,6 +56,7 @@ function bind() {
     SwitchToThisWindow: user32.func('void __stdcall SwitchToThisWindow(intptr_t hwnd, bool altTab)'),
     keybd_event: user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr_t extra)'),
     LockWorkStation: user32.func('bool __stdcall LockWorkStation()'),
+    GetKeyState: user32.func('short __stdcall GetKeyState(int vk)'),
     AttachThreadInput: user32.func('bool __stdcall AttachThreadInput(uint32 from, uint32 to, bool attach)'),
     BringWindowToTop: user32.func('bool __stdcall BringWindowToTop(intptr_t hwnd)'),
     shell32: koffi.load('shell32.dll'),
@@ -515,4 +516,5 @@ module.exports = {
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
   lock: safe('lock', () => load() && u.LockWorkStation(), false),
+  capsLock: safe('capsLock', () => !!(load() && (u.GetKeyState(0x14) & 1)), false),
 };

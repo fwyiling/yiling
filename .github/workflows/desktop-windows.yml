@@ -30,6 +30,8 @@ jobs:
         run: node test/win32-real.smoke.js
       - name: App search knows every Start menu app (Store apps too)
         run: node test/apps.smoke.js
+      - name: System controls helper works (volume, brightness, radios)
+        run: node test/sysctl.smoke.js
       - name: Now-playing reader works
         run: node test/media.smoke.js
       - name: Song title, cover and play/pause with a real media session

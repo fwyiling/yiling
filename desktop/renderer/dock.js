@@ -151,7 +151,6 @@ function renderMedia() {
 }
 $('np').querySelectorAll('[data-m]').forEach((b) => {
   b.onclick = async () => {
-    if (b.dataset.m === 'toggle') { np.playing = !np.playing; renderMedia(); } // feels instant; the real state follows
     await sd.mediaControl(b.dataset.m).catch(() => {});
   };
 });

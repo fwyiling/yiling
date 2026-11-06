@@ -80,3 +80,18 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .idle-ico { display: none; width: 14px; height: 14px; color: rgba(255, 255, 255, .7); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 #island[data-mini="none"] .idle-ico { display: block; }
 #island.compact:hover { box-shadow: 0 0 0 1px var(--a); }
+
+/* pop-ups: the pill grows a little into a slim bar (volume / brightness) or a short note (Caps Lock, headphones) */
+#island.osding { width: 270px; height: calc(var(--ch) + 10px); border-radius: 999px; }
+#island.osding.note { width: 250px; }
+.osd { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 12px; opacity: 0; pointer-events: none; transition: opacity .15s; }
+#island.osding .osd { opacity: 1; transition: opacity .2s ease .12s; }
+#island.osding .mini, #island.osding .panel { opacity: 0 !important; pointer-events: none !important; }
+.o-ic { width: 17px; height: 17px; flex: none; color: var(--t); }
+.o-bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.o-bar b { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--t); transition: width .12s ease-out; }
+.o-val { font-style: normal; font-size: 12px; font-weight: 600; min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; color: var(--m); }
+.o-txt { flex: 1; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#island.osding.note .o-bar, #island.osding.note .o-val { display: none; }
+#island.osding:not(.note) .o-txt { display: none; }
+.osd.on .o-ic { color: var(--a); }

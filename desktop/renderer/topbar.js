@@ -40,7 +40,7 @@ function renderMedia() {
   $('np').classList.toggle('playing', !!np.playing);
   $('npText').textContent = [np.title, np.artist].filter(Boolean).join(' — ');
 }
-$('npToggle').onclick = () => { np.playing = !np.playing; renderMedia(); sd.mediaControl('toggle').catch(() => {}); };
+$('npToggle').onclick = () => sd.mediaControl('toggle').catch(() => {});
 sd.onMedia((m) => { np = m; renderMedia(); });
 sd.media().then((m) => { np = m; renderMedia(); }).catch(() => {});
 
@@ -65,10 +65,11 @@ async function battery() {
   }
   look();
 }
-battery(); setInterval(battery, 30e3);
+battery(); setInterval(battery, 5000);
+sd.onPower?.(battery); // plugged in / unplugged: at once
 
-$('logo').onclick = () => { const r = $('logo').getBoundingClientRect(); sd.topbarMenu(Math.round(r.left), Math.round(r.bottom)); };
-$('quick').onclick = () => sd.topbarKeys('quick');
+$('logo').onclick = () => sd.flyout('menu', Math.round($('logo').getBoundingClientRect().left));
+$('quick').onclick = () => { const r = $('quick').getBoundingClientRect(); sd.flyout('control', Math.round(r.left + r.width / 2)); };
 $('timerBtn').onclick = () => sd.topbarTimer();
 $('clock').onclick = () => sd.topbarKeys('notifications');
 sd.onSettings((n) => { const cityChanged = n.widgets.weather?.city !== s.widgets.weather?.city || n.topbar?.weather !== s.topbar?.weather; s = n; look(); if (cityChanged) weather(); });

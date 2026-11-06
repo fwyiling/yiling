@@ -223,4 +223,31 @@ function searchFiles(query) {
     }));
 }
 
-module.exports = { searchFiles, stats, listApps, listAppsFull, appIdToFile, weather, books, githubRepos };
+// Recently opened files: the shortcuts Windows keeps in Recent, newest first (on other systems: newest in your folders)
+function recentFiles(limit = 80) {
+  const { shell } = require('electron');
+  const out = [];
+  if (process.platform === 'win32') {
+    const dir = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Recent');
+    let items = [];
+    try { items = fs.readdirSync(dir).filter((f) => /\.lnk$/i.test(f)).map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })); } catch {}
+    items.sort((a, b) => b.t - a.t);
+    const seen = new Set();
+    for (const { f, t } of items) {
+      if (out.length >= limit) break;
+      let target = '';
+      try { target = shell.readShortcutLink(path.join(dir, f)).target; } catch {}
+      if (!target || seen.has(target.toLowerCase())) continue;
+      let st; try { st = fs.statSync(target); } catch { continue; } // gone or on a disconnected drive
+      seen.add(target.toLowerCase());
+      out.push({ name: path.basename(target), path: target, folder: st.isDirectory(), time: t });
+    }
+    return out;
+  }
+  const home = require('os').homedir();
+  const walk = (d, depth) => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const e of es) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) { if (depth < 3) walk(p, depth + 1); } else { try { out.push({ name: e.name, path: p, folder: false, time: fs.statSync(p).mtimeMs }); } catch {} } } };
+  for (const d of ['Desktop', 'Documents', 'Downloads']) walk(path.join(home, d), 0);
+  return out.sort((a, b) => b.time - a.time).slice(0, limit);
+}
+
+module.exports = { recentFiles, searchFiles, stats, listApps, listAppsFull, appIdToFile, weather, books, githubRepos };

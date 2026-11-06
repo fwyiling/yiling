@@ -131,3 +131,12 @@ body.dropping #panel::after { content: "Drop to pin"; position: absolute; inset:
 .res:hover .rpin, .res.on .rpin, .rpin.on { opacity: 1; }
 .rpin:hover { border-color: var(--a); background: color-mix(in srgb, var(--a) 25%, transparent); }
 .rpin.on { color: var(--m); }
+
+/* files */
+.mini-search { width: 220px; border: 0; outline: none; border-radius: 999px; padding: 6px 14px; background: rgba(255, 255, 255, .06); }
+.rows.files li.file { grid-template-columns: 28px 1fr auto; cursor: pointer; }
+.rows.files li.file:hover { background: rgba(255, 255, 255, .07); }
+.rows.files img, .rows.files .ph { width: 26px; height: 26px; border-radius: 6px; }
+.rows.files .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 35%, #20262f); font-weight: 700; font-size: 12px; }
+.rows.files .ft { display: grid; gap: 1px; min-width: 0; } .rows.files .ft b, .rows.files .ft span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rows.files .ft span { font-size: 12px; } .rows.files .when { font-size: 12px; white-space: nowrap; }

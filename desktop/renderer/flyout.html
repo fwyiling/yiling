@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+  <title>Syndicates Panel</title>
+  <link rel="stylesheet" href="flyout.css">
+</head>
+<body>
+  <!-- the top bar's menu -->
+  <nav id="menu" class="panel" hidden></nav>
+  <!-- control centre -->
+  <div id="control" class="panel" hidden>
+    <section class="card media" id="cMedia" hidden>
+      <div class="art"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></div>
+      <div class="txt"><small id="cApp"></small><b id="cTitle"></b><span id="cArtist"></span></div>
+      <div class="ctl">
+        <button data-m="prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 6l-8 6 8 6z"/></svg></button>
+        <button data-m="toggle" class="pp" title="Play / pause"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg></button>
+        <button data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="tiles">
+        <div class="tile split" id="tWifi"><button class="main"><svg viewBox="0 0 24 24"><path d="M2.5 9.5a14 14 0 0 1 19 0M5.8 13a9 9 0 0 1 12.4 0M9.2 16.4a4 4 0 0 1 5.6 0"/><circle cx="12" cy="19.6" r=".9"/></svg></button><button class="more" data-page="wifi"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button><label>Wi-Fi</label></div>
+        <div class="tile split" id="tBt"><button class="main"><svg viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg></button><button class="more" data-page="bluetooth"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button><label>Bluetooth</label></div>
+        <div class="tile" id="tAir"><button class="main"><svg viewBox="0 0 24 24"><path d="M10.5 3.5c0-.8.7-1.5 1.5-1.5s1.5.7 1.5 1.5V9l7 4v2l-7-2v5l2 1.5V21l-3.5-1L8.5 21v-1.5l2-1.5v-5l-7 2v-2l7-4z"/></svg></button><label>Airplane mode</label></div>
+        <div class="tile link" data-page="batterysaver"><button class="main"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5v3M9 10l-2 3h4l-2 3"/></svg></button><label>Energy saver</label></div>
+        <div class="tile link" data-page="nightlight"><button class="main"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button><label>Night light</label></div>
+        <div class="tile link" data-page="accessibility"><button class="main"><svg viewBox="0 0 24 24"><circle cx="12" cy="4.5" r="1.8"/><path d="M5 8l7 1.5L19 8M12 9.5V14l-3 7M12 14l3 7"/></svg></button><label>Accessibility</label></div>
+      </div>
+      <div class="sliders">
+        <div class="slide" id="sBright"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><input type="range" min="0" max="100" id="bright"><em id="brightV"></em></div>
+        <div class="slide" id="sVol"><button id="muteBtn" class="ic-b" title="Mute"><svg viewBox="0 0 24 24" class="ic"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path class="wave" d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/><path class="x" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg></button><input type="range" min="0" max="100" id="vol"><em id="volV"></em><button class="more" data-page="sound" title="Sound output"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
+      </div>
+      <footer><span id="cBattery"></span><button class="ic-b" data-page="home" title="Windows Settings"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></footer>
+    </section>
+  </div>
+  <script type="module" src="flyout.js"></script>
+</body>
+</html>

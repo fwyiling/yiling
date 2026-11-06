@@ -7,6 +7,7 @@ const { Store } = require('./settings-store');
 const system = require('./system');
 const win32 = require('./win32');
 const media = require('./media');
+const sysctl = require('./sysctl');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
@@ -29,7 +30,7 @@ const ui = (page, query = '') => `sd://ui/${page}${query}`;
 
 let displayTimer;
 let store, tray, homeWin = null, settingsWin = null, dockWin = null, islandWin = null, paused = false, userPaused = false;
-let gamer = false, gamerAuto = false, fullSince = 0, fullSteady = false; // gamer mode: everything of ours out of the way and idle
+let gamer = false, gamerAuto = false, fullSince = 0, notFullSince = 0, fullSteady = false; // gamer mode: everything of ours out of the way and idle
 const wallpapers = new Map(); // display id -> BrowserWindow
 let apps = null;
 
@@ -92,9 +93,11 @@ function checkPause() {
   // full screen for 3 s: screenshot overlays and other brief full-screen flashes must not flip everything around.
   const full = win32.isWin && win32.fullscreenAppRunning(displays, ownPids());
   fullSince = full ? (fullSince || Date.now()) : 0;
+  notFullSince = full ? 0 : (notFullSince || Date.now());
   fullSteady = !!fullSince && Date.now() - fullSince >= 3000;
+  const notFullSteady = !!notFullSince && Date.now() - notFullSince >= 3000; // games lose focus for a moment all the time
   if (g.autoGamer !== false && win32.isWin) {
-    if (fullSteady && !gamer) setGamer(true, true); else if (!full && gamer && gamerAuto) setGamer(false);
+    if (fullSteady && !gamer) setGamer(true, true); else if (notFullSteady && gamer && gamerAuto) setGamer(false);
   }
   const next = userPaused || gamer || auto || overlayOn;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
@@ -151,6 +154,7 @@ const hotkeyStatus = { switchKeys: false };
 let lastSwitch = null;
 function registerHotkey() {
   globalShortcut.unregisterAll();
+  volumeKeys = false; // re-registered with the next volume reading
   const key = store.get().home.hotkey;
   const reg = (k, fn) => { try { return !!k && globalShortcut.register(k, fn); } catch (e) { console.warn('bad hotkey', k, e.message); return false; } };
   // Alt+Space is also Windows' window menu and PowerToys Run's key; fall back if something else owns it
@@ -282,12 +286,14 @@ async function setDock(on) {
 function setGamer(on, auto = false) {
   if (on === gamer) return;
   gamer = on; gamerAuto = on && auto;
+  // cheap on purpose: windows are only hidden (screen edges stay reserved, so nothing on screen has to move),
+  // and the music reader keeps running (restarting PowerShell is the expensive part)
   for (const w of [dockWin, topWin, islandWin]) {
     if (!w || w.isDestroyed()) continue;
-    if (on) { if (win32.isWin) win32.releaseEdge(w); w.hide(); } else w.showInactive();
+    if (on) w.hide(); else w.showInactive();
   }
-  if (on) { media.pause(); if (dockWin && win32.isWin) win32.showTaskbar(true); }
-  else { media.resume(); placeTopbar(); placeDock(); pollWindows(true); }
+  if (on) { if (dockWin && win32.isWin) win32.showTaskbar(true); }
+  else pollWindows(true);
   checkPause();
   broadcast('gamer', gamer);
   updateTray();
@@ -461,6 +467,51 @@ function openIslandTimer() {
   islandWin.webContents.send('island-open', 'timer');
 }
 
+// ---------- pop-ups in the island (volume, brightness, Caps Lock, headphones) ----------
+function osd(info) { if (islandWin && !islandWin.isDestroyed() && store.get().general.ownOsd !== false) islandWin.webContents.send('osd', info); }
+// the volume keys go to us (so Windows' own volume pop-up doesn't appear) and we change the volume like Windows does
+let volumeKeys = false;
+function registerVolumeKeys() {
+  if (!win32.isWin || store.get().general.ownOsd === false) return;
+  volumeKeys = true; // tried once
+  const step = (d) => { const st = sysctl.get(); if (st && st.volume >= 0) sysctl.set('volume', Math.round((st.volume + d) / 2) * 2); };
+  let ok = false;
+  try {
+    ok = globalShortcut.register('VolumeUp', () => step(2)) && globalShortcut.register('VolumeDown', () => step(-2))
+      && globalShortcut.register('VolumeMute', () => { const st = sysctl.get(); if (st) sysctl.set('mute', !st.muted); });
+  } catch {}
+  if (!ok) console.warn('[osd] volume keys are taken; Windows shows its own pop-up');
+}
+
+// ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
+let flyWin = null;
+const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 } };
+function openFlyout(panel, anchorX) {
+  if (!FLY[panel]) return;
+  const d = screen.getPrimaryDisplay(), z = FLY[panel];
+  const x = Math.round(Math.max(d.bounds.x + 6, Math.min(d.bounds.x + d.bounds.width - z.w - 6, d.bounds.x + anchorX - (panel === 'menu' ? 8 : z.w / 2))));
+  const bounds = { x, y: d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
+  if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel === panel) { flyWin.hide(); return; } // a second click closes it
+  if (!flyWin || flyWin.isDestroyed()) {
+    flyWin = new BrowserWindow({ ...bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
+      alwaysOnTop: true, backgroundColor: '#00000000', title: 'Syndicates Panel', webPreferences: webPrefs });
+    flyWin.setAlwaysOnTop(true, 'pop-up-menu');
+    flyWin.on('blur', () => flyWin?.hide());
+    flyWin.loadURL(ui('flyout.html'));
+    flyWin.panel = panel;
+    flyWin.once('ready-to-show', () => { win32.makeToolWindow(flyWin); flyWin.webContents.send('flyout', panel); flyWin.show(); flyWin.focus(); });
+    return;
+  }
+  flyWin.panel = panel;
+  flyWin.setBounds(bounds); flyWin.webContents.send('flyout', panel); flyWin.show(); flyWin.focus();
+}
+const FLY_ACTIONS = {
+  home: () => toggleHome(true), customize: openSettings, timer: openIslandTimer, gamer: () => setGamer(!gamer),
+  newdesk: () => win32.pressKeys([0x5B, 0x11, 0x44]), showdesk: () => win32.pressKeys([0x5B, 0x44]),
+  settings: () => shell.openExternal('ms-settings:'), taskmgr: () => win32.pressKeys([0x11, 0x10, 0x1B]), lock: () => win32.lock(),
+  notifications: () => win32.pressKeys([0x5B, 0x4E]),
+};
+
 // ---------- lock screen ----------
 let lockTimer = null;
 async function applyLockScreen() {
@@ -626,7 +677,6 @@ function wireIpc() {
   ipcMain.handle('stats', () => system.stats());
   ipcMain.handle('weather', (_e, city) => system.weather(city));
   ipcMain.handle('books', (_e, q) => system.books(q));
-  ipcMain.handle('github-repos', (_e, user) => system.githubRepos(user));
   // Places: what the desktop icons were for, so they can be hidden without losing anything
   ipcMain.handle('places:open', (_e, key) => {
     const PLACES = { pc: 'shell:MyComputerFolder', home: app.getPath('home'), downloads: app.getPath('downloads'), documents: app.getPath('documents'), recycle: 'shell:RecycleBinFolder' };
@@ -659,7 +709,7 @@ function wireIpc() {
   ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerDesktops());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
-    const pages = { colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
+    const pages = { home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
     if (!pages[page]) throw new Error('unknown page');
     return shell.openExternal(pages[page]);
   });
@@ -704,12 +754,19 @@ function wireIpc() {
     topApp = ''; topbarTick();
   });
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
+  ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
+  ipcMain.handle('flyout:action', (_e, what) => { flyWin?.hide(); if (FLY_ACTIONS[what]) setTimeout(FLY_ACTIONS[what], 60); });
+  ipcMain.handle('flyout:state', () => ({ gamer, hotkey: store.get().home.hotkey }));
+  ipcMain.handle('sys:get', () => sysctl.get());
+  ipcMain.handle('sys:set', (_e, what, value) => sysctl.set(what, value));
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   // pin what you dropped on Home (a file you chose by dragging it there)
   // files found by searching Home: those may be launched and pinned too
+  // recent files (Windows' Recent list), for Home's Files tab
+  ipcMain.handle('files:recent', () => { const r = system.recentFiles(); for (const f of r) foundFiles.add(f.path); return r; });
   ipcMain.handle('files:search', async (_e, q) => { const r = await system.searchFiles(q); for (const f of r) foundFiles.add(f.path); return r; });
   ipcMain.handle('pin:add', (_e, p) => {
     p = String(p || '');
@@ -804,6 +861,8 @@ app.whenReady().then(() => {
     }
     return new Response('not found', { status: 404 });
   });
+  // device names (headphones connected…) for the island: our own pages may read them
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => (permission === 'media' ? String(origin).startsWith('sd://') : true));
   // music-reactive wallpaper: system sound ("loopback", Windows only), and only for the wallpaper page
   session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
     const fromWallpaper = (req.frame?.url || '').startsWith(ui('wallpaper.html'));
@@ -813,13 +872,25 @@ app.whenReady().then(() => {
   wireIpc();
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
+  // system controls: the control centre shows them, the island pops up when volume / brightness change
+  sysctl.onChange((st, prev) => {
+    broadcast('sys', st);
+    if (!volumeKeys && st.volume >= 0) registerVolumeKeys();
+    if (!prev || gamer) return;
+    if (st.volume !== prev.volume || st.muted !== prev.muted) osd({ kind: 'volume', value: st.muted ? 0 : st.volume, muted: st.muted });
+    else if (st.brightness != null && prev.brightness != null && st.brightness !== prev.brightness) osd({ kind: 'brightness', value: st.brightness });
+  });
+  sysctl.start();
+  // Caps Lock: a little pop-up in the island when it changes
+  let caps = win32.capsLock();
+  setInterval(() => { const c = win32.capsLock(); if (c !== caps) { caps = c; osd({ kind: 'caps', on: c }); } }, 200);
   media.start();
   buildWallpapers();
   screen.on('display-added', displaysChanged);
   screen.on('display-removed', displaysChanged);
   screen.on('display-metrics-changed', displaysChanged);
-  powerMonitor.on('on-battery', checkPause);
-  powerMonitor.on('on-ac', checkPause);
+  powerMonitor.on('on-battery', () => { checkPause(); broadcast('power', 'battery'); });
+  powerMonitor.on('on-ac', () => { checkPause(); broadcast('power', 'ac'); });
   setInterval(watchDesktops, 250);
   setInterval(checkPause, 700); // cheap checks; a new desktop or a closed window resumes the wallpaper quickly
   setInterval(() => { if (!dockWin && !gamer && win32.isWin) { const ov = win32.systemOverlayActive(); if (ov !== overlayOn) { overlayOn = ov; checkPause(); } } }, 300);
@@ -842,7 +913,7 @@ app.on('second-instance', () => openSettings()); // opening it again while it ru
 app.on('before-quit', () => {
   app.isQuitting = true;
   for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
-  media.stop();
+  media.stop(); sysctl.stop();
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
   if (topWin && win32.isWin) win32.releaseEdge(topWin);

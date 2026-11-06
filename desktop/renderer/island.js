@@ -57,7 +57,7 @@ function renderMedia() {
   m.querySelector('.big-art').style.backgroundImage = art; m.querySelector('.big-art').classList.toggle('has', !!art);
   document.querySelector('.mini-art').style.backgroundImage = art;
 }
-document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { if (b.dataset.m === 'toggle') { np.playing = !np.playing; renderMedia(); } sd.mediaControl(b.dataset.m).catch(() => {}); });
+document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.mediaControl(b.dataset.m).catch(() => {})); // the real state comes back from Windows (no guessing: guesses went out of sync)
 
 // ---------- shape ----------
 // the window grows before the island opens and shrinks after it has closed (it's just the pill most of the time)
@@ -70,11 +70,13 @@ function shape() {
   applyShape();
 }
 function applyShape() {
+  isl.classList.toggle('osding', !!osdInfo && !open && !alerting);
+  isl.classList.toggle('note', !!osdInfo && osdInfo.note);
   const t = active(), m = np.on;
   isl.dataset.mini = t && m ? 'both' : t ? 'timer' : m ? 'media' : 'none';
   isl.classList.toggle('alerting', alerting);
   isl.classList.toggle('open', open && !alerting);
-  isl.classList.toggle('compact', !open && !alerting);
+  isl.classList.toggle('compact', !open && !alerting && !osdInfo);
   isl.classList.toggle('live', !open && !alerting && (t || m));
   // the open height follows its content
   if (open && !alerting) { // the open height follows what's in it (padding 30, 14 between sections)
@@ -109,6 +111,42 @@ function chime() { // three soft notes
 let alertT;
 function startAlert() { alerting = true; $('doneOf').textContent = `${fmt(timer.duration)} timer`; sd.islandMouse(true); chime(); setTimeout(chime, 2400); shape(); clearTimeout(alertT); alertT = setTimeout(endAlert, 20000); }
 function endAlert() { alerting = false; clearTimeout(alertT); sd.islandMouse(false); shape(); if (timer.state === 'done') sd.timer('reset'); }
+
+// ---------- pop-ups: volume, brightness, Caps Lock, headphones ----------
+const ICONS = {
+  volume: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/>',
+  muted: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/>',
+  brightness: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  caps: '<path d="M12 4l7 8h-4v4H9v-4H5z"/><path d="M9 20h6"/>',
+  headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="6.5" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="1.5"/>',
+};
+let osdInfo = null, osdT;
+function showOsd(info) {
+  const o = document.querySelector('.osd');
+  const kind = info.kind === 'volume' && (info.muted || info.value === 0) ? 'muted' : info.kind === 'device' ? 'headphones' : info.kind;
+  o.querySelector('.o-ic').innerHTML = ICONS[kind] || ICONS.volume;
+  o.classList.toggle('on', info.kind === 'caps' ? !!info.on : info.kind === 'device' ? !!info.connected : false);
+  const note = info.kind === 'caps' || info.kind === 'device';
+  if (note) o.querySelector('.o-txt').textContent = info.kind === 'caps' ? `Caps Lock ${info.on ? 'on' : 'off'}` : `${info.name || 'Audio device'} ${info.connected ? 'connected' : 'disconnected'}`;
+  else { o.querySelector('.o-bar b').style.width = `${info.value}%`; o.querySelector('.o-val').textContent = info.kind === 'volume' && info.muted ? 'Off' : info.value; }
+  osdInfo = { ...info, note };
+  clearTimeout(osdT); osdT = setTimeout(() => { osdInfo = null; shape(); }, note ? 2400 : 1500);
+  shape();
+}
+sd.onOsd(showOsd);
+// headphones / speakers coming and going (Bluetooth, USB, jack)
+let outputs = null;
+async function scanOutputs(announce) {
+  const list = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter((d) => d.kind === 'audiooutput' && !['default', 'communications'].includes(d.deviceId));
+  const now = new Map(list.map((d) => [d.deviceId, d.label]));
+  if (announce && outputs) {
+    for (const [id, label] of now) if (!outputs.has(id)) { showOsd({ kind: 'device', name: label.replace(/\s*\(.*\)$/, ''), connected: true }); break; }
+    for (const [id, label] of outputs) if (!now.has(id)) { showOsd({ kind: 'device', name: label.replace(/\s*\(.*\)$/, ''), connected: false }); break; }
+  }
+  outputs = now;
+}
+navigator.mediaDevices?.addEventListener('devicechange', () => setTimeout(() => scanOutputs(true), 400));
+scanOutputs(false);
 
 // ---------- wiring ----------
 let tickT;
