@@ -83,3 +83,45 @@
 [data-layout="center"][data-dock="on"] > .wp-cards { top: 63%; }
 [data-layout="left"][data-dock="on"] > .wp-foot { top: 82%; }
 [data-layout="left"][data-dock="on"] > .wp-hero, [data-layout="left"][data-dock="on"] > .wp-cards { top: 60%; }
+
+/* ---------- Mac layout: frosted widgets in the left corners (after macOS desktop widgets) ---------- */
+.wp-hidden { display: none; }
+[data-layout="mac"] > .wp-hero, [data-layout="mac"] > .wp-cards, [data-layout="mac"] > .wp-foot { display: none; }
+.wp-widgets > .wp-tl, .wp-widgets > .wp-bl { gap: 1.6cqmin; align-items: flex-start; }
+[data-layout="mac"] > .wp-tl { left: 2cqw; top: 6cqh; transform: var(--drift); }
+[data-layout="mac"] > .wp-bl { left: 2cqw; top: auto; bottom: 6cqh; transform: var(--drift); align-items: flex-end; }
+[data-layout="mac"][data-dock="on"] > .wp-bl { bottom: 11cqh; }
+.wp-widgets:not([data-layout="mac"]) > .wp-tl, .wp-widgets:not([data-layout="mac"]) > .wp-bl { display: none; }
+[data-layout="mac"] .w-card { border-radius: 2.6cqmin; padding: 1.6cqmin 1.8cqmin; background: rgba(255, 255, 255, .12); backdrop-filter: blur(26px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 1cqmin 3cqmin rgba(0, 0, 0, .18); min-height: 0; text-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+/* calendar: square */
+.w-calendar { display: block; width: 15cqmin; height: 15cqmin; }
+.w-calendar .mo { display: block; font-size: 1.25cqmin; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: color-mix(in srgb, var(--a) 40%, #ff6b5e); margin-bottom: .7cqmin; }
+.w-calendar .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25cqmin .1cqmin; text-align: center; font-size: 1.05cqmin; font-variant-numeric: tabular-nums; }
+.w-calendar .grid i { font-style: normal; font-weight: 700; opacity: .6; }
+.w-calendar .grid span { line-height: 1.55cqmin; border-radius: 50%; }
+.w-calendar .grid .today { background: color-mix(in srgb, var(--a) 40%, #ff6b5e); color: #fff; font-weight: 700; }
+/* weather: wide, with the next hours */
+[data-layout="mac"] .w-weather { display: grid; width: 32cqmin; height: 15cqmin; align-content: space-between; gap: .4cqmin; }
+.w-weather .wh, .w-weather .wr, .w-weather .hours { display: none; }
+[data-layout="mac"] .w-weather .wh { display: grid; } [data-layout="mac"] .w-weather .wr { display: flex; align-items: center; gap: .6cqmin; } [data-layout="mac"] .w-weather .hours { display: grid; grid-template-columns: repeat(6, 1fr); text-align: center; }
+.w-weather > .t, .w-weather > .d { display: block; }
+[data-layout="mac"] .w-weather .place { font-size: 1.4cqmin; font-weight: 700; }
+[data-layout="mac"] .w-weather .wh .t { font-size: 3.6cqmin; font-weight: 400; letter-spacing: -.02em; line-height: 1; }
+[data-layout="mac"] .w-weather .wr .d { font-size: 1.1cqmin; opacity: .9; } [data-layout="mac"] .w-weather .hl { margin-left: auto; font-size: 1.05cqmin; opacity: .85; }
+.w-weather .wi svg, .w-weather .hr i svg { width: 1.6cqmin; height: 1.6cqmin; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.w-weather .hr { display: grid; justify-items: center; gap: .25cqmin; } .w-weather .hr small { font-size: .95cqmin; opacity: .75; } .w-weather .hr b { font-size: 1.05cqmin; font-weight: 600; }
+.w-weather .hr i { font-style: normal; }
+/* reminders */
+.w-reminders { display: grid; align-content: start; gap: .8cqmin; width: 15cqmin; height: 15cqmin; }
+.w-reminders .rh { display: flex; justify-content: space-between; align-items: baseline; }
+.w-reminders .rh b { font-size: 1.4cqmin; color: color-mix(in srgb, var(--a) 50%, #ffb340); } .w-reminders .rh em { font-style: normal; font-size: 2cqmin; font-weight: 600; }
+.w-reminders ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .75cqmin; }
+.w-reminders li { display: flex; align-items: center; gap: .7cqmin; font-size: 1.1cqmin; min-width: 0; }
+.w-reminders li i { width: 1.15cqmin; height: 1.15cqmin; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .7); flex: none; }
+.w-reminders li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .w-reminders li.none { opacity: .7; }
+/* now playing as a square card */
+[data-layout="mac"] .w-media { display: grid; grid-template-columns: 1fr; align-content: space-between; width: 15cqmin; height: 15cqmin; gap: .5cqmin; max-width: none; }
+[data-layout="mac"] .w-media .art { width: 4.6cqmin; height: 4.6cqmin; border-radius: 1cqmin; }
+[data-layout="mac"] .w-media .txt { max-width: 100%; width: auto; } [data-layout="mac"] .w-media b { font-size: 1.25cqmin; } [data-layout="mac"] .w-media span { font-size: 1.1cqmin; }
+[data-layout="mac"] .w-media .eq { margin: 0; }

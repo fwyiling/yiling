@@ -140,8 +140,13 @@ async function weather(city = '') {
     place = g.results?.[0];
     if (!place) throw new Error(`couldn't find “${city}”`);
   } else place = await locate();
-  const w = await (await web(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code&timezone=auto`)).json();
-  const v = { place: place.name, temp: Math.round(w.current.temperature_2m), unit: w.current_units?.temperature_2m || '°C', text: WEATHER_CODES[w.current.weather_code] || '' };
+  const w = await (await web(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto`)).json();
+  // the next six hours, from the current hour (the Mac-style weather widget shows them)
+  const nowHour = (w.current?.time || '').slice(0, 13);
+  const start = Math.max(0, (w.hourly?.time || []).findIndex((t) => t.slice(0, 13) === nowHour));
+  const hourly = (w.hourly?.time || []).slice(start + 1, start + 7).map((t, i) => ({ hour: +t.slice(11, 13), temp: Math.round(w.hourly.temperature_2m[start + 1 + i]), code: w.hourly.weather_code[start + 1 + i] }));
+  const v = { place: place.name, temp: Math.round(w.current.temperature_2m), unit: w.current_units?.temperature_2m || '°C', text: WEATHER_CODES[w.current.weather_code] || '',
+    code: w.current.weather_code, day: w.current.is_day !== 0, hi: Math.round(w.daily?.temperature_2m_max?.[0]), lo: Math.round(w.daily?.temperature_2m_min?.[0]), hourly };
   weatherCache.set(city, { t: Date.now(), v });
   return v;
 }

@@ -17,7 +17,7 @@ const DEFAULTS = {
     dim: 0.15,                // darken the wallpaper so widgets stay readable
   },
   widgets: {
-    layout: 'center',         // center | left (grouped, tidy) or free (drag each widget anywhere)
+    layout: 'mac',            // mac (corner widgets, like macOS) | center | left (grouped, tidy) | free (drag each widget anywhere)
     clock:    { on: true,  x: 0.5,  y: 0.34, scale: 1, style: 'big' },   // big | minimal | analog
     greeting: { on: true,  x: 0.5,  y: 0.22, scale: 1 },
     date:     { on: true,  x: 0.5,  y: 0.46, scale: 1 },
@@ -25,6 +25,8 @@ const DEFAULTS = {
     weather:  { on: false, x: 0.92, y: 0.1,  scale: 1, city: '' },
     quote:    { on: true,  x: 0.5,  y: 0.9,  scale: 1 },
     media:    { on: true,  x: 0.86, y: 0.86, scale: 1 },
+    calendar: { on: true,  x: 0.08, y: 0.14, scale: 1 },   // Mac layout
+    reminders: { on: true, x: 0.08, y: 0.86, scale: 1 },   // Mac layout (your to-dos)
     today:    { on: true,  x: 0.14, y: 0.86, scale: 1 },   // next class and to-dos (only shows when there's something)   // now playing (only shows while something plays)
   },
   name: '',
@@ -51,6 +53,7 @@ class Store {
     try { saved = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch {}
     if (saved?.general?.fps === 60 || saved?.general?.fps === '60') delete saved.general.fps; // old default; 30 looks the same for these slow scenes at half the work
     if (saved?.dock?.opacity === 0.85) delete saved.dock.opacity; // the old see-through default; text behind bled through
+    if (saved?.widgets && !saved.widgets.macOffered) { saved.widgets.layout = 'mac'; saved.widgets.macOffered = true; } // the new Mac-style widgets, once (Customize > Widgets switches back)
     this.data = merge(DEFAULTS, saved);
   }
   get() { return this.data; }

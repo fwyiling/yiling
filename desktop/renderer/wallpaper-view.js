@@ -18,6 +18,19 @@ export function dayTint(colors, date = new Date()) {
   return { colors: colors.map((c) => toHex(hex(c).map((v, k) => lerp(v, tint[k], amt)))), dark };
 }
 
+// weather icons by WMO code (Open-Meteo), drawn as simple line art
+function weatherIcon(code, day = true) {
+  const sun = '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.6 4.6L6 6M18 18l1.4 1.4M3 12h2M19 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>';
+  const moon = '<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/>';
+  const cloud = '<path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 7 18z"/>';
+  const g = code === 0 ? (day ? sun : moon) : code <= 2 ? `<g transform="translate(-3 -3) scale(.7)">${day ? sun : moon}</g><g transform="translate(3 3) scale(.75)">${cloud}</g>`
+    : code === 3 || code === 45 || code === 48 ? cloud
+    : code >= 95 ? `${cloud}<path d="M12 13l-2 4h3l-2 4"/>`
+    : (code >= 71 && code <= 77) || code === 85 || code === 86 ? `<g transform="translate(0 -3)">${cloud}</g><path d="M8 20h.01M12 21h.01M16 20h.01"/>`
+    : `<g transform="translate(0 -3)">${cloud}</g><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>`;
+  return `<svg viewBox="0 0 24 24">${g}</svg>`;
+}
+
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
 export function mountWallpaper(root, settings, { preview = false, sd = window.sd } = {}) {
@@ -27,10 +40,13 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const dim = el('div', 'wp-dim');
   const layer = el('div', 'wp-widgets');
   // grouped layouts: the time in one hero stack, the info as a row (or column) of matching cards
-  const groups = { hero: el('div', 'wp-group wp-hero'), cards: el('div', 'wp-group wp-cards'), foot: el('div', 'wp-group wp-foot') };
+  const groups = { hero: el('div', 'wp-group wp-hero'), cards: el('div', 'wp-group wp-cards'), foot: el('div', 'wp-group wp-foot'), tl: el('div', 'wp-group wp-tl'), bl: el('div', 'wp-group wp-bl') };
+  // Mac layout (after macOS desktop widgets): calendar + weather top left, reminders + now playing bottom left
+  const MAC_GROUP = { calendar: 'tl', weather: 'tl', reminders: 'bl', media: 'bl' };
+  const hidden = el('div', 'wp-hidden');
   const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', today: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
-  const ORDER = ['greeting', 'clock', 'date', 'today', 'media', 'weather', 'stats', 'quote'];
-  layer.append(groups.hero, groups.cards, groups.foot);
+  const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'today', 'reminders', 'media', 'stats', 'quote'];
+  layer.append(groups.hero, groups.cards, groups.foot, groups.tl, groups.bl, hidden);
   root.append(canvas, media, dim, layer);
   let scene = null, s = settings, mediaKey = '';
   // the preview in Customize shows a sample so the widget can be placed while nothing plays
@@ -71,12 +87,14 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     greeting: () => el('div', 'w-greeting'),
     date: () => el('div', 'w-date'),
     stats: () => el('div', 'w-stats w-card', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
-    weather: () => el('div', 'w-weather w-card', '<b class="t">–</b><span class="d">Loading…</span>'),
+    weather: () => el('div', 'w-weather w-card', '<div class="wh"><span class="place"></span><b class="t">–</b></div><div class="wr"><i class="wi"></i><span class="d">Loading…</span><span class="hl"></span></div><div class="hours"></div>'),
+    calendar: () => el('div', 'w-calendar w-card'),
+    reminders: () => el('div', 'w-reminders w-card', '<div class="rh"><b>Reminders</b><em></em></div><ul></ul>'),
     today: () => el('div', 'w-today w-card', '<div class="col cls"><span class="lbl">Next</span><b></b><span class="sub"></span></div><div class="col todo"><span class="lbl">To-do</span><b></b><span class="sub"></span></div>'),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
     media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
-  const layout = () => (['center', 'left', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'center');
+  const layout = () => (['center', 'left', 'mac', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'center');
   // Today: the class on now / next (from the Home panel's timetable) and what's left on the to-do list
   function todayInfo() {
     const nc = upcomingClass(s.home?.timetable), open = (s.home?.todos || []).filter((t) => !t.done);
@@ -92,7 +110,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     else { lbl.textContent = 'Timetable'; b.textContent = 'No classes yet'; sub.textContent = 'Add them in Home (Alt+Space)'; }
     if (open.length) { e.querySelector('.todo b').textContent = `${open.length} left`; e.querySelector('.todo .sub').textContent = open[0].text || ''; }
   }
-  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on)
+  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on || layout() === 'mac')
 
   function placeWidgets() {
     const mode = layout();
@@ -103,9 +121,10 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
       if (!cfg || !MAKERS[k]) continue;
       if (!widgets[k]) { widgets[k] = MAKERS[k](); widgets[k].dataset.w = k; }
       const e = widgets[k];
-      const parent = mode === 'free' ? layer : groups[GROUP_OF[k]];
+      const g = mode === 'mac' ? MAC_GROUP[k] : mode === 'free' ? 'layer' : GROUP_OF[k];
+      const parent = g === 'layer' ? layer : groups[g] || hidden; // calendar and reminders only exist in the Mac layout
       parent.append(e); // keeps ORDER inside each group
-      e.hidden = !visible(k, cfg);
+      e.hidden = !visible(k, cfg) || parent === hidden;
       e.style.left = mode === 'free' ? `${cfg.x * 100}%` : ''; e.style.top = mode === 'free' ? `${cfg.y * 100}%` : '';
       e.style.setProperty('--scale', cfg.scale || 1);
       if (k === 'clock') e.dataset.style = cfg.style || 'big';
@@ -146,7 +165,15 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const w = widgets.weather, city = s.widgets.weather?.city;
     if (!w || w.hidden || !sd?.weather) return;
     w.dataset.loaded = '1';
-    try { const r = await sd.weather(city || ''); w.querySelector('.t').textContent = `${r.temp}${r.unit}`; w.querySelector('.d').textContent = `${r.text} · ${r.place}`; }
+    try {
+      const r = await sd.weather(city || '');
+      w.querySelector('.t').textContent = layout() === 'mac' ? `${r.temp}°` : `${r.temp}${r.unit}`;
+      w.querySelector('.d').textContent = layout() === 'mac' ? r.text : `${r.text} · ${r.place}`;
+      w.querySelector('.place').textContent = r.place;
+      w.querySelector('.wi').innerHTML = weatherIcon(r.code, r.day);
+      w.querySelector('.hl').textContent = Number.isFinite(r.hi) ? `H:${r.hi}° L:${r.lo}°` : '';
+      w.querySelector('.hours').replaceChildren(...(r.hourly || []).map((h) => { const d = el('div', 'hr'); d.innerHTML = `<small>${String(h.hour).padStart(2, '0')}</small><i>${weatherIcon(h.code, h.hour >= 6 && h.hour < 19)}</i><b>${h.temp}°</b>`; return d; }));
+    }
     catch (e) { w.querySelector('.t').textContent = '–'; w.querySelector('.d').textContent = String(e?.message || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/fetch failed|net::ERR_\w+/, "can't reach the weather service") || 'Weather unavailable'; }
   }
 
@@ -154,7 +181,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const m = widgets.media;
     if (!m) return;
     m.hidden = !visible('media', s.widgets.media || {});
-    m.querySelector('b').textContent = nowPlaying.title || 'Unknown title';
+    m.querySelector('b').textContent = nowPlaying.on ? nowPlaying.title || 'Unknown title' : 'Not playing';
     m.querySelector('span').textContent = nowPlaying.artist || '';
     m.classList.toggle('playing', !!nowPlaying.playing);
     const art = m.querySelector('.art');
@@ -163,15 +190,32 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   }
   if (!preview && sd?.onMedia) { sd.onMedia((m) => { nowPlaying = m; renderMedia(); }); sd.media().then((m) => { nowPlaying = m; renderMedia(); }).catch(() => {}); }
 
+  // Mac layout: a month calendar and your to-dos
+  function renderCalendar() {
+    const c = widgets.calendar; if (!c) return;
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth(), first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
+    const key = `${y}-${m}-${now.getDate()}`; if (c.dataset.key === key) return; c.dataset.key = key;
+    const cells = [...Array(first.getDay()).fill(''), ...Array.from({ length: days }, (_, i) => i + 1)];
+    const wd = Array.from({ length: 7 }, (_, i) => new Date(2023, 0, 1 + i).toLocaleDateString(undefined, { weekday: 'narrow' }));
+    c.innerHTML = `<b class="mo">${now.toLocaleDateString(undefined, { month: 'long' })}</b><div class="grid">${wd.map((d) => `<i>${d}</i>`).join('')}${cells.map((d) => `<span${d === now.getDate() ? ' class="today"' : ''}>${d}</span>`).join('')}</div>`;
+  }
+  function renderReminders() {
+    const r = widgets.reminders; if (!r) return;
+    const open = (s.home?.todos || []).filter((t) => !t.done);
+    r.querySelector('em').textContent = open.length || '';
+    r.querySelector('ul').replaceChildren(...open.slice(0, 4).map((t) => { const li = el('li'); li.innerHTML = '<i></i><span></span>'; li.querySelector('span').textContent = t.text; return li; }));
+    if (!open.length) r.querySelector('ul').innerHTML = '<li class="none">All done</li>';
+  }
+
   function update(next) {
     const cityChanged = next.widgets.weather?.city !== s.widgets.weather?.city;
     s = next;
     root.style.setProperty('--a', s.accent);
-    applyBackground(); placeWidgets(); renderMedia(); renderToday(); refreshStats();
+    applyBackground(); placeWidgets(); renderMedia(); renderToday(); renderCalendar(); renderReminders(); refreshStats();
     if (cityChanged || (widgets.weather && !widgets.weather.hidden && !widgets.weather.dataset.loaded)) refreshWeather(); // also when it's just been switched on
   }
   update(settings);
-  const clockT = setInterval(() => tick(false), 1000);
+  const clockT = setInterval(() => { tick(false); renderCalendar(); }, 1000);
   const todayT = setInterval(() => { if (widgets.today) { widgets.today.hidden = !visible('today', s.widgets.today || {}); renderToday(); } }, 30e3);
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
