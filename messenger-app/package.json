@@ -22,20 +22,15 @@
     },
     "afterPack": "build/afterPack.js",
     "publish": null,
+    "compression": "maximum",
+    "electronLanguages": ["en-US", "zh-CN"],
     "win": {
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "createDesktopShortcut": "always",
-      "createStartMenuShortcut": true,
-      "shortcutName": "Messenger",
-      "artifactName": "Messenger-Setup.exe"
+        "zip"
+      ],
+      "artifactName": "Messenger-Windows.zip"
     }
   },
   "devDependencies": {

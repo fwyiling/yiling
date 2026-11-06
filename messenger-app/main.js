@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
 
 const SITE = 'https://messenger.abeto.co/';
@@ -44,6 +45,20 @@ function createWindow() {
   });
 }
 
+// No installer, so the app adds its own Desktop and Start Menu shortcuts on first run.
+// A marker file keeps them from reappearing if the user deletes them.
+function createShortcutsOnce() {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+  const marker = path.join(app.getPath('userData'), 'shortcuts-created');
+  if (fs.existsSync(marker)) return;
+  const link = { target: process.execPath, icon: process.execPath, iconIndex: 0, description: 'Messenger' };
+  const startMenu = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+  for (const dir of [app.getPath('desktop'), startMenu]) {
+    try { shell.writeShortcutLink(path.join(dir, 'Messenger.lnk'), link); } catch {}
+  }
+  try { fs.writeFileSync(marker, ''); } catch {}
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -54,6 +69,9 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   Menu.setApplicationMenu(null);
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    createShortcutsOnce();
+    createWindow();
+  });
   app.on('window-all-closed', () => app.quit());
 }
