@@ -1,0 +1,46 @@
+{
+  "name": "messenger-desktop",
+  "productName": "Messenger",
+  "version": "1.0.0",
+  "description": "Desktop launcher for messenger.abeto.co",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "local.messenger.desktop",
+    "productName": "Messenger",
+    "files": [
+      "main.js",
+      "offline.html",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "afterPack": "build/afterPack.js",
+    "publish": null,
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Messenger",
+      "artifactName": "Messenger-Setup.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "resedit": "^1.7.2"
+  }
+}
