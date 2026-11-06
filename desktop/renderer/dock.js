@@ -105,7 +105,7 @@ async function render() {
     if (open.length) used.add(k);
     const b = document.createElement('button');
     b.className = 'item' + (open.length ? ' running' : '') + (open.some((w) => w.active) ? ' active' : '');
-    b.append(iconFor(`pin:${p.path}`, () => sd.appIcon(p.path), p.name));
+    b.append(iconFor(`pin:${p.path}|${p.icon || ""}`, () => sd.appIcon(p.path), p.name)); // a newly picked icon is a new key, so it loads instead of the cached one
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
     if (open.length) launching.delete(p.path); else if (launching.has(p.path)) b.classList.add('launching'); // its window is up: stop bouncing
     b.onclick = () => {

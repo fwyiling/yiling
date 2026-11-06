@@ -1,6 +1,7 @@
 // The island: compact live view (timer ring + time, or cover + equalizer) that opens on hover into
 // media controls and the timer, and pops out when the timer is done.
 import { applyAccent } from './common.js';
+import { PETS, PET_IDS, petSvg } from './pets.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
 const isl = $('island');
@@ -11,6 +12,7 @@ function look() {
   // sit inside the top bar when it's on, a little below the edge otherwise
   document.documentElement.style.setProperty('--top', s.topbar?.on ? '1px' : '8px');
   document.documentElement.style.setProperty('--ch', s.topbar?.on ? '22px' : '32px');
+  dressPets();
 }
 
 // ---------- timer ----------
@@ -44,6 +46,7 @@ function renderTimer() {
   $('pauseBtn').textContent = timer.state === 'paused' ? 'Resume' : 'Pause';
   document.querySelector('.mini .t').textContent = fmt(l);
   document.querySelector('.ring .fg').style.strokeDashoffset = String(50.27 * (1 - frac));
+  setMood();
 }
 
 // ---------- media ----------
@@ -78,6 +81,7 @@ function applyShape() {
   isl.classList.toggle('open', open && !alerting);
   isl.classList.toggle('compact', !open && !alerting && !osdInfo);
   isl.classList.toggle('live', !open && !alerting && (t || m));
+  placePet();
   // the open height follows its content
   if (open && !alerting) { // the open height follows what's in it (padding 30, 14 between sections)
     const secs = [...document.querySelectorAll('.panel > section:not([hidden])')];
@@ -87,7 +91,7 @@ function applyShape() {
 }
 let openT, closeT;
 let hovered = false;
-isl.addEventListener('mouseenter', () => { hovered = true; sd.islandMouse(true); clearTimeout(closeT); openT = setTimeout(() => { open = true; shape(); }, 90); });
+isl.addEventListener('mouseenter', () => { hovered = true; wake(true); sd.islandMouse(true); clearTimeout(closeT); openT = setTimeout(() => { open = true; shape(); }, 90); });
 isl.addEventListener('mouseleave', () => { hovered = false; sd.islandMouse(false); clearTimeout(openT); closeT = setTimeout(() => { open = false; shape(); }, 380); });
 // opened from the top bar's timer button, its menu or Ctrl+Alt+T: stays open until you've been in and out, or 8 s untouched
 sd.onIslandOpen(() => {
@@ -110,7 +114,7 @@ function chime() { // three soft notes
 }
 let alertT;
 function startAlert() { alerting = true; $('doneOf').textContent = `${fmt(timer.duration)} timer`; sd.islandMouse(true); chime(); setTimeout(chime, 2400); shape(); clearTimeout(alertT); alertT = setTimeout(endAlert, 20000); }
-function endAlert() { alerting = false; clearTimeout(alertT); sd.islandMouse(false); shape(); if (timer.state === 'done') sd.timer('reset'); }
+function endAlert() { const was = alerting; alerting = false; clearTimeout(alertT); sd.islandMouse(false); shape(); if (timer.state === 'done') sd.timer('reset'); if (was) react('happy', 1100); }
 
 // ---------- pop-ups: volume, brightness, Caps Lock, headphones ----------
 const ICONS = {
@@ -133,7 +137,10 @@ function showOsd(info) {
     : `${info.name || 'Audio device'} ${info.connected ? 'connected' : 'disconnected'}`;
   else { o.querySelector('.o-bar b').style.width = `${info.value}%`; o.querySelector('.o-val').textContent = info.kind === 'volume' && info.muted ? 'Off' : info.value; }
   osdInfo = { ...info, note };
-  clearTimeout(osdT); osdT = setTimeout(() => { osdInfo = null; shape(); }, note ? 2400 : 1500);
+  wake();
+  // the pet reacts once the pill is back: Caps Lock startles it, headphones make it happy
+  const r = info.kind === 'caps' ? (info.on ? 'wow' : '') : info.kind === 'device' ? (info.connected ? 'happy' : 'look') : info.kind === 'ime' ? 'look' : '';
+  clearTimeout(osdT); osdT = setTimeout(() => { osdInfo = null; shape(); if (r) react(r, 1300); }, note ? 2400 : 1500);
   shape();
 }
 sd.onOsd(showOsd);
@@ -153,17 +160,143 @@ async function scanOutputs(announce) {
 navigator.mediaDevices?.addEventListener('devicechange', () => setTimeout(() => scanOutputs(true), 400));
 scanOutputs(false);
 
+// ---------- the pet ----------
+// Lives in the pill: wanders about when nothing's on, naps when you've been away a while (sooner at night),
+// dances while music plays, sits by the timer, and reacts to Caps Lock, headphones, new songs and a desktop
+// switch. In the open island it sits in the timer's corner: click to pet it, right-click to meet the next one.
+// Between those moments it holds still (a blink now and then), so the pill doesn't redraw for nothing.
+const pet = $('pet'), perch = $('perch'), perchPet = perch.querySelector('.pet'), alertPet = $('alertPet');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let petNow = null, asleep = false, walking = false, reaction = null, reactT, perchReactT, lastActive = Date.now(), px = 0, wanderT, lovedAt = 0;
+const petId = () => { const id = s.island?.pet ?? 'cat'; return PETS[id] ? id : null; }; // 'none' = no pet
+for (const el of [pet, perchPet, alertPet]) el.innerHTML = '<div class="pet-dir"><div class="pet-bod"></div></div><i class="zz">z</i>';
+function dressPets() {
+  const id = petId();
+  isl.classList.toggle('has-pet', !!id);
+  if (id === petNow) return;
+  petNow = id;
+  for (const el of [pet, perchPet, alertPet]) { el.dataset.kind = PETS[id]?.kind || ''; el.querySelector('.pet-bod').innerHTML = id ? petSvg(id) : ''; }
+  perch.title = id ? `${PETS[id].name}: click to pet, right-click for another friend` : '';
+  if (id) { setMood(); perchMood(); }
+}
+function baseMood() {
+  if (timer.state === 'running' && left() <= 10) return 'antsy'; // nearly there
+  if (np.playing) return 'dance';
+  if (active()) return 'watch';
+  if (asleep) return 'sleep';
+  return walking ? 'walk' : 'idle';
+}
+function setMood() { const m = reaction || baseMood(); if (pet.dataset.mood !== m) pet.dataset.mood = m; }
+function react(m, ms) {
+  if (!petNow) return;
+  reaction = m; pet.dataset.mood = ''; void pet.offsetWidth; setMood(); // restart the animation if it's the same mood again
+  if (m === 'love') hearts(pet, 2);
+  clearTimeout(reactT); reactT = setTimeout(() => { reaction = null; setMood(); }, ms);
+}
+function wake(byHand) {
+  lastActive = Date.now();
+  if (!asleep) return;
+  asleep = false; setMood();
+  if (byHand) { perchPet.dataset.mood = 'sleep'; clearTimeout(perchReactT); perchReactT = setTimeout(() => perchReact('look', 1200), 500); } // rubs its eyes
+}
+setInterval(() => { // nap time?
+  const h = new Date().getHours(), night = h >= 23 || h < 6;
+  if (!asleep && !np.playing && !active() && !hovered && Date.now() - lastActive > (night ? 45e3 : 150e3)) { asleep = true; walking = false; setMood(); }
+}, 5000);
+function hearts(el, n) {
+  for (let i = 0; i < n; i++) {
+    const h = Object.assign(document.createElement('i'), { className: 'heart', textContent: '♥' });
+    h.style.setProperty('--dx', `${(Math.random() * 14 - 5).toFixed(1)}px`); h.style.animationDelay = `${i * 140}ms`;
+    el.append(h); setTimeout(() => h.remove(), 1200 + i * 140);
+  }
+}
+function blinkLoop() {
+  setTimeout(blinkLoop, 2600 + Math.random() * 4200);
+  if (!petNow || document.body.classList.contains('switching')) return;
+  for (const el of [pet, perchPet]) { if (/^(idle|walk|watch|perk|look)$/.test(el.dataset.mood || 'idle')) { el.classList.add('blink'); setTimeout(() => el.classList.remove('blink'), 130); } }
+}
+blinkLoop();
+// where it stands in the pill
+const pillW = () => (isl.classList.contains('live') ? 214 : 118);
+function goTo(x, speed) {
+  const d = Math.abs(x - px); if (d < 1) return 0;
+  const dur = reduced ? 0 : d / speed;
+  pet.classList.toggle('flip', x > px); // drawn facing a little left (the tail's on the right)
+  pet.style.setProperty('--walk', `${dur.toFixed(2)}s`); pet.style.setProperty('--x', `${x.toFixed(1)}px`);
+  px = x; return dur;
+}
+let wasLive = null, wasCompact = false;
+function placePet() {
+  if (!petNow) return;
+  const live = isl.classList.contains('live'), compact = isl.classList.contains('compact'), ps = pet.offsetWidth || 19;
+  if (compact && !wasCompact && Date.now() - lovedAt < 12000) { lovedAt = 0; setTimeout(() => react('love', 1100), 450); } // still happy you petted it
+  wasCompact = compact;
+  if (live === wasLive) return;
+  wasLive = live;
+  clearTimeout(wanderT); walking = false;
+  if (live) goTo((pillW() - ps) / 2, 120); // between the ring / cover and the time
+  else goTo(Math.min(px, pillW() - 10 - ps), 120);
+  setMood();
+  wanderT = setTimeout(wander, 2500);
+}
+function wander() {
+  clearTimeout(wanderT);
+  const next = (ms) => { wanderT = setTimeout(wander, ms); };
+  if (!petNow || reduced || asleep || !isl.classList.contains('compact') || isl.classList.contains('live') || document.body.classList.contains('switching') || document.hidden) return next(4000);
+  const r = Math.random(), ps = pet.offsetWidth || 19, min = 8, max = pillW() - 10 - ps;
+  if (r < 0.5) { // a little walk
+    let x = min + Math.random() * (max - min);
+    if (Math.abs(x - px) < 16) x = px < (min + max) / 2 ? max : min;
+    walking = true; setMood();
+    const dur = goTo(x, 13);
+    wanderT = setTimeout(() => { walking = false; setMood(); next(2500 + Math.random() * 4500); }, dur * 1000);
+    return;
+  }
+  if (r < 0.62) react('look', 1300);
+  else if (r < 0.78) { pet.classList.add('twitch'); setTimeout(() => pet.classList.remove('twitch'), 400); }
+  next(3500 + Math.random() * 5000);
+}
+// the perch, in the open island
+function perchMood() { const m = np.playing ? 'dance' : 'idle'; if (!perchReactT && perchPet.dataset.mood !== m) perchPet.dataset.mood = m; }
+function perchReact(m, ms) {
+  perchPet.dataset.mood = ''; void perchPet.offsetWidth; perchPet.dataset.mood = m;
+  clearTimeout(perchReactT); perchReactT = setTimeout(() => { perchReactT = 0; perchMood(); }, ms);
+}
+let pats = [];
+perch.addEventListener('click', () => {
+  wake(); lovedAt = Date.now();
+  const now = Date.now(); pats = pats.filter((t) => now - t < 2500); pats.push(now);
+  if (pats.length >= 7) { pats = []; perchReact('dizzy', 1900); return; } // that's enough!
+  perchReact('love', 1000); hearts(perchPet, pats.length > 3 ? 3 : 2);
+});
+perch.addEventListener('mouseenter', () => { if (!perchReactT) perchPet.dataset.mood = 'perk'; });
+perch.addEventListener('mouseleave', () => { if (!perchReactT) perchMood(); });
+perch.addEventListener('contextmenu', (e) => { // the next friend
+  e.preventDefault();
+  const next = PET_IDS[(PET_IDS.indexOf(petNow) + 1) % PET_IDS.length];
+  s = { ...s, island: { ...s.island, pet: next } }; dressPets(); perchReact('wow', 700);
+  sd.set({ island: { pet: next } }).catch(() => {});
+});
+sd.onMedia(() => perchMood());
+dressPets(); placePet(); wander();
+
 // ---------- wiring ----------
 let tickT;
 function onTimer(t) {
-  const wasDone = timer.state === 'done';
+  const prev = timer.state, wasDone = prev === 'done', wasRunning = prev === 'running';
   timer = t; renderTimer();
+  if (t.state !== prev) wake();
+  if (t.state === 'running' && !wasRunning && !wasDone) react('happy', 900);
   if (t.state === 'done' && !wasDone) startAlert();
   clearInterval(tickT); if (t.state === 'running') tickT = setInterval(renderTimer, 250); // only ticks while a timer runs
   shape();
 }
 sd.onTimer(onTimer);
-sd.onMedia((m) => { np = m; renderMedia(); shape(); });
+sd.onMedia((m) => {
+  const before = np; np = m; renderMedia(); shape();
+  if (!!m.playing !== !!before.playing || m.title !== before.title) wake();
+  if (m.playing && before.playing && m.title && before.title && m.title !== before.title) react('happy', 950); // a new song
+});
 sd.media().then((m) => { np = m; renderMedia(); shape(); }).catch(() => {});
 sd.onSettings((n) => { s = n; look(); });
 look(); setMins(mins); onTimer(timer);
@@ -171,4 +304,7 @@ look(); setMins(mins); onTimer(timer);
 // switching desktops: endless animations (equaliser, glow) hold still for the slide, so Windows has one
 // window fewer to compose every frame while it animates
 let switchT = 0;
-sd.onSwitching?.((ms) => { document.body.classList.add('switching'); clearTimeout(switchT); switchT = setTimeout(() => document.body.classList.remove('switching'), ms || 750); });
+sd.onSwitching?.((ms) => {
+  document.body.classList.add('switching'); clearTimeout(switchT);
+  switchT = setTimeout(() => { document.body.classList.remove('switching'); if (!asleep && !np.playing) react('look', 1200); }, ms || 750); // "where are we?"
+});

@@ -1,5 +1,6 @@
 // Customize window: live preview (drag widgets to move them) + wallpaper / widget / Home / general settings.
 import { mountWallpaper } from './wallpaper-view.js';
+import { PETS, petSvg } from './pets.js';
 import { createScene, SCENE_NAMES } from './scenes.js';
 import { applyAccent } from './common.js';
 
@@ -206,6 +207,17 @@ function paintLock() {
   if (!$('lockStatus').textContent && L.lastAt) $('lockStatus').textContent = L.lastError ? `Last try: ${L.lastError}` : `Last updated ${new Date(L.lastAt).toLocaleString()}.`;
 }
 
+// ---------- island pet ----------
+const petBtns = [...Object.keys(PETS), 'none'].map((id) => {
+  const b = document.createElement('button');
+  b.dataset.pet = id; b.type = 'button';
+  b.innerHTML = id === 'none' ? '<i class="none"></i>' : petSvg(id);
+  b.append(document.createTextNode(id === 'none' ? 'No pet' : PETS[id].name));
+  b.onclick = () => save({ island: { pet: id } });
+  return b;
+});
+$('pets').replaceChildren(...petBtns);
+
 // ---------- reflect settings in the controls ----------
 function paint() {
   document.querySelectorAll('[data-k]').forEach((el) => {
@@ -214,6 +226,9 @@ function paint() {
     if (el.type === 'checkbox') el.checked = !!v; else if (v != null) el.value = v;
     if (el.type === 'range') el.parentElement.querySelector('em').textContent = fmt[el.dataset.k]?.(v) ?? v;
   });
+  const pet = PETS[s.island?.pet] ? s.island.pet : s.island?.pet === 'none' ? 'none' : 'cat';
+  petBtns.forEach((b) => b.classList.toggle('on', b.dataset.pet === pet));
+  $('petPick').hidden = !s.island?.on;
   const w = s.wallpaper;
   sceneEls.forEach((b) => b.classList.toggle('on', b.dataset.scene === w.scene));
   $('fileRow').hidden = !['image', 'video'].includes(w.scene);

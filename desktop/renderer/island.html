@@ -15,6 +15,7 @@
         <div class="art mini-art"></div>
       </div>
       <svg class="idle-ico" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg>
+      <div class="pet" id="pet"></div>
       <div class="trail"><span class="t"></span><i class="eq"><s></s><s></s><s></s><s></s></i></div>
     </div>
     <!-- open: media and timer -->
@@ -29,6 +30,7 @@
         </div>
       </section>
       <section class="timer">
+        <button class="perch" id="perch"><div class="pet"></div></button>
         <div class="idle-ui">
           <div class="row head"><svg viewBox="0 0 24 24" class="ico"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg><b>Timer</b></div>
           <div class="row presets"></div>
@@ -59,6 +61,7 @@
     </div>
     <!-- time's up -->
     <div class="alert">
+      <div class="pet" id="alertPet" data-mood="cheer"></div>
       <svg viewBox="0 0 24 24" class="bell"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
       <div class="txt"><b>Time's up</b><span id="doneOf"></span></div>
       <button id="more" class="pill-b">+5 min</button>

@@ -70,3 +70,18 @@ a { color: color-mix(in srgb, var(--a) 60%, #fff); }
 .mac-swipe ol { margin: 6px 0 12px; padding-left: 20px; line-height: 1.7; }
 .mac-swipe kbd { font: 600 11px system-ui; padding: 2px 6px; border-radius: 5px; background: rgba(255, 255, 255, .1); color: var(--t); }
 .mac-swipe details { margin-top: 12px; } .mac-swipe summary { cursor: pointer; } .mac-swipe details p { margin: 8px 0; }
+
+/* island pet picker */
+.petpick { display: grid; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--line); }
+.petpick > span { display: grid; gap: 2px; } .petpick small { color: var(--m); font-size: 12.5px; }
+.pets { display: flex; flex-wrap: wrap; gap: 8px; }
+.pets button { width: 78px; padding: 10px 4px 7px; display: grid; justify-items: center; gap: 5px; border-radius: 14px; background: var(--p); border: 1px solid var(--line); color: var(--m); font: inherit; font-size: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
+.pets button:hover { background: var(--p2); color: var(--t); }
+.pets button.on { border-color: var(--a); box-shadow: 0 0 0 1px var(--a); color: var(--t); }
+.pets .pet-svg { width: 36px; height: 36px; stroke: none; overflow: visible; transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+
+.pets .e { display: none; } .pets .e-open { display: inline; } .pets .blush { opacity: .3; }
+.pets button:hover .pet-svg, .pets button.on .pet-svg { transform: translateY(-3px); }
+.pets button:hover .e-open, .pets button.on .e-open { display: none; } .pets button:hover .e-joy, .pets button.on .e-joy { display: inline; }
+.pets button:hover .blush, .pets button.on .blush { opacity: .8; }
+.pets .none { width: 36px; height: 36px; border-radius: 50%; border: 1.5px dashed var(--m); opacity: .6; }
