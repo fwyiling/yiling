@@ -105,3 +105,7 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .focus { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 .focus .round { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, .08); font-size: 16px; } .focus span { min-width: 64px; text-align: center; color: var(--m); } .focus span b { color: var(--t); font-size: 16px; }
 .focus .go { margin-left: auto; }
+
+/* screen stuck on a film / TV refresh rate */
+.warn { margin: 8px 2px 0; font-size: 12px; line-height: 1.4; color: #f0c674; }
+.warn b { color: inherit; }

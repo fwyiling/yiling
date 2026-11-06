@@ -134,6 +134,11 @@ async function renderBatteryPanel(p) {
   $('powerMode').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.value === p.mode));
   const d = p.display || { rates: [] };
   $('hzGrp').hidden = (d.rates || []).length < 2;
+  // stuck on a film / TV rate (24, 30 Hz…): say so, with the screen's best rate one click away
+  const best = Math.max(0, ...(d.rates || []));
+  $('hzWarn').hidden = !(d.current && d.current < 48 && best > d.current);
+  $('hzWarn').innerHTML = $('hzWarn').hidden ? '' : `Your screen is running at <b>${d.current} Hz</b>, so everything moves choppily. <button class="link" id="hzBest">Switch to ${best} Hz</button>`;
+  if (!$('hzWarn').hidden) $('hzBest').onclick = async () => renderBatteryPanel(await sd.setPower('hz', best));
   $('hz').replaceChildren(...(d.rates || []).map((r) => { const x = Object.assign(document.createElement('button'), { textContent: `${r} Hz`, className: r === d.current ? 'on' : '' }); x.onclick = async () => renderBatteryPanel(await sd.setPower('hz', r)); return x; }));
 }
 $('lowPower').onchange = async () => renderBatteryPanel(await sd.setPower('low', $('lowPower').checked));

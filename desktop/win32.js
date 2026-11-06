@@ -468,6 +468,9 @@ function refreshRates() {
     else merged.push(r);
   }
   if (!merged.includes(current) && current > 1) { merged.push(current); merged.sort((a, b) => a - b); } // the rate in use is real, whatever the dry run said
+  // 23.976 / 24 / 25 / 30 Hz are film and TV modes: everything on the desktop looks choppy at them. Not offered
+  // (only shown while the screen is actually on one, so it can be switched back)
+  for (let i = merged.length - 1; i >= 0; i--) if (merged[i] < 48 && merged[i] !== current) merged.splice(i, 1);
   rateCache = { key, rates: merged };
   return { current, rates: merged, width: w, height: h };
 }

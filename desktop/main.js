@@ -530,7 +530,7 @@ async function setLowPower(on) {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 380 }, calendar: { w: 360, h: 600 } };
+const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 function openFlyout(panel, anchorX) {
   if (!FLY[panel]) return;
   const d = screen.getPrimaryDisplay(), z = FLY[panel];
