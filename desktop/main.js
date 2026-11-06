@@ -10,6 +10,7 @@ const media = require('./media');
 const sysctl = require('./sysctl');
 const netpower = require('./netpower');
 const vdesk = require('./vdesk');
+const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
@@ -280,7 +281,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); }); // tool window: on every virtual desktop
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -565,16 +566,43 @@ function outputsChanged(st, prev) {
   for (const [id, name] of was) if (!now.has(id)) return osd({ kind: 'device', name: outputName(name), connected: false });
 }
 
+// ---------- the dock's Bin and Screenshots stack ----------
+// a Windows call that waits (Empty Bin asks first) runs on its own short-lived thread
+function bgCall(fn) {
+  return new Promise((resolve) => {
+    const { Worker } = require('worker_threads');
+    const w = new Worker(path.join(__dirname, 'bgcall.js'), { workerData: { fn } });
+    w.once('message', resolve); w.once('error', () => resolve(null)); w.once('exit', () => resolve(null));
+  });
+}
+let binState = { items: 0, bytes: 0 }, binTimer = null;
+function checkBin() {
+  if (!win32.isWin || !dockWin || dockWin.isDestroyed()) return;
+  const b = win32.recycleBin();
+  if (b.items !== binState.items || b.bytes !== binState.bytes) { binState = b; dockWin.webContents.send('bin', b); }
+}
+let shotsState = { dir: '', items: [] };
+async function refreshShots() {
+  shotsState = await shots.list();
+  for (const w of [dockWin, flyWin]) if (w && !w.isDestroyed()) w.webContents.send('shots', shotsState);
+}
+function startDockExtras() {
+  clearInterval(binTimer); binTimer = setInterval(checkBin, 3000); checkBin(); // emptied or filled in Explorer too
+  refreshShots(); shots.watch(refreshShots);
+}
+
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 function openFlyout(panel, anchorX) {
   if (!FLY[panel]) return;
   const d = screen.getPrimaryDisplay(), z = FLY[panel];
   const x = Math.round(Math.max(d.bounds.x + 6, Math.min(d.bounds.x + d.bounds.width - z.w - 6, d.bounds.x + anchorX - (panel === 'menu' ? 8 : z.w / 2))));
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel !== panel) flyWin.hide(); // one panel at a time, never two on top of each other
-  const bounds = { x, y: d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
+  // under the top bar; the dock's Screenshots stack opens upwards, just above the dock
+  const dockTop = d.bounds.y + d.bounds.height - (DOCK_H[store.get().dock.size] || DOCK_H.m) - 10;
+  const bounds = { x, y: z.dock ? dockTop - z.h : d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel === panel) { flyWin.hide(); return; } // a second click closes it
   // the click on the button already closed it (the panel lost focus a moment ago): don't open it again
   if (flyWin && !flyWin.isDestroyed() && flyWin.panel === panel && Date.now() - flyHiddenAt < 350) return;
@@ -878,6 +906,33 @@ function wireIpc() {
   });
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
   ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
+  // Bin: how full, open it, empty it (Windows asks), send files there (they can be restored from it)
+  ipcMain.handle('bin:get', () => (win32.isWin ? (binState = win32.recycleBin()) : binState));
+  ipcMain.handle('bin:open', () => { if (win32.isWin) require('child_process').spawn('explorer.exe', ['shell:RecycleBinFolder'], { detached: true, stdio: 'ignore' }).unref(); });
+  ipcMain.handle('bin:empty', async () => { if (!win32.isWin || !binState.items) return false; const ok = await bgCall('emptyBin'); checkBin(); return !!ok; });
+  ipcMain.handle('bin:trash', async (e, paths) => {
+    if (!dockWin || e.sender !== dockWin.webContents || !Array.isArray(paths)) throw new Error('not allowed');
+    let moved = 0;
+    for (const p of paths.slice(0, 200)) {
+      if (typeof p !== 'string' || !path.isAbsolute(p) || path.parse(p).root === p || !fs.existsSync(p)) continue; // never a whole drive
+      try { await shell.trashItem(p); moved++; } catch (err) { console.warn('[bin]', err.message); }
+    }
+    checkBin();
+    return moved;
+  });
+  // Screenshots stack
+  ipcMain.handle('shots:list', () => (shotsState.items.length ? shotsState : refreshShots().then(() => shotsState)));
+  ipcMain.handle('shots:open', (_e, p) => { if (!shots.isKnown(p)) throw new Error('not a screenshot'); flyWin?.hide(); return shell.openPath(p); });
+  ipcMain.handle('shots:folder', () => { flyWin?.hide(); const dir = shots.folder(); return shell.openPath(fs.existsSync(dir) ? dir : app.getPath('pictures')); });
+  ipcMain.handle('shots:take', () => { flyWin?.hide(); setTimeout(() => win32.pressKeys([0x5B, 0x10, 0x53]), 150); }); // Win+Shift+S: Windows' snipping
+  // drag a screenshot out of the stack into another app (a chat, an email…), like a Mac stack
+  ipcMain.on('shots:drag', (e, p) => {
+    if (!shots.isKnown(p) || !fs.existsSync(p)) return;
+    const t = shots.thumbFor(p);
+    let icon = t ? nativeImage.createFromDataURL(t) : nativeImage.createFromPath(p);
+    if (icon.isEmpty()) icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
+    e.sender.startDrag({ file: p, icon: icon.resize({ width: 96 }) });
+  });
   ipcMain.handle('flyout:action', (_e, what) => { flyWin?.hide(); if (FLY_ACTIONS[what]) setTimeout(FLY_ACTIONS[what], 60); });
   ipcMain.handle('flyout:state', () => ({ gamer, hotkey: store.get().home.hotkey }));
   ipcMain.on('flyout:ready', flyShow);

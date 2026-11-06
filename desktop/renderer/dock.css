@@ -79,3 +79,20 @@ button:focus, button:focus-visible { outline: none; } /* no white focus rings af
 .item.add:hover { color: var(--t); border-color: var(--a); background: color-mix(in srgb, var(--a) 18%, transparent); }
 .item.add svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .item.dropbefore { box-shadow: -4px 0 0 -1px var(--a); }
+
+/* Screenshots stack: the newest shots fanned out like a Mac stack (a folder when there are none yet) */
+.item.stack .pile { position: relative; width: 84%; height: 84%; }
+.item.stack .pile img { position: absolute; left: 6%; top: 16%; width: 88%; height: 68%; object-fit: cover; border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, .9); box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+  transform: rotate(calc(var(--i) * 8deg - 4deg)) translateY(calc(var(--i) * -1.5px)); transition: transform .2s; }
+.item.stack:hover .pile img { transform: rotate(calc(var(--i) * 13deg - 7deg)) translateY(calc(var(--i) * -3px)); }
+.item svg.folder { width: 84%; height: 84%; fill: color-mix(in srgb, var(--a) 55%, #2a313c); stroke: rgba(255, 255, 255, .55); stroke-width: 1.6; }
+.item svg.folder rect, .item svg.folder circle { fill: none; stroke: #fff; stroke-width: 1.8; }
+/* Bin: empty, or with crumpled paper peeking out when something is in it */
+.item.bin svg.can { width: 80%; height: 80%; fill: none; stroke: #dfe5ec; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.item.bin svg.can .body { fill: rgba(255, 255, 255, .1); }
+.item.bin svg.can .ribs { stroke: rgba(255, 255, 255, .45); stroke-width: 1.8; }
+.item.bin svg.can .paper { display: none; stroke: #fff; fill: rgba(255, 255, 255, .85); stroke-width: 1.4; }
+.item.bin.full svg.can .paper { display: block; }
+.item.bin.full svg.can .lid { transform: rotate(-8deg) translate(-1px, -2px); transform-origin: 38px 12px; }
+.item.drop { background: color-mix(in srgb, var(--a) 32%, transparent); border-radius: 12px; }

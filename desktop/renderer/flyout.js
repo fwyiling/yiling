@@ -192,7 +192,7 @@ $('fPlus').onclick = () => { fMins = Math.min(240, fMins + 5); $('fMins').textCo
 $('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('close'); }; // runs in the island
 
 // ---------- which panel ----------
-const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar'];
+const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots'];
 let lastPanel = '', lastShown = 0;
 function showPanel(panel) {
   if (panel === lastPanel && Date.now() - lastShown < 300) return; // the same request twice (message + ask): draw once
@@ -203,9 +203,34 @@ function showPanel(panel) {
   else if (panel === 'wifi') { openNet = ''; renderWifi(); }
   else if (panel === 'battery') renderBatteryPanel();
   else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
+  else if (panel === 'shots') renderShots();
 }
 // drawn: the window may appear (straight away; a hidden window gets no animation frames to wait for)
 const drawAndReady = (p) => { showPanel(p); setTimeout(() => sd.flyoutReady(), 0); };
 sd.onFlyout(drawAndReady);
 sd.flyoutPanel().then(drawAndReady);
 addEventListener('keydown', (e) => { if (e.key === 'Escape') sd.flyoutAction('close'); });
+
+// ---------- the dock's Screenshots stack ----------
+let shotsState = null;
+const shotAgo = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); };
+async function renderShots(st) {
+  if (st) shotsState = st; else if (!shotsState) shotsState = await sd.shots().catch(() => ({ items: [] }));
+  const items = shotsState.items || [];
+  $('shotNote').textContent = items.length ? 'Drag one into any app' : '';
+  if (!items.length) { $('shotGrid').innerHTML = '<li class="empty">No screenshots yet.<br>Press <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> or <kbd>Win</kbd>+<kbd>PrtScn</kbd>.</li>'; return; }
+  $('shotGrid').replaceChildren(...items.slice(0, 12).map((it) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<div class="th"></div><b></b>';
+    if (it.thumb) li.querySelector('.th').style.backgroundImage = `url("${it.thumb}")`;
+    li.querySelector('b').textContent = shotAgo(it.time);
+    li.title = it.name;
+    li.onclick = () => sd.openShot(it.path);
+    li.draggable = true; // out of the stack into a chat, an email, a document…
+    li.ondragstart = (e) => { e.preventDefault(); sd.dragShot(it.path); };
+    return li;
+  }));
+}
+sd.onShots?.((st) => { shotsState = st; if (!$('shots').hidden) renderShots(st); });
+$('shotFolder').onclick = () => sd.shotsFolder();
+$('shotTake').onclick = () => sd.takeShot();

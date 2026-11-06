@@ -104,6 +104,10 @@ function bind() {
     hwndMenuOwner: 'intptr_t', hwndMoveSize: 'intptr_t', hwndCaret: 'intptr_t', rcCaret: RECT });
   u.GetGUIThreadInfo = user32.func('bool __stdcall GetGUIThreadInfo(uint32 thread, _Inout_ GUITHREADINFO *info)');
   u.GetCursorPos = user32.func('bool __stdcall GetCursorPos(_Out_ POINT *pt)');
+  // the Recycle Bin: how full it is, and emptying it (with Windows' own confirmation)
+  u.SHQUERYRBINFO = koffi.struct('SHQUERYRBINFO', { cbSize: 'uint32', i64Size: 'int64', i64NumItems: 'int64' });
+  u.SHQueryRecycleBinW = u.shell32.func('long __stdcall SHQueryRecycleBinW(str16 root, _Inout_ SHQUERYRBINFO *info)');
+  u.SHEmptyRecycleBinW = u.shell32.func('long __stdcall SHEmptyRecycleBinW(intptr_t hwnd, str16 root, uint32 flags)');
   // blur behind a window (frosted glass): the accent policy Windows' own taskbar uses; works on frameless, transparent windows
   u.ACCENT_POLICY = koffi.struct('ACCENT_POLICY', { AccentState: 'int32', AccentFlags: 'int32', GradientColor: 'uint32', AnimationId: 'int32' });
   koffi.struct('WINCOMPATTRDATA', { Attrib: 'int32', pvData: 'void *', cbData: 'size_t' });
@@ -307,6 +311,26 @@ function edgeSnap(on) {
   const want = on ? userDockMoving() : false; // "on" means: back to what the user chose
   if (!!cur[0] !== want) u.SystemParametersInfoW(0x0091, want ? 1 : 0, null, 0); // SPI_SETDOCKMOVING, this session only, no broadcast
   return want;
+}
+
+/** A text value from HKEY_CURRENT_USER (REG_EXPAND_SZ values come back expanded), or ''. */
+function regString(sub, name) {
+  if (!load()) return '';
+  const buf = Buffer.alloc(2048), size = [buf.length];
+  if (u.RegGetValueW(-2147483647, sub, name, 0x2, null, buf, size) !== 0) return ''; // RRF_RT_REG_SZ
+  return buf.toString('utf16le', 0, size[0]).replace(/\0+$/, '');
+}
+/** What's in the Recycle Bin (all drives): { items, bytes }. */
+function recycleBin() {
+  if (!load()) return { items: 0, bytes: 0 };
+  const info = { cbSize: u.koffi.sizeof(u.SHQUERYRBINFO), i64Size: 0, i64NumItems: 0 };
+  if (u.SHQueryRecycleBinW(null, info) !== 0) return { items: 0, bytes: 0 };
+  return { items: Number(info.i64NumItems), bytes: Number(info.i64Size) };
+}
+/** Empty the Recycle Bin. Windows asks first (and plays its sound); this waits for the answer, so run it off the main thread. */
+function emptyBin() {
+  if (!load()) return false;
+  return u.SHEmptyRecycleBinW(0, null, 0) === 0;
 }
 
 /** Frosted glass behind a window (true), or nothing (false). */
@@ -647,6 +671,9 @@ module.exports = {
   setBlur: safe('setBlur', setBlur, false),
   dragState: safe('dragState', dragState, null),
   edgeSnap: safe('edgeSnap', edgeSnap, false),
+  regString: safe('regString', regString, ''),
+  recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
+  emptyBin: safe('emptyBin', emptyBin, false),
   // the program we're about to start (or an already-running one it hands over to, like Claude) may come to the front
   allowForeground: safe('allowForeground', () => !!(load() && u.AllowSetForegroundWindow(0xFFFFFFFF)), false), // ASFW_ANY
   taskbarAutoHide: safe('taskbarAutoHide', taskbarAutoHide, false),

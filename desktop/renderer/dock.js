@@ -24,6 +24,8 @@ function applyLook() {
   $('quick').hidden = dk.quick === false || top; $('gear').hidden = dk.gear === false;
   magnifyOn = dk.magnify !== false; if (!magnifyOn) magnify(null);
   $('pins').hidden = !dk.pinned;
+  $('bin').hidden = dk.bin === false; $('shots').hidden = dk.shots === false;
+  $('stackSep').hidden = $('bin').hidden && $('shots').hidden;
   $('running').hidden = !dk.running;
 }
 
@@ -34,6 +36,8 @@ function showTip(el, text) {
 }
 const hideTip = () => { $('tip').hidden = true; };
 function tip(el, text) { el.dataset.tip = text; }
+// a message under an icon for a few seconds (e.g. an app that wouldn't open)
+function flashTip(el, text) { showTip(el, text); clearTimeout(flashTip.t); flashTip.t = setTimeout(hideTip, 4000); }
 document.addEventListener('mouseover', (e) => { const el = e.target.closest('[data-tip]'); if (el) showTip(el, el.dataset.tip); });
 document.addEventListener('mouseout', (e) => { if (e.target.closest('[data-tip]') && !e.relatedTarget?.closest?.('[data-tip]')) hideTip(); });
 
@@ -81,7 +85,7 @@ async function render() {
     b.className = 'item' + (open.length ? ' running' : '') + (open.some((w) => w.active) ? ' active' : '');
     b.append(iconFor(`pin:${p.path}`, () => sd.appIcon(p.path), p.name));
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
-    b.onclick = () => (open.length ? focusGroup(open) : sd.launch(p.path));
+    b.onclick = () => (open.length ? focusGroup(open) : sd.launch(p.path).catch((e) => flashTip(b, `Couldn't open ${p.name}: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`)));
     b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Move left', () => movePin(i, -1)], ['Move right', () => movePin(i, 1)], ['Unpin', () => sd.unpin(p.path)]]); };
     // drag pinned icons to reorder them
     b.draggable = true;
@@ -108,6 +112,43 @@ async function render() {
   $('runSep').hidden = !(showPins && showRun);
   $('homeSep').hidden = !(showPins || showRun);
 }
+
+// ---------- Screenshots stack and Bin, at the end of the apps (like a Mac's Downloads stack and Trash) ----------
+const FOLDER = '<svg viewBox="0 0 48 48" class="folder"><path d="M6 15.5a3.5 3.5 0 0 1 3.5-3.5h9l3.5 4h16.5a3.5 3.5 0 0 1 3.5 3.5V36a3.5 3.5 0 0 1-3.5 3.5h-29A3.5 3.5 0 0 1 6 36z"/><rect x="17" y="22.5" width="14" height="10" rx="2"/><circle cx="24" cy="27.5" r="2.6"/></svg>';
+const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+let shotItems = [];
+function renderShots(st) {
+  shotItems = st?.items || [];
+  const pile = $('shots').querySelector('.pile');
+  const top = shotItems.filter((x) => x.thumb).slice(0, 3);
+  if (!top.length) pile.innerHTML = FOLDER;
+  else pile.replaceChildren(...top.map((it, i) => { const im = new Image(); im.src = it.thumb; im.alt = ''; im.style.setProperty('--i', i); im.style.zIndex = 3 - i; return im; }));
+  $('shots').classList.toggle('empty', !top.length);
+  tip($('shots'), shotItems.length ? `Screenshots · newest ${ago(shotItems[0].time)}` : 'Screenshots');
+}
+$('shots').onclick = () => { const r = $('shots').getBoundingClientRect(); hideTip(); sd.flyout('shots', Math.round(r.left + r.width / 2)); };
+$('shots').oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Open the Screenshots folder', () => sd.shotsFolder()], ['Take a screenshot', () => sd.takeShot()]]); };
+sd.onShots(renderShots); sd.shots().then(renderShots).catch(() => {});
+
+let binItems = 0;
+function renderBin(b) {
+  binItems = b?.items || 0;
+  $('bin').classList.toggle('full', binItems > 0);
+  tip($('bin'), binItems ? `Bin · ${binItems} item${binItems > 1 ? 's' : ''}` : 'Bin · empty');
+}
+$('bin').onclick = () => sd.openBin();
+$('bin').oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Open', () => sd.openBin()], ...(binItems ? [['Empty Bin…', () => sd.emptyBin()]] : [])]); };
+// drop files on the Bin to delete them (they stay restorable in it); drop a pinned app on it to unpin it
+$('bin').ondragover = (e) => { const t = e.dataTransfer.types; if (t.includes('Files') || t.includes('text/x-pin')) { e.preventDefault(); $('bin').classList.add('drop'); } };
+$('bin').ondragleave = () => $('bin').classList.remove('drop');
+$('bin').ondrop = async (e) => {
+  e.preventDefault(); $('bin').classList.remove('drop');
+  const pin = e.dataTransfer.getData('text/x-pin');
+  if (pin !== '') { const p = (s.home.pins || [])[+pin]; if (p) sd.unpin(p.path); return; }
+  const n = await sd.trashFiles(e.dataTransfer.files).catch(() => 0);
+  if (n) flashTip($('bin'), `Moved ${n} item${n > 1 ? 's' : ''} to the Bin`);
+};
+sd.onBin(renderBin); sd.bin().then(renderBin).catch(() => {});
 
 // ---------- scroll over the dock (wheel or two fingers) to go to the next / previous app, MacBook style ----------
 let wheelAcc = 0, wheelAt = 0;
