@@ -85,7 +85,7 @@ look();
 const IME_NATIVE = { 0x04: '拼', 0x11: 'あ', 0x12: '한' }; // Chinese, Japanese, Korean input methods in their own mode
 function renderIme(m) {
   const b = $('ime');
-  b.hidden = !m || s.topbar?.ime === false;
+  b.hidden = !m || s.topbar?.ime !== true;
   if (b.hidden) return;
   const own = m.ime && m.native ? IME_NATIVE[m.lang & 0x3FF] : '';
   b.textContent = own || 'EN';

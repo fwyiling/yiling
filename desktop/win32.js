@@ -700,6 +700,8 @@ module.exports = {
   edgeSnap: safe('edgeSnap', edgeSnap, false),
   regString: safe('regString', regString, ''),
   inputMode: safe('inputMode', inputMode, null),
+  keyDown: safe('keyDown', (vk) => !!(load() && (u.GetAsyncKeyState(vk) & 0x8000)), false),
+  foregroundId: safe('foregroundId', () => (load() ? Number(u.GetForegroundWindow()) : 0), 0),
   recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
   emptyBin: safe('emptyBin', emptyBin, false),
   // the program we're about to start (or an already-running one it hands over to, like Claude) may come to the front

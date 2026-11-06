@@ -372,7 +372,7 @@ function onDeskSwitch(from, to, count) {
 function deskWatchSettings() {
   const g = store.get().general;
   return { screen: screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds), hideLabel: g.hideSwitchLabel !== false, edgeSwitch: g.edgeSwitch !== false && vdesk.supported(),
-    ime: store.get().topbar.ime !== false };
+    ime: store.get().topbar.ime === true };
 }
 
 // ---------- the input method (Pinyin / English) in the top bar ----------
@@ -728,7 +728,7 @@ function applySettings(patch) {
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.topbar?.look !== undefined) applyTopbarLook();
-  if (patch.topbar?.ime !== undefined) deskWorker?.postMessage({ ime: next.topbar.ime !== false });
+  if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching

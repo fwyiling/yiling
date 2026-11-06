@@ -9,7 +9,7 @@ const win32 = require('./win32');
 let screenRect = workerData?.screen || null;
 let hideLabel = workerData?.hideLabel !== false;
 let edgeSwitch = workerData?.edgeSwitch !== false;
-let imeOn = workerData?.ime !== false;
+let imeOn = workerData?.ime === true; // off unless switched on in Customize
 parentPort.on('message', (m) => {
   if (m && m.screen) screenRect = m.screen;
   if (m && typeof m.hideLabel === 'boolean') hideLabel = m.hideLabel;
@@ -36,10 +36,19 @@ function watchEdge(now) {
   }
 }
 
-// the input method in front: Pinyin (Chinese) or English, for the top bar; sent when it changes
-let lastIme = '';
+// The input method in front: Pinyin (Chinese) or English, for the top bar; sent when it changes. Asking it is a
+// message to the app in front, so it's asked as rarely as possible: once, half a second after Shift is let go
+// (Pinyin's switch) or another window comes to the front; never while typing. In between only the key state and
+// the window in front are looked at, which nothing else notices.
+let lastIme = '', shiftWas = false, fgWas = 0, askAt = Date.now() + 1000;
 function watchIme() {
   if (!imeOn) return;
+  const now = Date.now(), shift = win32.keyDown(0x10), fg = win32.foregroundId();
+  if (shiftWas && !shift) askAt = now + 500;
+  if (fg !== fgWas) { fgWas = fg; askAt = now + 500; }
+  shiftWas = shift;
+  if (!askAt || now < askAt) return;
+  askAt = 0;
   const m = win32.inputMode();
   const key = m ? `${m.lang}|${m.ime}|${m.native}` : '';
   if (!m || key === lastIme) return;
@@ -55,7 +64,7 @@ if (!win32.isWin || !st.ready) {
   let current = -1, hunt = 0, sinceFound = -1;
   win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
   setInterval(() => watchEdge(Date.now()), 25);
-  setInterval(watchIme, 250); // often: snapping has to be paused before the pointer reaches the edge
+  setInterval(watchIme, 50); // often: snapping has to be paused before the pointer reaches the edge
   setInterval(() => {
     const vd = win32.virtualDesktops(); // two small registry reads
     if (vd.current !== current) {
