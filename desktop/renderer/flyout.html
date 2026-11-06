@@ -36,6 +36,28 @@
       <footer><span id="cBattery"></span><button class="ic-b" data-page="home" title="Windows Settings"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></footer>
     </section>
   </div>
+  <!-- Wi-Fi networks -->
+  <div id="wifi" class="panel pad" hidden>
+    <div class="ph"><b>Wi-Fi</b><button id="wifiRefresh" class="ic-b" title="Scan again"><svg viewBox="0 0 24 24" class="ic"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg></button><label class="sw"><input type="checkbox" id="wifiOn"><i></i></label></div>
+    <ul id="nets" class="nets"></ul>
+    <footer class="pf"><span id="wifiNote" class="muted"></span><button class="link" data-page="wifi">Network settings</button></footer>
+  </div>
+  <!-- battery and power -->
+  <div id="battery" class="panel pad" hidden>
+    <div class="bat"><div class="big"><b id="batPct">–</b><span id="batState" class="muted"></span></div><i class="cell"><b id="batFill"></b></i></div>
+    <label class="row-sw"><span><b>Low power mode</b><small>Best power efficiency, the lowest refresh rate, wallpaper paused.</small></span><span class="sw"><input type="checkbox" id="lowPower"><i></i></span></label>
+    <div class="grp"><small>Power mode</small><div class="seg" id="powerMode"><button value="efficiency">Efficiency</button><button value="balanced">Balanced</button><button value="performance">Performance</button></div></div>
+    <div class="grp" id="hzGrp"><small>Screen refresh rate</small><div class="seg" id="hz"></div></div>
+    <footer class="pf"><span></span><button class="link" data-page="batterysaver">Battery settings</button></footer>
+  </div>
+  <!-- calendar -->
+  <div id="calendar" class="panel pad" hidden>
+    <div class="ch"><div><b id="calToday"></b><span id="calLunar" class="muted"></span></div></div>
+    <div class="mh"><b id="calMonth"></b><span><button id="calPrev" class="ic-b"><svg viewBox="0 0 24 24" class="ic"><path d="M15 6l-6 6 6 6"/></svg></button><button id="calNext" class="ic-b"><svg viewBox="0 0 24 24" class="ic"><path d="M9 6l6 6-6 6"/></svg></button></span></div>
+    <div id="calGrid" class="cal"></div>
+    <div class="agenda"><small>Today</small><ul id="agenda"></ul></div>
+    <div class="focus"><button class="round" id="fMinus">−</button><span><b id="fMins">30</b> min</span><button class="round" id="fPlus">+</button><button class="go" id="fStart">Start focus</button></div>
+  </div>
   <script type="module" src="flyout.js"></script>
 </body>
 </html>

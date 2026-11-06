@@ -55,7 +55,10 @@ async function renderBattery() { const b = await sd.battery().catch(() => null);
 $('tWifi').querySelector('.main').onclick = () => sd.setSys('wifi', !sys?.wifi?.on);
 $('tBt').querySelector('.main').onclick = () => sd.setSys('bluetooth', !sys?.bluetooth?.on);
 $('tAir').querySelector('.main').onclick = () => sd.setSys('airplane', !sys?.airplane);
-document.querySelectorAll('[data-page]').forEach((b) => b.onclick = () => { sd.windowsSettings(b.dataset.page); sd.flyoutAction('close'); });
+document.querySelectorAll('[data-page]').forEach((b) => b.onclick = () => {
+  if (b.dataset.page === 'wifi' && b.closest('#control')) { showPanel('wifi'); return; } // the network list, here
+  sd.windowsSettings(b.dataset.page); sd.flyoutAction('close');
+});
 for (const [id, what] of [['bright', 'brightness'], ['vol', 'volume']]) {
   const r = $(id); let t;
   r.oninput = () => { dragging = id; fill(r); $(`${id}V`).textContent = r.value; clearTimeout(t); t = setTimeout(() => sd.setSys(what, +r.value), 40); };
@@ -66,9 +69,118 @@ $('cMedia').querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.med
 sd.onSys((st) => { sys = st; renderSys(); });
 sd.onMedia((m) => { np = m; renderMedia(); });
 
+// ---------- Wi-Fi ----------
+const bars = (sig) => { const n = sig >= 75 ? 3 : sig >= 45 ? 2 : sig >= 20 ? 1 : 0; return `<svg viewBox="0 0 24 24">${['M2.5 9.5a14 14 0 0 1 19 0', 'M5.8 13a9 9 0 0 1 12.4 0', 'M9.2 16.4a4 4 0 0 1 5.6 0'].map((d, i) => `<path d="${d}" opacity="${3 - i <= n ? 1 : .3}"/>`).join('')}<circle cx="12" cy="19.6" r=".9"/></svg>`; };
+const LOCK = '<svg viewBox="0 0 24 24" class="lock"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+let openNet = '';
+async function renderWifi(rescan = true) {
+  $('wifiOn').checked = !!sys?.wifi?.on;
+  if (!sys?.wifi?.on && sys) { $('nets').innerHTML = '<li class="empty">Wi-Fi is off.</li>'; $('wifiNote').textContent = ''; return; }
+  if (rescan) $('wifiNote').textContent = 'Looking for networks…';
+  const list = await sd.wifiList().catch(() => []);
+  $('wifiNote').textContent = list.length ? `${list.length} networks` : '';
+  $('nets').replaceChildren(...list.map((n) => {
+    const li = document.createElement('li'); if (n.connected) li.className = 'on';
+    li.innerHTML = `<button class="n">${bars(n.signal)}<span></span>${n.secure ? LOCK : ''}${n.connected ? '<small>Connected</small>' : ''}</button>`;
+    li.querySelector('span').textContent = n.ssid;
+    const go = async (password) => {
+      li.querySelector('.msg')?.remove();
+      $('wifiNote').textContent = `Connecting to ${n.ssid}…`;
+      const r = await sd.wifiConnect(n.ssid, password, n.secure).catch((e) => ({ ok: false, error: String(e) }));
+      if (r.needPassword) { openNet = n.ssid; renderWifi(false); return; }
+      $('wifiNote').textContent = r.ok ? `Connected to ${n.ssid}` : '';
+      if (!r.ok) li.insertAdjacentHTML('beforeend', `<div class="msg"></div>`), li.querySelector('.msg').textContent = r.error || 'couldn’t connect';
+      else { openNet = ''; renderWifi(false); }
+    };
+    li.querySelector('.n').onclick = () => { if (n.connected) return; if (n.secure && !n.known) { openNet = openNet === n.ssid ? '' : n.ssid; renderWifi(false); } else go(); };
+    if (openNet === n.ssid) { // a new protected network: its password, right here
+      const f = document.createElement('form'); f.className = 'pw';
+      f.innerHTML = '<input type="password" placeholder="Password" autocomplete="off"><button>Connect</button>';
+      f.onsubmit = (e) => { e.preventDefault(); const v = f.querySelector('input').value; if (v.length >= 8) go(v); else f.querySelector('input').focus(); };
+      li.append(f); setTimeout(() => f.querySelector('input').focus(), 30);
+    }
+    return li;
+  }));
+  if (!list.length) $('nets').innerHTML = '<li class="empty">No networks found.</li>';
+}
+$('wifiOn').onchange = () => { sd.setSys('wifi', $('wifiOn').checked); setTimeout(() => renderWifi(), 2500); };
+$('wifiRefresh').onclick = () => renderWifi();
+
+// ---------- battery and power ----------
+async function renderBatteryPanel(p) {
+  p ||= await sd.power().catch(() => null);
+  if (!p) return;
+  const b = p.battery || {};
+  $('batPct').textContent = b.present ? `${b.percent}%` : 'No battery';
+  $('batState').textContent = b.present ? (b.charging ? 'Charging' : b.plugged ? 'Plugged in' : 'On battery') : 'Plugged in';
+  $('batFill').style.width = `${b.present ? b.percent : 100}%`;
+  document.querySelector('.bat').classList.toggle('charging', !!b.charging); document.querySelector('.bat').classList.toggle('low', b.present && b.percent <= 20 && !b.plugged);
+  $('lowPower').checked = !!p.low;
+  $('powerMode').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.value === p.mode));
+  const d = p.display || { rates: [] };
+  $('hzGrp').hidden = (d.rates || []).length < 2;
+  $('hz').replaceChildren(...(d.rates || []).map((r) => { const x = Object.assign(document.createElement('button'), { textContent: `${r} Hz`, className: r === d.current ? 'on' : '' }); x.onclick = async () => renderBatteryPanel(await sd.setPower('hz', r)); return x; }));
+}
+$('lowPower').onchange = async () => renderBatteryPanel(await sd.setPower('low', $('lowPower').checked));
+$('powerMode').querySelectorAll('button').forEach((x) => x.onclick = async () => renderBatteryPanel(await sd.setPower('mode', x.value)));
+
+// ---------- calendar ----------
+let calBase = new Date(); calBase.setDate(1);
+const zh = /^zh/i.test(navigator.language);
+// Chinese lunar date in the traditional form (九月廿八), from the browser's Chinese calendar
+const LUNAR_DAYS = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十', '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+function lunarParts(d) {
+  try {
+    const parts = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'long', day: 'numeric' }).formatToParts(d);
+    const month = (parts.find((p) => p.type === 'month') || {}).value || '';
+    const day = parseInt((parts.find((p) => p.type === 'day') || {}).value, 10);
+    return { month, day: LUNAR_DAYS[day - 1] || '', first: day === 1 };
+  } catch { return { month: '', day: '', first: false }; }
+}
+const lunar = (d) => { const p = lunarParts(d); return p.month + p.day; };
+const lunarDay = (d) => { const p = lunarParts(d); return p.first ? p.month : p.day; };
+function renderCalendar() {
+  const now = new Date();
+  $('calToday').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  $('calLunar').textContent = zh ? lunar(now) : '';
+  $('calMonth').textContent = calBase.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+  const mondayFirst = zh || /^(en-GB|de|fr|es|it|nl|ru)/i.test(navigator.language);
+  const startDow = mondayFirst ? (calBase.getDay() + 6) % 7 : calBase.getDay();
+  const first = new Date(calBase); first.setDate(1 - startDow);
+  const tt = s.home?.timetable || [];
+  const hasClass = (d) => tt.some((c) => c.d === (d.getDay() + 6) % 7);
+  const names = Array.from({ length: 7 }, (_, i) => new Date(2024, 0, (mondayFirst ? 1 : 7) + i).toLocaleDateString(undefined, { weekday: 'narrow' }));
+  const cells = Array.from({ length: 42 }, (_, i) => { const d = new Date(first); d.setDate(first.getDate() + i); return d; });
+  $('calGrid').innerHTML = names.map((n) => `<i>${n}</i>`).join('') + cells.map((d) => {
+    const cls = [d.getMonth() !== calBase.getMonth() && 'other', d.toDateString() === now.toDateString() && 'today', hasClass(d) && 'has'].filter(Boolean).join(' ');
+    return `<span class="${cls}">${d.getDate()}${zh ? `<small>${lunarDay(d)}</small>` : ''}</span>`;
+  }).join('');
+  // today: classes from the timetable, then to-dos
+  const wd = (now.getDay() + 6) % 7;
+  const items = [...tt.filter((c) => c.d === wd).sort((a, b) => a.s.localeCompare(b.s)).map((c) => `<li><em>${c.s}–${c.e}</em><span></span></li>`)];
+  const todos = (s.home?.todos || []).filter((t) => !t.done).slice(0, 4);
+  $('agenda').innerHTML = items.join('') + todos.map(() => '<li><i></i><span></span></li>').join('') || '<li class="muted">Nothing planned today.</li>';
+  const spans = $('agenda').querySelectorAll('li span');
+  tt.filter((c) => c.d === wd).sort((a, b) => a.s.localeCompare(b.s)).forEach((c, i) => { spans[i].textContent = c.t + (c.p ? ` · ${c.p}` : ''); });
+  todos.forEach((t, i) => { spans[items.length + i].textContent = t.text; });
+}
+$('calPrev').onclick = () => { calBase.setMonth(calBase.getMonth() - 1); renderCalendar(); };
+$('calNext').onclick = () => { calBase.setMonth(calBase.getMonth() + 1); renderCalendar(); };
+let fMins = 30;
+$('fMinus').onclick = () => { fMins = Math.max(5, fMins - 5); $('fMins').textContent = fMins; };
+$('fPlus').onclick = () => { fMins = Math.min(240, fMins + 5); $('fMins').textContent = fMins; };
+$('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('close'); }; // runs in the island
+
 // ---------- which panel ----------
-sd.onFlyout((panel) => {
-  $('menu').hidden = panel !== 'menu'; $('control').hidden = panel !== 'control';
-  if (panel === 'menu') renderMenu(); else { renderSys(); renderMedia(); renderBattery(); }
-});
+const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar'];
+function showPanel(panel) {
+  for (const p of PANELS) $(p).hidden = p !== panel;
+  if (panel === 'menu') renderMenu();
+  else if (panel === 'control') { renderSys(); renderMedia(); renderBattery(); }
+  else if (panel === 'wifi') { openNet = ''; renderWifi(); }
+  else if (panel === 'battery') renderBatteryPanel();
+  else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
+}
+sd.onFlyout(showPanel);
+sd.flyoutPanel().then(showPanel);
 addEventListener('keydown', (e) => { if (e.key === 'Escape') sd.flyoutAction('close'); });

@@ -56,3 +56,52 @@ input[type=range] { -webkit-appearance: none; appearance: none; height: 6px; bor
   background: linear-gradient(90deg, var(--a) var(--v, 50%), rgba(255, 255, 255, .14) var(--v, 50%)); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--a) 45%, transparent), 0 2px 6px rgba(0, 0, 0, .4); }
 footer { display: flex; justify-content: space-between; align-items: center; margin: 14px -16px -16px; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--m); font-size: 12.5px; }
+
+/* panels with padding: Wi-Fi, battery, calendar */
+.pad { padding: 14px; display: grid; gap: 12px; align-content: start; }
+.ph { display: flex; align-items: center; gap: 8px; } .ph b { font-size: 15px; margin-right: auto; }
+.muted { color: var(--m); }
+.sw { position: relative; display: inline-block; width: 38px; height: 22px; flex: none; }
+.sw input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+.sw i { position: absolute; inset: 0; border-radius: 11px; background: rgba(255, 255, 255, .16); transition: background .15s; }
+.sw i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s cubic-bezier(.3, 1.3, .5, 1); }
+.sw input:checked + i { background: var(--a); } .sw input:checked + i::after { transform: translateX(16px); }
+.nets { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 340px; overflow-y: auto; scrollbar-width: thin; }
+.nets li { border-radius: 10px; }
+.nets .n { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; text-align: left; }
+.nets .n:hover { background: rgba(255, 255, 255, .07); }
+.nets .n svg { width: 18px; height: 18px; flex: none; } .nets .n .lock { width: 13px; height: 13px; color: var(--m); }
+.nets .n span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nets .n small { color: var(--a); font-weight: 600; } .nets li.on { background: color-mix(in srgb, var(--a) 18%, transparent); }
+.nets .pw { display: flex; gap: 6px; padding: 0 10px 10px; } .nets .pw input { flex: 1; min-width: 0; border: 0; outline: none; border-radius: 9px; padding: 8px 10px; background: rgba(255, 255, 255, .08); color: var(--t); }
+.nets .pw button, .go { padding: 0 14px; border-radius: 9px; background: var(--a); color: #fff; font-weight: 600; height: 32px; }
+.nets .msg { padding: 0 12px 8px; font-size: 12px; color: #f0a37a; }
+.nets .empty { padding: 14px 10px; color: var(--m); }
+.pf { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); margin: 0 -14px -14px; padding: 10px 14px; font-size: 12px; }
+.link { color: var(--a); font-weight: 600; } .link:hover { text-decoration: underline; }
+.bat { display: flex; align-items: center; justify-content: space-between; }
+.bat .big { display: grid; gap: 2px; } .bat .big b { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.bat .cell { position: relative; width: 64px; height: 30px; border: 2px solid rgba(255, 255, 255, .7); border-radius: 8px; padding: 3px; }
+.bat .cell::after { content: ""; position: absolute; right: -7px; top: 9px; width: 4px; height: 8px; border-radius: 0 2px 2px 0; background: rgba(255, 255, 255, .7); }
+.bat .cell b { display: block; height: 100%; border-radius: 4px; background: #eef1f4; transition: width .4s; } .bat.charging .cell b { background: #57ab5a; } .bat.low .cell b { background: #e5534b; }
+.row-sw { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); cursor: pointer; }
+.row-sw span:first-child { flex: 1; display: grid; gap: 2px; } .row-sw small { color: var(--m); font-size: 11.5px; }
+.grp { display: grid; gap: 6px; } .grp > small { color: var(--m); font-size: 12px; }
+.seg { display: flex; padding: 3px; gap: 2px; border-radius: 11px; background: rgba(255, 255, 255, .06); }
+.seg button { flex: 1; padding: 7px 6px; border-radius: 8px; color: var(--m); font-weight: 600; font-size: 12.5px; } .seg button.on { background: var(--a); color: #fff; } .seg button:hover:not(.on) { color: var(--t); }
+/* calendar */
+.ch b { display: block; font-size: 16px; } .ch span { font-size: 12.5px; }
+.mh { display: flex; align-items: center; justify-content: space-between; } .mh b { font-size: 14px; } .mh span { display: flex; gap: 2px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal i { font-style: normal; font-size: 11.5px; color: var(--m); padding: 4px 0; font-weight: 600; }
+.cal span { display: grid; place-items: center; height: 38px; border-radius: 10px; font-variant-numeric: tabular-nums; line-height: 1.1; position: relative; }
+.cal span small { font-size: 9.5px; color: var(--m); } .cal span.other { opacity: .35; }
+.cal span.today { background: var(--a); color: #fff; } .cal span.today small { color: rgba(255, 255, 255, .85); }
+.cal span.has::after { content: ""; position: absolute; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--a); } .cal span.today.has::after { background: #fff; }
+.agenda { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; } .agenda > small { color: var(--m); font-size: 12px; }
+.agenda ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 110px; overflow-y: auto; }
+.agenda li { display: flex; gap: 10px; align-items: center; font-size: 12.5px; } .agenda li em { font-style: normal; color: var(--m); min-width: 84px; font-variant-numeric: tabular-nums; }
+.agenda li i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--m); flex: none; margin: 0 2px; }
+.focus { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.focus .round { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, .08); font-size: 16px; } .focus span { min-width: 64px; text-align: center; color: var(--m); } .focus span b { color: var(--t); font-size: 16px; }
+.focus .go { margin-left: auto; }

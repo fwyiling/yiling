@@ -71,6 +71,9 @@ sd.onPower?.(battery); // plugged in / unplugged: at once
 $('logo').onclick = () => sd.flyout('menu', Math.round($('logo').getBoundingClientRect().left));
 $('quick').onclick = () => { const r = $('quick').getBoundingClientRect(); sd.flyout('control', Math.round(r.left + r.width / 2)); };
 $('timerBtn').onclick = () => sd.topbarTimer();
-$('clock').onclick = () => sd.topbarKeys('notifications');
+const anchor = (el) => { const r = el.getBoundingClientRect(); return Math.round(r.left + r.width / 2); };
+$('clock').onclick = () => sd.flyout('calendar', anchor($('clock')));
+$('wifiBtn').onclick = () => sd.flyout('wifi', anchor($('wifiBtn')));
+$('battery').onclick = () => sd.flyout('battery', anchor($('battery')));
 sd.onSettings((n) => { const cityChanged = n.widgets.weather?.city !== s.widgets.weather?.city || n.topbar?.weather !== s.topbar?.weather; s = n; look(); if (cityChanged) weather(); });
 look();

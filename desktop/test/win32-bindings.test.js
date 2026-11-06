@@ -50,6 +50,7 @@ const calls = {
   windowRect: () => w.windowRect(fakeWin),
   battery: () => w.battery(),
   capsLock: () => w.capsLock(),
+  refreshRates: () => w.refreshRates(),
   makeToolWindow: () => w.makeToolWindow(fakeWin),
   virtualDesktops: () => w.virtualDesktops(),
   foregroundRect: () => w.foregroundRect([1]),

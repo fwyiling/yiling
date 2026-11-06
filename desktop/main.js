@@ -8,6 +8,7 @@ const system = require('./system');
 const win32 = require('./win32');
 const media = require('./media');
 const sysctl = require('./sysctl');
+const netpower = require('./netpower');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
@@ -99,7 +100,7 @@ function checkPause() {
   if (g.autoGamer !== false && win32.isWin) {
     if (fullSteady && !gamer) setGamer(true, true); else if (notFullSteady && gamer && gamerAuto) setGamer(false);
   }
-  const next = userPaused || gamer || auto || overlayOn;
+  const next = userPaused || gamer || auto || overlayOn || !!lowPower;
   if (next !== paused) { paused = next; broadcast('pause', paused); updateTray(); }
 }
 
@@ -154,7 +155,6 @@ const hotkeyStatus = { switchKeys: false };
 let lastSwitch = null;
 function registerHotkey() {
   globalShortcut.unregisterAll();
-  volumeKeys = false; // re-registered with the next volume reading
   const key = store.get().home.hotkey;
   const reg = (k, fn) => { try { return !!k && globalShortcut.register(k, fn); } catch (e) { console.warn('bad hotkey', k, e.message); return false; } };
   // Alt+Space is also Windows' window menu and PowerToys Run's key; fall back if something else owns it
@@ -230,13 +230,21 @@ function placeDock() {
 }
 // hide the Windows taskbar (the dock replaces it), but never while Task View, Start or another Windows
 // overlay is open: hiding it then would close that overlay again
-let overlayAt = 0, overlayOn = false;
+let overlayAt = 0, overlayOn = false, nullSince = 0;
+// "nothing in front" is normal on an empty desktop after switching: it only counts as Windows being busy
+// (animating) for the first 1.5 s, otherwise the taskbar would stay up on that desktop for good
+function overlayNow() {
+  const ov = win32.systemOverlayActive();
+  if (ov && win32.foregroundNull()) { nullSince ||= Date.now(); return Date.now() - nullSince < 1500; }
+  nullSince = 0;
+  return ov;
+}
 function hideTaskbar() {
   if (!win32.isWin) return;
-  const ov = win32.systemOverlayActive();
+  const ov = overlayNow();
   if (ov !== overlayOn) { overlayOn = ov; checkPause(); } // pause the wallpaper while Windows animates (Task View, switching desktops)
   if (ov) { overlayAt = Date.now(); return; }
-  if (Date.now() - overlayAt < 1200) return; // just after Task View / a desktop switch: let Windows finish first
+  if (Date.now() - overlayAt < 800) return; // just after Task View / a desktop switch: let Windows finish first
   if (win32.taskbarVisible()) win32.showTaskbar(false);
 }
 
@@ -346,7 +354,7 @@ function watchDesktops() {
     let n = 0;
     const t = setInterval(() => { const h = win32.hideSwitchLabel(scr); if (h.length) lastSwitchLabel = h; if (++n >= 20) clearInterval(t); }, 80);
   }
-  if (dockWin) setTimeout(() => { if (!win32.systemOverlayActive()) win32.showTaskbar(false); }, 450);
+  if (dockWin) for (const ms of [450, 1700]) setTimeout(() => { if (!gamer && !overlayNow()) win32.showTaskbar(false); }, ms); // after the slide, and once more after the empty-desktop grace
 }
 
 // ---------- MacBook-style switching: straight to the next / previous app, no picker ----------
@@ -469,27 +477,30 @@ function openIslandTimer() {
 
 // ---------- pop-ups in the island (volume, brightness, Caps Lock, headphones) ----------
 function osd(info) { if (islandWin && !islandWin.isDestroyed() && store.get().general.ownOsd !== false) islandWin.webContents.send('osd', info); }
-// the volume keys go to us (so Windows' own volume pop-up doesn't appear) and we change the volume like Windows does
-let volumeKeys = false;
-function registerVolumeKeys() {
-  if (!win32.isWin || store.get().general.ownOsd === false) return;
-  volumeKeys = true; // tried once
-  const step = (d) => { const st = sysctl.get(); if (st && st.volume >= 0) sysctl.set('volume', Math.round((st.volume + d) / 2) * 2); };
-  let ok = false;
-  try {
-    ok = globalShortcut.register('VolumeUp', () => step(2)) && globalShortcut.register('VolumeDown', () => step(-2))
-      && globalShortcut.register('VolumeMute', () => { const st = sysctl.get(); if (st) sysctl.set('mute', !st.muted); });
-  } catch {}
-  if (!ok) console.warn('[osd] volume keys are taken; Windows shows its own pop-up');
+// ---------- low power mode (from the battery in the top bar) ----------
+// Best power efficiency, the lowest refresh rate, the wallpaper paused; everything goes back as it was when switched off.
+let lowPower = null;
+async function setLowPower(on) {
+  if (on && !lowPower) {
+    lowPower = { mode: await netpower.powerMode(), hz: win32.refreshRates().current };
+    await netpower.setPowerMode('efficiency');
+    const r = win32.refreshRates(); if (r.rates.length && r.rates[0] < r.current) win32.setRefreshRate(r.rates[0]);
+  } else if (!on && lowPower) {
+    const prev = lowPower; lowPower = null;
+    await netpower.setPowerMode(prev.mode || 'balanced');
+    if (prev.hz && win32.refreshRates().current !== prev.hz) win32.setRefreshRate(prev.hz);
+  }
+  checkPause();
 }
 
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
-const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 } };
+const FLY = { menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 380 }, calendar: { w: 360, h: 600 } };
 function openFlyout(panel, anchorX) {
   if (!FLY[panel]) return;
   const d = screen.getPrimaryDisplay(), z = FLY[panel];
   const x = Math.round(Math.max(d.bounds.x + 6, Math.min(d.bounds.x + d.bounds.width - z.w - 6, d.bounds.x + anchorX - (panel === 'menu' ? 8 : z.w / 2))));
+  if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel !== panel) flyWin.hide(); // one panel at a time, never two on top of each other
   const bounds = { x, y: d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel === panel) { flyWin.hide(); return; } // a second click closes it
   if (!flyWin || flyWin.isDestroyed()) {
@@ -757,7 +768,17 @@ function wireIpc() {
   ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
   ipcMain.handle('flyout:action', (_e, what) => { flyWin?.hide(); if (FLY_ACTIONS[what]) setTimeout(FLY_ACTIONS[what], 60); });
   ipcMain.handle('flyout:state', () => ({ gamer, hotkey: store.get().home.hotkey }));
+  ipcMain.handle('flyout:panel', () => flyWin?.panel || 'menu'); // the page asks once it's ready (the first message can come too early)
   ipcMain.handle('sys:get', () => sysctl.get());
+  ipcMain.handle('net:wifi', () => netpower.wifiList());
+  ipcMain.handle('net:connect', (_e, ssid, password, secure) => netpower.wifiConnect(ssid, password, secure));
+  ipcMain.handle('power:get', async () => ({ battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!lowPower }));
+  ipcMain.handle('power:set', async (_e, what, value) => {
+    if (what === 'mode') await netpower.setPowerMode(String(value));
+    else if (what === 'hz') win32.setRefreshRate(Number(value));
+    else if (what === 'low') await setLowPower(!!value);
+    return { battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!lowPower };
+  });
   ipcMain.handle('sys:set', (_e, what, value) => sysctl.set(what, value));
   ipcMain.handle('topbar:keys', (e, what) => { const K = { quick: [0x5B, 0x41], notifications: [0x5B, 0x4E] }; if (topWin && e.sender === topWin.webContents && K[what]) win32.pressKeys(K[what]); });
   ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
@@ -873,13 +894,7 @@ app.whenReady().then(() => {
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
   // system controls: the control centre shows them, the island pops up when volume / brightness change
-  sysctl.onChange((st, prev) => {
-    broadcast('sys', st);
-    if (!volumeKeys && st.volume >= 0) registerVolumeKeys();
-    if (!prev || gamer) return;
-    if (st.volume !== prev.volume || st.muted !== prev.muted) osd({ kind: 'volume', value: st.muted ? 0 : st.volume, muted: st.muted });
-    else if (st.brightness != null && prev.brightness != null && st.brightness !== prev.brightness) osd({ kind: 'brightness', value: st.brightness });
-  });
+  sysctl.onChange((st) => broadcast('sys', st)); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)
   sysctl.start();
   // Caps Lock: a little pop-up in the island when it changes
   let caps = win32.capsLock();

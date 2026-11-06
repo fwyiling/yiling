@@ -57,6 +57,9 @@ function bind() {
     keybd_event: user32.func('void __stdcall keybd_event(uint8 vk, uint8 scan, uint32 flags, uintptr_t extra)'),
     LockWorkStation: user32.func('bool __stdcall LockWorkStation()'),
     GetKeyState: user32.func('short __stdcall GetKeyState(int vk)'),
+    // display modes (refresh rate); DEVMODEW is handled as a raw 220-byte buffer at fixed offsets
+    EnumDisplaySettingsW: user32.func('bool __stdcall EnumDisplaySettingsW(str16 device, uint32 mode, _Inout_ uint8_t *devmode)'),
+    ChangeDisplaySettingsExW: user32.func('long __stdcall ChangeDisplaySettingsExW(str16 device, uint8_t *devmode, intptr_t hwnd, uint32 flags, void *param)'),
     AttachThreadInput: user32.func('bool __stdcall AttachThreadInput(uint32 from, uint32 to, bool attach)'),
     BringWindowToTop: user32.func('bool __stdcall BringWindowToTop(intptr_t hwnd)'),
     shell32: koffi.load('shell32.dll'),
@@ -404,6 +407,32 @@ function hideSwitchLabel(screenRect) {
   return popOut;
 }
 
+// DEVMODEW offsets: dmSize 68, dmFields 72, dmBitsPerPel 168, dmPelsWidth 172, dmPelsHeight 176, dmDisplayFrequency 184
+const DEVMODE_SIZE = 220;
+function devmode() { const b = Buffer.alloc(DEVMODE_SIZE); b.writeUInt16LE(DEVMODE_SIZE, 68); return b; }
+/** The main screen's refresh rate now, and the rates it supports at its current resolution. */
+function refreshRates() {
+  if (!load()) return { current: 0, rates: [] };
+  const cur = devmode();
+  if (!u.EnumDisplaySettingsW(null, 0xFFFFFFFF, cur)) return { current: 0, rates: [] }; // ENUM_CURRENT_SETTINGS
+  const w = cur.readUInt32LE(172), h = cur.readUInt32LE(176), bpp = cur.readUInt32LE(168), rates = new Set();
+  for (let i = 0; i < 500; i++) {
+    const m = devmode();
+    if (!u.EnumDisplaySettingsW(null, i, m)) break;
+    if (m.readUInt32LE(172) === w && m.readUInt32LE(176) === h && m.readUInt32LE(168) === bpp && m.readUInt32LE(184) > 1) rates.add(m.readUInt32LE(184));
+  }
+  return { current: cur.readUInt32LE(184), rates: [...rates].sort((a, b) => a - b), width: w, height: h };
+}
+/** Switch the main screen to another refresh rate (one it supports). True when Windows accepted it. */
+function setRefreshRate(hz) {
+  if (!load()) return false;
+  const m = devmode();
+  if (!u.EnumDisplaySettingsW(null, 0xFFFFFFFF, m)) return false;
+  m.writeUInt32LE(hz >>> 0, 184);
+  m.writeUInt32LE(0x400000, 72); // DM_DISPLAYFREQUENCY
+  return u.ChangeDisplaySettingsExW(null, m, 0, 0x1, null) === 0; // CDS_UPDATEREGISTRY, DISP_CHANGE_SUCCESSFUL
+}
+
 /** Whether the main Windows taskbar is showing. */
 function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
@@ -504,12 +533,15 @@ module.exports = {
   mediaKey: safe('mediaKey', mediaKey),
   showTaskbar: safe('showTaskbar', showTaskbar, false),
   systemOverlayActive: safe('systemOverlayActive', systemOverlayActive, true),
+  foregroundNull: safe('foregroundNull', () => !!load() && isNull(u.GetForegroundWindow()), false),
   hideSwitchLabel: safe('hideSwitchLabel', hideSwitchLabel, []),
   lastOverlay: () => lastOverlay,
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),
+  refreshRates: safe('refreshRates', refreshRates, { current: 0, rates: [] }),
+  setRefreshRate: safe('setRefreshRate', setRefreshRate, false),
   makeToolWindow: safe('makeToolWindow', makeToolWindow),
   virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0 }),
   windowRect: safe('windowRect', windowRect, null),
