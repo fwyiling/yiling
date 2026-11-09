@@ -395,16 +395,27 @@ function repaintDesktop() {
 
 // ---------- taskbar ----------
 const ABM_NEW = 0, ABM_REMOVE = 1, ABM_QUERYPOS = 2, ABM_SETPOS = 3, ABM_GETSTATE = 4, ABM_SETSTATE = 10, ABS_AUTOHIDE = 1;
+// Explorer's taskbar. Not just the first "Shell_TrayWnd": the app's own tray (tray.js) makes a window of that name
+// too (so programs' tray icons reach it), and hiding / auto-hiding that one would do nothing.
+function explorerTray() {
+  for (let h = 0, i = 0; i < 8; i++) {
+    h = u.FindWindowExW(0, h, 'Shell_TrayWnd', null);
+    if (isNull(h)) return 0;
+    const pid = [0]; u.GetWindowThreadProcessId(h, pid);
+    if (/\\explorer\.exe$/i.test(exeOf(pid[0]))) return h;
+  }
+  return 0;
+}
 const appbar = (hwnd, extra = {}) => ({ cbSize: u.koffi.sizeof(u.APPBARDATA), hWnd: hwnd, uCallbackMessage: 0, uEdge: 3, rc: { left: 0, top: 0, right: 0, bottom: 0 }, lParam: 0, ...extra });
 function taskbarAutoHide() {
   if (!load()) return false;
-  const d = appbar(u.FindWindowW('Shell_TrayWnd', null));
+  const d = appbar(explorerTray());
   return (Number(u.SHAppBarMessage(ABM_GETSTATE, d)) & ABS_AUTOHIDE) !== 0;
 }
 /** The same switch as Settings > Personalization > Taskbar > Automatically hide the taskbar. */
 function setTaskbarAutoHide(on) {
   if (!load()) return false;
-  u.SHAppBarMessage(ABM_SETSTATE, appbar(u.FindWindowW('Shell_TrayWnd', null), { lParam: on ? ABS_AUTOHIDE : 0 }));
+  u.SHAppBarMessage(ABM_SETSTATE, appbar(explorerTray(), { lParam: on ? ABS_AUTOHIDE : 0 }));
   return true;
 }
 /** Tell Explorer that taskbar settings in the registry changed, so it redraws without a restart. */
@@ -418,7 +429,7 @@ function refreshTaskbar() {
  *  Explorer sometimes shows it again (e.g. after the Start menu), so the app re-applies this while the dock runs. */
 function showTaskbar(show) {
   if (!load()) return false;
-  const bars = [u.FindWindowW('Shell_TrayWnd', null)];
+  const bars = [explorerTray()];
   for (let h = 0, i = 0; i < 16; i++) { h = u.FindWindowExW(0, h, 'Shell_SecondaryTrayWnd', null); if (isNull(h)) break; bars.push(h); }
   let changed = false;
   for (const h of bars) {
@@ -622,7 +633,7 @@ function wifiScan() {
 }
 
 /** Whether the main Windows taskbar is showing. */
-function taskbarVisible() { if (!load()) return true; const h = u.FindWindowW('Shell_TrayWnd', null); return isNull(h) ? true : !!u.IsWindowVisible(h); }
+function taskbarVisible() { if (!load()) return true; const h = explorerTray(); return isNull(h) ? true : !!u.IsWindowVisible(h); }
 
 /** Press a key combination, e.g. [0x5B] (Win: Start menu) or [0x5B, 0x41] (Win+A: quick settings). */
 function pressKeys(keys) {

@@ -3,6 +3,8 @@ import { applyAccent } from './common.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
 let s = await sd.get();
+const TRAY_MAX = 7; // tray icons shown in the bar; the rest open in a panel
+let trayIcons = [];
 
 function look() {
   applyAccent(s.accent);
@@ -10,7 +12,7 @@ function look() {
   // solid, or glass: a light tint over the desktop, blurred behind by Windows (the main process turns the blur on)
   document.documentElement.style.setProperty('--op', t.look === 'glass' ? 0.42 : (t.opacity ?? 0.96));
   $('weather').hidden = !t.weather; $('battery').hidden = !t.battery || !hasBattery;
-  renderMedia();
+  renderMedia(); renderTray();
 }
 
 // the app in front, like macOS shows it next to the Apple menu
@@ -95,3 +97,32 @@ function renderIme(m) {
 sd.onIme?.(renderIme);
 sd.ime?.().then(renderIme).catch(() => {});
 $('ime').onclick = () => sd.windowsSettings?.('language');
+
+// ---------- other programs' tray icons ----------
+// click / right-click / double-click send the program what Windows' tray would; more than fit go in a panel
+function trayButton(it) {
+  const b = document.createElement('button');
+  b.title = it.tip || '';
+  const img = new Image(); img.alt = ''; img.src = it.icon; b.append(img);
+  const at = (kind) => { const r = b.getBoundingClientRect(); sd.trayClick(it.id, kind, r.left + r.width / 2, r.top + r.height / 2).catch(() => {}); };
+  b.onclick = () => at('left');
+  b.ondblclick = () => at('double');
+  b.oncontextmenu = (e) => { e.preventDefault(); at('right'); };
+  return b;
+}
+function renderTray() {
+  const list = trayIcons.filter((x) => !x.hidden && x.icon);
+  $('tray').hidden = s.topbar?.tray === false || !list.length;
+  if ($('tray').hidden) return;
+  const shown = list.length > TRAY_MAX ? list.slice(0, TRAY_MAX - 1) : list;
+  const items = shown.map(trayButton);
+  if (list.length > shown.length) {
+    const more = document.createElement('button'); more.className = 'more'; more.title = `${list.length - shown.length} more`;
+    more.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+    more.onclick = () => { const r = more.getBoundingClientRect(); sd.flyout('tray', Math.round(r.left + r.width / 2), { skip: shown.length }); };
+    items.push(more);
+  }
+  $('tray').replaceChildren(...items);
+}
+sd.onTray?.((list) => { trayIcons = list || []; renderTray(); });
+sd.trayList?.().then((list) => { trayIcons = list || []; renderTray(); }).catch(() => {});

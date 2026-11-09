@@ -139,3 +139,9 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .wins .tb.live img { opacity: 0; }
 .wins .tb em { font-style: normal; font-size: 11px; color: var(--m); margin-top: -18px; }
 .wins .tb.live em { display: none; }
+
+/* tray icons that didn't fit in the top bar */
+.traygrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-height: 170px; overflow-y: auto; }
+.traygrid button { height: 40px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, .05); border: 0; cursor: pointer; }
+.traygrid button:hover { background: rgba(255, 255, 255, .12); }
+.traygrid img { width: 20px; height: 20px; object-fit: contain; }

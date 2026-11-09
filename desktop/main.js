@@ -10,6 +10,7 @@ const media = require('./media');
 const sysctl = require('./sysctl');
 const netpower = require('./netpower');
 const vdesk = require('./vdesk');
+const systray = require('./tray'); // other programs' tray icons, for the top bar
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -542,6 +543,11 @@ function topbarTick() {
   if (vd.current !== lastDesk) { lastDesk = vd.current; checkPause(); } // a new desktop: resume the wallpaper at once if nothing covers it
   if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
+// the system tray's icons in the top bar (tray.js): only while the top bar is there to show them
+function syncTray() {
+  const t = store.get().topbar;
+  if (win32.isWin && t.on && t.tray !== false) systray.resume(); else systray.stop();
+}
 function setTopbar(on) {
   if (on && (!topWin || topWin.isDestroyed())) {
     topWin = new BrowserWindow({ width: 800, height: TOP_H, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, focusable: false,
@@ -556,6 +562,7 @@ function setTopbar(on) {
     if (win32.isWin) win32.releaseEdge(topWin);
     topWin.destroy(); topWin = null;
   }
+  syncTray();
 }
 
 // ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
@@ -658,7 +665,7 @@ function startDockExtras() {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { tray: { w: 252, h: 230 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 // an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
 const WIN_CARD = { w: 212, h: 150, gap: 10 };
 function windowsPanelSize(n) {
@@ -793,6 +800,7 @@ function applySettings(patch) {
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.topbar?.look !== undefined) applyTopbarLook();
+  if (patch.topbar?.tray !== undefined) syncTray();
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
@@ -809,7 +817,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -957,6 +965,16 @@ function wireIpc() {
     return shell.openExternal(pages[page]);
   });
   ipcMain.handle('windows', () => windowsList);
+  ipcMain.handle('tray:list', () => systray.icons());
+  // a click on a tray icon in the top bar (or its overflow panel): x, y within that window, in its pixels
+  ipcMain.handle('tray:click', (e, id, kind, x, y) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (!w || (w !== topWin && w !== flyWin)) return false;
+    const b = w.getBounds(), pt = screen.dipToScreenPoint({ x: Math.round(b.x + (+x || 0)), y: Math.round(b.y + (+y || 0)) });
+    if (w === flyWin) flyWin.hide(); // its menu needs the front, not our panel
+    win32.allowForeground();
+    return systray.click(String(id), String(kind), pt.x, pt.y);
+  });
   ipcMain.handle('window:close', (_e, hwnd) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.closeWindow(hwnd); setTimeout(() => pollWindows(true), 300); });
   // middle-click on a dock icon: another window of that app (only apps that have a window open right now)
   ipcMain.handle('window:new', async (_e, exe) => { if (!exe || !windowsList.some((w) => w.exe === exe)) throw new Error('unknown app'); win32.allowForeground(); await launchApp(exe); });
@@ -1008,7 +1026,9 @@ function wireIpc() {
   });
   ipcMain.handle('ime:get', () => imeNow);
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
-  ipcMain.handle('flyout:open', (_e, panel, x, data) => openFlyout(panel, x, data && { hwnds: (data.hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8), name: String(data.name || '').slice(0, 80) }));
+  ipcMain.handle('flyout:open', (_e, panel, x, data) => openFlyout(panel, x, !data ? null
+    : panel === 'windows' ? { hwnds: (data.hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8), name: String(data.name || '').slice(0, 80) }
+    : panel === 'tray' ? { skip: Math.max(0, data.skip | 0) } : null));
   ipcMain.handle('flyout:data', () => flyWin?.data || null);
   ipcMain.handle('thumbs', (_e, rects) => setThumbs((rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }))));
   // files dropped on an app in the dock: opened in that app (a Store app or one started through a launcher: each file
@@ -1225,6 +1245,7 @@ app.whenReady().then(() => {
   wireIpc();
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
+  systray.onChange((list) => { for (const w of [topWin, flyWin]) if (w && !w.isDestroyed()) w.webContents.send('tray', list); });
   // system controls: the control centre shows them, the island pops up when volume / brightness change
   sysctl.onChange((st, prev) => { broadcast('sys', st); outputsChanged(st, prev); }); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)
   sysctl.start();
@@ -1264,7 +1285,7 @@ app.on('second-instance', () => openSettings()); // opening it again while it ru
 app.on('before-quit', () => {
   app.isQuitting = true;
   for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
-  media.stop(); sysctl.stop();
+  media.stop(); sysctl.stop(); systray.stop(); // Explorer has every icon too: its tray carries on
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
   if (topWin && win32.isWin) win32.releaseEdge(topWin);

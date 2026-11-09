@@ -192,12 +192,12 @@ $('fPlus').onclick = () => { fMins = Math.min(240, fMins + 5); $('fMins').textCo
 $('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('close'); }; // runs in the island
 
 // ---------- which panel ----------
-const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots', 'windows'];
+const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots', 'windows', 'trayp'];
 let lastPanel = '', lastShown = 0;
 function showPanel(panel) {
   if (panel === lastPanel && Date.now() - lastShown < 300) return; // the same request twice (message + ask): draw once
   lastPanel = panel; lastShown = Date.now();
-  for (const p of PANELS) $(p).hidden = p !== panel;
+  for (const p of PANELS) $(p).hidden = p !== (panel === 'tray' ? 'trayp' : panel);
   if (panel !== 'windows') sd.thumbs([]).catch(() => {});
   if (panel === 'menu') renderMenu();
   else if (panel === 'control') { renderSys(); renderMedia(); renderBattery(); }
@@ -206,6 +206,7 @@ function showPanel(panel) {
   else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
   else if (panel === 'shots') renderShots();
   else if (panel === 'windows') renderWindows();
+  else if (panel === 'tray') renderTrayPanel();
 }
 // drawn: the window may appear (straight away; a hidden window gets no animation frames to wait for)
 const drawAndReady = (p) => { showPanel(p); setTimeout(() => sd.flyoutReady(), 0); };
@@ -275,3 +276,19 @@ async function placeThumbs() {
   const shown = await sd.thumbs(boxes.map((el) => { const r = el.getBoundingClientRect(); return { hwnd: +el.dataset.hwnd, x: r.left + 3, y: r.top + 3, w: r.width - 6, h: r.height - 6 }; })).catch(() => []);
   for (const el of boxes) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
 }
+
+// ---------- tray icons that didn't fit in the top bar ----------
+async function renderTrayPanel(list) {
+  const [d, all] = await Promise.all([sd.flyoutData().catch(() => null), list ? Promise.resolve(list) : sd.trayList().catch(() => [])]);
+  const rest = all.filter((x) => !x.hidden && x.icon).slice(d?.skip || 0);
+  if (!rest.length) { sd.flyoutAction('close'); return; }
+  $('trayGrid').replaceChildren(...rest.map((it) => {
+    const b = document.createElement('button'); b.title = it.tip || '';
+    const img = new Image(); img.alt = ''; img.src = it.icon; b.append(img);
+    const at = (kind) => { const r = b.getBoundingClientRect(); sd.trayClick(it.id, kind, r.left + r.width / 2, r.top + r.height / 2).catch(() => {}); };
+    b.onclick = () => at('left'); b.ondblclick = () => at('double');
+    b.oncontextmenu = (e) => { e.preventDefault(); at('right'); };
+    return b;
+  }));
+}
+sd.onTray?.((list) => { if (!$('trayp').hidden) renderTrayPanel(list); });
