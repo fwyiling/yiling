@@ -1,5 +1,5 @@
 // Syndicates Desktop – animated wallpaper + desktop widgets + a Home panel for Windows.
-const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -44,11 +44,8 @@ const webPrefs = { preload: path.join(__dirname, 'preload.js'), contextIsolation
 
 // ---------- wallpaper ----------
 function buildWallpapers() {
-  const had = wallpapers.size > 0;
   for (const w of wallpapers.values()) if (!w.isDestroyed()) { w.intentional = true; w.destroy(); }
   wallpapers.clear();
-  // "Windows" scene: no wallpaper windows at all; Windows draws its own background
-  if (store.get().wallpaper.scene === 'windows') { if (had && win32.isWin) setTimeout(() => win32.repaintDesktop(), 150); return; }
   for (const d of screen.getAllDisplays()) {
     const w = new BrowserWindow({
       ...d.bounds, frame: false, show: false, skipTaskbar: true, focusable: false, resizable: false, movable: false,
@@ -383,8 +380,17 @@ const TIMER_ACTIONS = {
 let deskNow = -1, lastSwitchLabel = [], quietUntil = 0, deskWorker = null, deskWorkerReady = false;
 const QUIET_MS = 750; // Windows' slide, with a little to spare
 const quiet = () => Date.now() < quietUntil;
-function onDeskSwitch(from, to, count) {
+// which virtual desktop is showing (its id), for a different wallpaper on each desktop
+let deskId = '';
+function readDeskId() { if (win32.isWin) { const v = win32.virtualDesktops(); deskId = v.ids[v.current] || deskId; } return deskId; }
+// the wallpaper for a desktop: its own when "a different wallpaper on each desktop" is on and it has one
+function wallFor(w, id) {
+  const own = w.perDesk && id && w.desks?.[id];
+  return own ? { ...w, scene: own.scene || 'image', file: own.file || '', url: own.url || '', fileStamp: own.fileStamp } : w;
+}
+function onDeskSwitch(from, to, count, id) {
   deskNow = to;
+  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); }
   if (gamer) return;
   quietUntil = Date.now() + QUIET_MS;
   const dir = Math.sign(to - from);
@@ -435,7 +441,7 @@ function startDeskWatch() {
     deskWorker = new Worker(path.join(__dirname, 'deskwatch.js'), { workerData: deskWatchSettings() });
     deskWorker.on('message', (m) => {
       if (m.type === 'ready') deskWorkerReady = true;
-      else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count);
+      else if (m.type === 'switch') onDeskSwitch(m.from, m.to, m.count, m.id);
       else if (m.type === 'label') lastSwitchLabel = m.found;
       else if (m.type === 'edge') edgeMove(m.hwnd, m.dir);
       else if (m.type === 'ime') onIme(m.m);
@@ -778,7 +784,6 @@ function setAutostart(on) {
 function applySettings(patch) {
   const before = store.get();
   const next = store.set(patch);
-  if (patch.wallpaper?.scene !== undefined && (next.wallpaper.scene === 'windows') !== (before.wallpaper.scene === 'windows')) buildWallpapers();
   if (patch.general?.hideSwitchLabel !== undefined || patch.general?.edgeSwitch !== undefined) {
     if (next.general.edgeSwitch !== false) vdesk.start();
     deskWorker?.postMessage(deskWatchSettings());
@@ -985,6 +990,8 @@ function wireIpc() {
   ipcMain.handle('timer', (_e, action, arg) => { if (!TIMER_ACTIONS[action]) throw new Error('unknown timer action'); return TIMER_ACTIONS[action](arg); });
   ipcMain.handle('switch:test', () => { switchApp(1, 'test'); return { ...hotkeyStatus, lastSwitch }; });
   // the picture chosen for the app's wallpaper, as the Windows background too
+  ipcMain.handle('desktops', () => { const v = win32.isWin ? win32.virtualDesktops(true) : { count: 1, current: 0, ids: [], names: [] }; if (v.ids[v.current]) deskId = v.ids[v.current]; return { ...v, ids: v.ids.length ? v.ids : ['local'], current: v.ids.length ? v.current : 0 }; });
+  ipcMain.handle('desk:current', () => readDeskId() || 'local');
   ipcMain.handle('wallpaper:toWindows', () => {
     const f = store.get().wallpaper.file;
     if (!win32.isWin || !f || !/\.(jpe?g|png|bmp)$/i.test(f) || !fs.existsSync(f)) return false;
@@ -1195,20 +1202,25 @@ app.whenReady().then(() => {
       if (!f || !fs.existsSync(f)) return new Response('no snapshot', { status: 404 });
       return net.fetch(pathToFileURL(f).href);
     }
-    if (u.host === 'media' && u.pathname === '/wallpaper') {
-      const f = store.get().wallpaper.file;
+    if (u.host === 'media' && u.pathname === '/wallpaper') { // the picked photo / video (for a desktop, when each has its own)
+      const f = wallFor(store.get().wallpaper, u.searchParams.get('desk') || '').file;
       if (!f || !fs.existsSync(f)) return new Response('no file', { status: 404 });
       return net.fetch(pathToFileURL(f).href, { headers: req.headers }); // forwards Range for video seeking
+    }
+    if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
+      const id = u.searchParams.get('desk') || '';
+      const own = win32.isWin && /^\{[0-9A-F-]{36}\}$/.test(id) ? win32.regString(`Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\${id}`, 'Wallpaper') : '';
+      const f = own || (win32.isWin ? win32.regString('Control Panel\\Desktop', 'WallPaper') : '');
+      if (!f || !/\.(jpe?g|png|bmp|gif|webp|jfif)$/i.test(f) || !fs.existsSync(f)) return new Response('no picture', { status: 404 });
+      return net.fetch(pathToFileURL(f).href);
     }
     return new Response('not found', { status: 404 });
   });
   // device names (headphones connected…) for the island: our own pages may read them
   session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => (permission === 'media' ? String(origin).startsWith('sd://') : true));
-  // music-reactive wallpaper: system sound ("loopback", Windows only), and only for the wallpaper page
-  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
-    const fromWallpaper = (req.frame?.url || '').startsWith(ui('wallpaper.html'));
-    if (!fromWallpaper || !win32.isWin) return cb({});
-    desktopCapturer.getSources({ types: ['screen'] }).then((src) => cb({ video: src[0], audio: 'loopback' })).catch(() => cb({}));
+  // nothing may capture the screen (the music-reactive wallpaper that did is gone)
+  session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => {
+    cb({});
   });
   wireIpc();
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up

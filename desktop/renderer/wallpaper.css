@@ -2,8 +2,9 @@
    looks exactly like the real desktop. */
 .wp { position: relative; overflow: hidden; container-type: size; background: #0c0f13; color: #eef1f4;
   font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; --a: #5e7d9c; --px: 0; --py: 0; }
-.wp-canvas, .wp-media, .wp-media > *, .wp-dim { position: absolute; inset: 0; width: 100%; height: 100%; }
-.wp-canvas { transform: scale(1.06); } /* hides the soft blur edge */
+.wp-media, .wp-media > *, .wp-dim { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wp-layer { opacity: 0; transition: opacity .55s ease; } .wp-layer.in { opacity: 1; } /* the next wallpaper fades in over the last */
+.still .wp-media img, .still .wp-media video { transform: scale(1.04); }
 .wp-media img, .wp-media video { object-fit: cover; }
 .wp-media iframe { border: 0; pointer-events: none; }
 .wp-media img, .wp-media video { transform: translate(calc(var(--px) * -1.2%), calc(var(--py) * -1.2%)) scale(1.04); transition: transform .6s ease-out; }

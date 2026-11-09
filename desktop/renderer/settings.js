@@ -1,8 +1,7 @@
 // Customize window: live preview (drag widgets to move them) + wallpaper / widget / Home / general settings.
 import { mountWallpaper } from './wallpaper-view.js';
 import { PETS, petSvg } from './pets.js';
-import { createScene, SCENE_NAMES } from './scenes.js';
-import { applyAccent } from './common.js';
+import { applyAccent, wallFor } from './common.js';
 
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -55,7 +54,7 @@ document.querySelectorAll('.side [data-tab]').forEach((b) => b.onclick = () => {
 // ---------- generic inputs: data-k="path.to.key" ----------
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 const patchOf = (p, v) => p.split('.').reduceRight((acc, k) => ({ [k]: acc }), v);
-const fmt = { 'dock.opacity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.speed': (v) => `${(+v).toFixed(2)}×`, 'wallpaper.intensity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
+const fmt = { 'dock.opacity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
 document.querySelectorAll('[data-k]').forEach((el) => {
   const k = el.dataset.k;
   const read = () => (el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : k === 'general.fps' ? +el.value : el.value);
@@ -65,45 +64,57 @@ document.querySelectorAll('[data-k]').forEach((el) => {
   });
 });
 
-// ---------- scenes ----------
+// ---------- background: photo, video or web page (one for all desktops, or one each) ----------
 const GLYPHS = {
   image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>',
   video: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2.5"/><path d="M17 10l4-2.5v9L17 14"/></svg>',
-  windows: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1"/><rect x="13" y="13" width="7.5" height="7.5" rx="1"/></svg>',
   web: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></svg>',
 };
-const minis = [];
-const sceneEls = [...Object.keys(SCENE_NAMES), 'image', 'video', 'web', 'windows'].map((key) => {
+const KINDS = { image: 'Photo', video: 'Video', web: 'Web page' };
+let desks = { ids: [], names: [], current: 0 }, editDesk = ''; // '' = the main wallpaper (every desktop without its own)
+const editing = () => (s.wallpaper.perDesk && editDesk ? wallFor(s.wallpaper, editDesk) : s.wallpaper);
+const ownOf = (id) => s.wallpaper.desks?.[id] || null;
+// a change to what's being edited: the main wallpaper, or that desktop's own (made from the main one the first time)
+function savePick(patch) {
+  if (!(s.wallpaper.perDesk && editDesk)) return save({ wallpaper: patch });
+  const base = ownOf(editDesk) || { scene: s.wallpaper.scene, file: s.wallpaper.file, url: s.wallpaper.url, fileStamp: s.wallpaper.fileStamp };
+  return save({ wallpaper: { desks: { [editDesk]: { ...base, ...patch } } } });
+}
+const sceneEls = Object.keys(KINDS).map((key) => {
   const b = document.createElement('button'); b.className = 'scene'; b.dataset.scene = key;
-  if (SCENE_NAMES[key]) { const c = document.createElement('canvas'); b.append(c); minis.push([key, c]); }
-  else b.insertAdjacentHTML('beforeend', `<div class="glyph">${GLYPHS[key]}</div>`);
-  b.insertAdjacentHTML('beforeend', `<span>${SCENE_NAMES[key] || { image: 'Image', video: 'Video', web: 'Web page', windows: 'Windows' }[key]}</span>`);
-  b.onclick = () => save({ wallpaper: { scene: key } });
+  b.innerHTML = `<div class="glyph">${GLYPHS[key]}</div><span>${KINDS[key]}</span>`;
+  b.onclick = () => { const cur = editing(); savePick({ scene: key, ...(cur.scene !== key && key !== 'web' ? { file: '', fileStamp: Date.now() } : {}) }); };
   $('scenes').append(b);
   return b;
 });
-const miniScenes = minis.map(([key, c]) => ({ key, scene: createScene(c, { ...s.wallpaper, scene: key, fps: 20, parallax: false }) }));
 $('pick').onclick = async () => {
-  const kind = s.wallpaper.scene === 'video' ? 'video' : 'image';
-  const p = await sd.pickFile(kind);
-  if (p) save({ wallpaper: { file: p, fileStamp: Date.now() } });
+  const p = await sd.pickFile(editing().scene === 'video' ? 'video' : 'image');
+  if (p) savePick({ file: p, fileStamp: Date.now() });
 };
-$('urlSet').onclick = () => { const u = $('url').value.trim(); if (/^https?:\/\//i.test(u)) save({ wallpaper: { url: u } }); else $('url').focus(); };
-
-// ---------- colours ----------
-const PRESETS = [
-  ['Syndicates', ['#5e7d9c', '#a7afb8', '#2b3a4d']], ['Midnight', ['#3b5bdb', '#7048e8', '#141a33']], ['Sunset', ['#f76707', '#e64980', '#3b1f2b']],
-  ['Ocean', ['#1098ad', '#4dabf7', '#0b2833']], ['Forest', ['#2f9e44', '#94d82d', '#13261a']], ['Sakura', ['#f783ac', '#fcc2d7', '#3a2230']], ['Mono', ['#adb5bd', '#f1f3f5', '#212529']],
-];
-PRESETS.forEach(([name, cols]) => {
-  const b = document.createElement('button'); b.className = 'preset'; b.title = name;
-  b.innerHTML = cols.map((c) => `<i style="background:${c}"></i>`).join('');
-  b.onclick = () => save({ wallpaper: { colors: cols } });
-  $('presets').append(b);
-});
-document.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => {
-  const cols = [...s.wallpaper.colors]; cols[+inp.dataset.color] = inp.value; save({ wallpaper: { colors: cols } });
-}));
+$('urlSet').onclick = () => { const u = $('url').value.trim(); if (/^https?:\/\//i.test(u)) savePick({ url: u }); else $('url').focus(); };
+async function loadDesks() {
+  desks = await sd.desktops().catch(() => desks);
+  if (editDesk && !desks.ids.includes(editDesk)) editDesk = '';
+  paintDesks();
+}
+function paintDesks() {
+  const on = !!s.wallpaper.perDesk;
+  $('deskRow').hidden = !on;
+  view.setDesk(on && editDesk ? editDesk : desks.ids[desks.current] || '');
+  if (!on) return;
+  const chip = (id, label, sub) => {
+    const b = document.createElement('button'); b.className = 'desk' + (editDesk === id ? ' on' : '') + (id && ownOf(id) ? ' own' : '');
+    b.innerHTML = `<b></b><small></small>`; b.querySelector('b').textContent = label; b.querySelector('small').textContent = sub;
+    b.onclick = () => { editDesk = id; paintDesks(); paint(); };
+    return b;
+  };
+  const items = [chip('', 'Every desktop', 'unless it has its own')];
+  desks.ids.forEach((id, i) => items.push(chip(id, desks.names[i] || `Desktop ${i + 1}`, `${ownOf(id) ? 'its own wallpaper' : 'the main one'}${i === desks.current ? ' · showing now' : ''}`)));
+  if (editDesk && ownOf(editDesk)) { const r = document.createElement('button'); r.className = 'btn ghost'; r.textContent = 'Use the main wallpaper here'; r.onclick = () => save({ wallpaper: { desks: { [editDesk]: null } } }); items.push(r); }
+  $('deskRow').replaceChildren(...items);
+}
+addEventListener('focus', loadDesks); // a desktop added or renamed while Customize was in the background
+loadDesks();
 
 // ---------- widgets list ----------
 const WIDGETS = { clock: 'Clock', greeting: 'Greeting', date: 'Date', stats: 'CPU & memory', weather: 'Weather', quote: 'Quote', media: 'Now playing', today: 'Today (next class, to-dos)', calendar: 'Calendar (Mac layout)', reminders: 'Reminders (Mac layout)' };
@@ -229,19 +240,15 @@ function paint() {
   const pet = PETS[s.island?.pet] ? s.island.pet : s.island?.pet === 'none' ? 'none' : 'cat';
   petBtns.forEach((b) => b.classList.toggle('on', b.dataset.pet === pet));
   $('petPick').hidden = !s.island?.on;
-  const w = s.wallpaper;
+  const w = editing();
   sceneEls.forEach((b) => b.classList.toggle('on', b.dataset.scene === w.scene));
   $('fileRow').hidden = !['image', 'video'].includes(w.scene);
   $('urlRow').hidden = w.scene !== 'web';
-  $('winRow').hidden = w.scene !== 'windows';
-  $('appWpOnly').hidden = w.scene === 'windows'; // colours and motion are for the app's own wallpapers
-  $('winUse').hidden = !/\.(jpe?g|png|bmp)$/i.test(w.file || '');
-  $('pick').textContent = w.scene === 'video' ? 'Choose a video…' : 'Choose an image…';
+  $('wpNote').hidden = !!(w.scene === 'web' ? w.url : w.file);
+  paintDesks();
+  $('pick').textContent = w.scene === 'video' ? 'Choose a video…' : 'Choose a photo…';
   $('fileName').textContent = w.file ? w.file.split(/[\\/]/).pop() : 'No file chosen';
   if (document.activeElement !== $('url')) $('url').value = w.url || '';
-  document.querySelectorAll('[data-color]').forEach((inp) => { inp.value = w.colors[+inp.dataset.color] || '#000000'; });
-  document.querySelectorAll('.preset').forEach((b, i) => b.classList.toggle('on', PRESETS[i][1].join() === w.colors.join()));
-  miniScenes.forEach((m) => m.scene.set({ ...w, scene: m.key, fps: 20, parallax: false }));
   document.querySelectorAll('.wrow').forEach((r) => {
     const c = s.widgets[r.dataset.w];
     r.querySelector('[type=checkbox]').checked = c.on;
@@ -260,6 +267,5 @@ function paint() {
 }
 paint();
 
-// "Windows" scene: Windows' own background, changed in Windows' Settings
+// nothing picked: Windows' own background, changed in Windows' Settings
 $('winBg').onclick = (e) => { e.preventDefault(); sd.windowsSettings('background'); };
-$('winUse').onclick = async (e) => { e.preventDefault(); $('winUse').textContent = (await sd.wallpaperToWindows()) ? 'Done ✓' : 'Couldn’t set it'; setTimeout(() => { $('winUse').textContent = 'Use my picture for Windows'; }, 2500); };

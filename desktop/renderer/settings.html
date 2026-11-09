@@ -25,22 +25,15 @@
       <p class="tip" id="tip">This is your desktop. Changes apply instantly.</p>
     </div>
     <section data-panel="wallpaper" class="on">
-      <h2>Scene</h2>
+      <h2>Background</h2>
+      <label class="switch"><span><b>A different wallpaper on each desktop</b><small>Each virtual desktop keeps its own; switching desktops fades from one to the next.</small></span><input type="checkbox" data-k="wallpaper.perDesk"></label>
+      <div id="deskRow" class="desks" hidden></div>
       <div id="scenes" class="scenes"></div>
-      <div id="fileRow" class="row" hidden><button id="pick" class="btn">Choose file…</button><span id="fileName" class="muted"></span></div>
-      <div id="winRow" hidden><p class="muted">Windows draws your background itself: nothing of Syndicates runs behind the desktop (the top bar, dock and island stay). Widgets need one of the app's wallpapers.</p><div class="row"><button id="winBg" class="btn">Change Windows background</button><button id="winUse" class="btn ghost" hidden>Use my picture for Windows</button></div></div>
+      <div id="fileRow" class="row" hidden><button id="pick" class="btn">Choose a photo…</button><span id="fileName" class="muted"></span></div>
       <div id="urlRow" class="row" hidden><input id="url" class="field" placeholder="https://… a page to use as your wallpaper"><button id="urlSet" class="btn">Use</button></div>
-      <div id="appWpOnly">
-      <h2>Colours</h2>
-      <div class="row"><div id="presets" class="presets"></div><span class="sep"></span><input type="color" data-color="0"><input type="color" data-color="1"><input type="color" data-color="2"></div>
-      <h2>Motion</h2>
-      <label class="slider"><span>Speed</span><input type="range" min="0.25" max="2" step="0.05" data-k="wallpaper.speed"><em></em></label>
-      <label class="slider"><span>Intensity</span><input type="range" min="0" max="1" step="0.05" data-k="wallpaper.intensity"><em></em></label>
+      <p class="muted" id="wpNote">Nothing picked yet: your Windows background shows. <a href="#" id="winBg">Change it in Windows</a></p>
       <label class="slider"><span>Darken</span><input type="range" min="0" max="0.7" step="0.05" data-k="wallpaper.dim"><em></em></label>
-      <label class="switch"><span><b>Shift with the time of day</b><small>Warm at dawn, your colours by day, orange at dusk, deep blue at night.</small></span><input type="checkbox" data-k="wallpaper.dayCycle"></label>
-      <label class="switch"><span><b>React to music</b><small>The wallpaper pulses with whatever your PC is playing. Uses system sound only, never the microphone.</small></span><input type="checkbox" data-k="wallpaper.audio"></label>
       <label class="switch"><span><b>Follow the mouse</b><small>The wallpaper and widgets drift a little with your cursor.</small></span><input type="checkbox" data-k="wallpaper.parallax"></label>
-      </div>
     </section>
     <section data-panel="widgets">
       <label class="field-row"><span>Layout <small>Centered and Left keep everything together; Free lets you drag each widget.</small></span><div class="seg" data-seg="widgets.layout"><button value="mac">Mac</button><button value="center">Centered</button><button value="left">Left</button><button value="free">Free</button></div></label>
@@ -131,7 +124,6 @@
       <label class="switch"><span><b>Pause on battery</b><small>Saves battery on laptops.</small></span><input type="checkbox" data-k="general.pauseOnBattery"></label>
       <label class="switch"><span><b>Hide desktop icons</b><small>A clean desktop; your files stay in the Desktop folder.</small></span><input type="checkbox" data-k="general.hideDesktopIcons"></label>
       <label class="switch"><span><b>Pause behind maximized windows</b><small>Saves power: the wallpaper stops drawing while a window covers the whole screen.</small></span><input type="checkbox" data-k="general.pauseWhenCovered"></label>
-      <label class="field-row"><span>Frame rate</span><select class="field" data-k="general.fps"><option value="30">30 fps (recommended)</option><option value="60">60 fps</option></select></label>
       <label class="field-row"><span>Accent colour</span><input type="color" data-k="accent"></label>
       <div class="row"><button id="diag" class="btn ghost">Copy diagnostics</button><span class="muted" id="diagNote">For bug reports: what the app knows about your system.</span></div>
     </section>

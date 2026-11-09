@@ -494,13 +494,17 @@ function autoAccent() {
   if (size[0] === 4) return buf.readUInt32LE(0) === 1; // REG_DWORD
   return buf.toString('utf16le', 0, size[0]).replace(/\0+$/, '').trim() === '1'; // stored as text on some PCs
 }
-function virtualDesktops() {
-  if (!load()) return { count: 1, current: 0 };
+// a GUID's 16 bytes as Windows writes it: {01234567-89AB-CDEF-0123-456789ABCDEF}
+const guidStr = (b) => { const h = (x) => x.toString('hex').toUpperCase(); return `{${h(Buffer.from(b.subarray(0, 4)).reverse())}-${h(Buffer.from(b.subarray(4, 6)).reverse())}-${h(Buffer.from(b.subarray(6, 8)).reverse())}-${h(b.subarray(8, 10))}-${h(b.subarray(10, 16))}}`; };
+/** The virtual desktops: how many, which one is showing, their ids (stable when reordered) and the names given in Windows. */
+function virtualDesktops(withNames = false) { // names: a few more registry reads, only when asked (the watcher polls this)
+  if (!load()) return { count: 1, current: 0, ids: [], names: [] };
   const ids = regBinary(VD_KEY, 'VirtualDesktopIDs'), cur = regBinary(VD_KEY, 'CurrentVirtualDesktop');
   const count = ids ? Math.max(1, Math.floor(ids.length / 16)) : 1;
   let current = 0;
   if (ids && cur && cur.length === 16) for (let i = 0; i < count; i++) if (ids.subarray(i * 16, i * 16 + 16).equals(cur)) current = i;
-  return { count, current };
+  const list = ids && ids.length >= 16 ? Array.from({ length: count }, (_, i) => guidStr(ids.subarray(i * 16, i * 16 + 16))) : [];
+  return { count, current, ids: list, names: withNames ? list.map((g) => regString(`${VD_KEY}\\Desktops\\${g}`, 'Name')) : [] };
 }
 
 // Windows' own overlays: Task View (three-finger swipe up), Alt+Tab, Start, search, quick settings,
@@ -771,7 +775,7 @@ module.exports = {
   autoAccent: safe('autoAccent', autoAccent, false),
   setRefreshRate: safe('setRefreshRate', setRefreshRate, false),
   makeToolWindow: safe('makeToolWindow', makeToolWindow),
-  virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0 }),
+  virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0, ids: [], names: [] }),
   windowRect: safe('windowRect', windowRect, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),

@@ -52,3 +52,9 @@ export function upcomingClass(timetable, d = new Date()) {
 
 export function applyAccent(accent) { document.documentElement.style.setProperty('--a', accent || '#5e7d9c'); }
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** The wallpaper for a desktop: its own when "a different wallpaper on each desktop" is on and it has one. */
+export function wallFor(w, id) {
+  const own = w?.perDesk && id && w.desks?.[id];
+  return own ? { ...w, scene: own.scene || 'image', file: own.file || '', url: own.url || '', fileStamp: own.fileStamp } : w;
+}

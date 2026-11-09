@@ -1,22 +1,7 @@
-// The wallpaper: an animated scene (or image / video / web page) plus the desktop widgets.
-// Used full-screen behind the icons and, scaled down, as the live preview in Customize.
-import { createScene } from './scenes.js';
-import { startAudio, stopAudio, levels } from './audio.js';
-import { greeting, quoteOfTheHour, fmtTime, fmtDate, upcomingClass } from './common.js';
-
-// Time-of-day tint: keyframes by hour (tint colour, how much of it, extra darkness), blended smoothly.
-const DAY = [[0, '#0b1a3a', 0.45, 0.18], [5, '#1d2450', 0.4, 0.12], [7, '#ff9a8b', 0.3, 0], [10, '#ffffff', 0, 0],
-  [16, '#ffffff', 0, 0], [18.5, '#ff7a3d', 0.35, 0.02], [20, '#5b3a8c', 0.38, 0.08], [22, '#0b1a3a', 0.45, 0.16], [24, '#0b1a3a', 0.45, 0.18]];
-const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-const toHex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
-const lerp = (a, b, t) => a + (b - a) * t;
-export function dayTint(colors, date = new Date()) {
-  const h = date.getHours() + date.getMinutes() / 60;
-  const i = DAY.findIndex((k, j) => h >= k[0] && h < DAY[j + 1][0]);
-  const [a, b] = [DAY[i], DAY[i + 1]], t = (h - a[0]) / (b[0] - a[0]);
-  const tint = hex(a[1]).map((v, k) => lerp(v, hex(b[1])[k], t)), amt = lerp(a[2], b[2], t), dark = lerp(a[3], b[3], t);
-  return { colors: colors.map((c) => toHex(hex(c).map((v, k) => lerp(v, tint[k], amt)))), dark };
-}
+// The wallpaper: a photo, a video or a web page (your Windows background when nothing's picked), plus the
+// desktop widgets. Each virtual desktop can have its own. Used full-screen behind the icons and, scaled down,
+// as the live preview in Customize.
+import { greeting, quoteOfTheHour, fmtTime, fmtDate, upcomingClass, wallFor } from './common.js';
 
 // weather icons by WMO code (Open-Meteo), drawn as simple line art
 function weatherIcon(code, day = true) {
@@ -33,9 +18,8 @@ function weatherIcon(code, day = true) {
 
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
-export function mountWallpaper(root, settings, { preview = false, sd = window.sd } = {}) {
+export function mountWallpaper(root, settings, { preview = false, sd = window.sd, desk = '' } = {}) {
   root.classList.add('wp');
-  const canvas = el('canvas', 'wp-canvas');
   const media = el('div', 'wp-media');
   const dim = el('div', 'wp-dim');
   const layer = el('div', 'wp-widgets');
@@ -47,41 +31,36 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', today: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
   const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'today', 'reminders', 'media', 'stats', 'quote'];
   layer.append(groups.hero, groups.cards, groups.foot, groups.tl, groups.bl, hidden);
-  root.append(canvas, media, dim, layer);
-  let scene = null, s = settings, mediaKey = '';
+  root.append(media, dim, layer);
+  let s = settings, mediaKey = '', deskId = desk;
   // the preview in Customize shows a sample so the widget can be placed while nothing plays
   let nowPlaying = preview ? { on: true, title: 'Song title', artist: 'Artist', playing: true, art: '' } : { on: false };
   const widgets = {};
 
   // ---------- background ----------
+  // a new picture fades in over the old one (switching desktops with different wallpapers, picking a new one)
+  function show(node) {
+    const old = [...media.children];
+    node.classList.add('wp-layer');
+    media.append(node);
+    const reveal = () => { node.classList.add('in'); setTimeout(() => old.forEach((o) => o.remove()), 650); };
+    if (node.tagName === 'IMG') { node.onload = reveal; node.onerror = () => { node.remove(); if (!old.length) media.append(el('div', 'wp-empty wp-layer in', preview ? 'Pick a photo, video or page below' : '')); }; }
+    else if (node.tagName === 'VIDEO') { node.oncanplay = reveal; node.onerror = reveal; }
+    else reveal();
+  }
   function applyBackground() {
-    const w = s.wallpaper;
-    const tint = w.dayCycle ? dayTint(w.colors) : { colors: w.colors, dark: 0 };
-    root.style.setProperty('--dim', Math.min(0.85, w.dim + tint.dark));
-    const animated = !['image', 'video', 'web', 'windows'].includes(w.scene);
-    canvas.hidden = !animated;
-    layer.hidden = w.scene === 'windows'; // widgets live in the app's wallpaper window, which this mode doesn't have
-    // music-reactive: the wallpaper itself listens; the small preview in Customize never does
-    const wantAudio = !preview && (w.audio || w.scene === 'visualizer');
-    if (wantAudio) startAudio(); else if (!preview) stopAudio();
-    if (animated) {
-      const opts = { ...w, colors: tint.colors, fps: preview ? 30 : s.general.fps, levels: wantAudio ? levels : null };
-      if (!scene) scene = createScene(canvas, opts); else scene.set(opts);
-    } else { scene?.destroy(); scene = null; }
-    const key = animated ? '' : `${w.scene}|${w.file}|${w.url}|${w.fileStamp || ''}`;
+    const w = wallFor(s.wallpaper, deskId);
+    root.style.setProperty('--dim', Math.min(0.85, w.dim ?? 0.15));
+    root.classList.toggle('still', w.parallax === false);
+    const src = (w.scene === 'image' || w.scene === 'video') && w.file ? w.scene : w.scene === 'web' && /^https?:\/\//i.test(w.url) ? 'web' : 'windows';
+    const key = `${deskId}|${src}|${src === 'web' ? w.url : w.file}|${w.fileStamp || ''}`;
     if (key === mediaKey) return;
-    mediaKey = key; media.replaceChildren();
-    if (w.scene === 'image' && w.file) {
-      const img = el('img'); img.src = `sd://media/wallpaper?v=${encodeURIComponent(w.fileStamp || w.file)}`; img.alt = ''; media.append(img);
-    } else if (w.scene === 'video' && w.file) {
-      const v = el('video'); Object.assign(v, { src: `sd://media/wallpaper?v=${encodeURIComponent(w.fileStamp || w.file)}`, muted: true, loop: true, autoplay: true, playsInline: true }); media.append(v);
-    } else if (w.scene === 'web' && /^https?:\/\//i.test(w.url)) {
-      const f = el('iframe'); f.src = w.url; f.setAttribute('sandbox', 'allow-scripts allow-same-origin'); f.referrerPolicy = 'no-referrer'; media.append(f);
-    } else if (w.scene === 'windows') {
-      media.append(el('div', 'wp-empty', preview ? 'Windows’ own background' : ''));
-    } else if (!animated) {
-      media.append(el('div', 'wp-empty', preview ? 'Pick a file or link below' : ''));
-    }
+    mediaKey = key;
+    const q = `desk=${encodeURIComponent(deskId)}&v=${encodeURIComponent(w.fileStamp || w.file || Date.now())}`;
+    if (src === 'image') { const img = el('img'); img.alt = ''; img.src = `sd://media/wallpaper?${q}`; show(img); }
+    else if (src === 'video') { const v = el('video'); Object.assign(v, { src: `sd://media/wallpaper?${q}`, muted: true, loop: true, autoplay: true, playsInline: true }); if (root.classList.contains('paused')) v.autoplay = false; show(v); }
+    else if (src === 'web') { const f = el('iframe'); f.src = w.url; f.setAttribute('sandbox', 'allow-scripts allow-same-origin'); f.referrerPolicy = 'no-referrer'; show(f); }
+    else { const img = el('img'); img.alt = ''; img.src = `sd://media/winwall?desk=${encodeURIComponent(deskId)}&v=${Date.now()}`; show(img); } // nothing picked: your Windows background
   }
 
   // ---------- widgets ----------
@@ -222,7 +201,6 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const todayT = setInterval(() => { if (widgets.today) { widgets.today.hidden = !visible('today', s.widgets.today || {}); renderToday(); } }, 30e3);
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
-  const dayT = setInterval(() => { if (s.wallpaper.dayCycle) applyBackground(); }, 5 * 60e3);
   /** Where each visible widget sits now, as screen fractions (to switch to free placement without a jump). */
   function positions() {
     const r = root.getBoundingClientRect(), out = {};
@@ -237,7 +215,9 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     update,
     positions,
     widgets,
-    pause(p) { scene?.pause(p); media.querySelector('video')?.[p ? 'pause' : 'play']?.(); root.classList.toggle('paused', p); },
+    pause(p) { media.querySelectorAll('video').forEach((v) => (p ? v.pause() : v.play().catch(() => {}))); root.classList.toggle('paused', p); },
+    /** Another virtual desktop is showing (or, in Customize, being edited): its wallpaper. */
+    setDesk(id) { if (id === deskId) return; deskId = id; applyBackground(); },
     // switching desktops: the wallpaper glides a little the way the windows go, then settles back (depth: the
     // widgets in front move a bit more than the picture behind). Added on top of the parallax transforms, on the
     // compositor only, so it costs nothing on the main thread; off when Windows' animation effects are off.
@@ -247,9 +227,9 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
         // eased per half: glide out with the slide, then settle back softly (one curve over the whole thing jerked)
         [{ transform: 'translateX(0)', easing: 'cubic-bezier(.33,0,.2,1)' }, { transform: `translateX(${dir > 0 ? "-" : ""}${dist})`, offset: 0.38, easing: 'cubic-bezier(.4,0,.2,1)' }, { transform: 'translateX(0)' }],
         { duration: 800, composite: 'add' });
-      go(canvas, '1.6%'); go(media, '1.1%'); go(layer, '2.2cqw');
+      go(media, '1.1%'); go(layer, '2.2cqw');
     },
-    pointer(x, y) { scene?.pointer(x, y); root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
-    destroy() { clearInterval(clockT); clearInterval(todayT); clearInterval(statsT); clearInterval(weatherT); clearInterval(dayT); scene?.destroy(); root.replaceChildren(); },
+    pointer(x, y) { root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
+    destroy() { clearInterval(clockT); clearInterval(todayT); clearInterval(statsT); clearInterval(weatherT); root.replaceChildren(); },
   };
 }

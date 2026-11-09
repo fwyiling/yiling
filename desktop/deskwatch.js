@@ -71,7 +71,7 @@ if (!win32.isWin || !st.ready) {
       const from = current;
       current = vd.current;
       if (from !== -1) {
-        parentPort.postMessage({ type: 'switch', from, to: current, count: vd.count });
+        parentPort.postMessage({ type: 'switch', from, to: current, count: vd.count, id: vd.ids[current] || '' });
         if (hideLabel && screenRect) { hunt = 16; sinceFound = -1; } // the label shows up within a few frames
       }
     }

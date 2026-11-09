@@ -5,16 +5,13 @@ const path = require('path');
 const DEFAULTS = {
   accent: '#5e7d9c',
   wallpaper: {
-    scene: 'aurora',          // aurora | particles | waves | starfield | image | video | web | windows (Windows' own background, no wallpaper window)
-    speed: 1,                 // 0.25 .. 2
-    intensity: 0.8,           // 0 .. 1  (how much colour/motion)
+    scene: 'image',           // image | video | web; nothing picked: your Windows background shows
+    file: '',                 // the photo / video
+    url: '',                  // the web page
     parallax: true,           // drift with the mouse
-    audio: false,             // pulse with the music playing on the PC
-    dayCycle: false,          // tint the colours by time of day
-    colors: ['#5e7d9c', '#a7afb8', '#2b3a4d'],
-    file: '',                 // image / video path for those scenes
-    url: '',                  // web page for the "web" scene
     dim: 0.15,                // darken the wallpaper so widgets stay readable
+    perDesk: false,           // a different wallpaper on each virtual desktop
+    desks: {},                // desktop id -> { scene, file, url, fileStamp } (null: same as the main one)
   },
   widgets: {
     layout: 'mac',            // mac (corner widgets, like macOS) | center | left (grouped, tidy) | free (drag each widget anywhere)
@@ -51,7 +48,12 @@ class Store {
     this.file = path.join(dir, 'settings.json');
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch {}
-    if (saved?.general?.fps === 60 || saved?.general?.fps === '60') delete saved.general.fps; // old default; 30 looks the same for these slow scenes at half the work
+    if (saved?.general) delete saved.general.fps; // only the animated scenes used it, and they're gone
+    const wp = saved?.wallpaper;
+    if (wp) { // photo, video and web page only now: an animated scene (or "Windows") becomes the picked file, or your Windows background
+      if (!['image', 'video', 'web'].includes(wp.scene)) wp.scene = /\.(mp4|webm|mkv|mov)$/i.test(wp.file || '') ? 'video' : 'image';
+      for (const k of ['speed', 'intensity', 'audio', 'dayCycle', 'colors']) delete wp[k];
+    }
     if (saved?.general) { delete saved.general.macButtons; delete saved.general.macButtonsV2; } // the Mac window buttons are gone
     if (saved?.topbar && !saved.topbar.imeV2) { delete saved.topbar.ime; saved.topbar.imeV2 = true; } // the input indicator is off by default now (it may get in the way of Pinyin's Shift)
     if (saved?.topbar?.opacity === 0.78) delete saved.topbar.opacity; // the old see-through default: the desktop showed through unblurred
