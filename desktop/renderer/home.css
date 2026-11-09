@@ -1,7 +1,7 @@
 :root { --a: #5e7d9c; --t: #eef1f4; --m: #9aa3ad; --card: rgba(24, 29, 37, .72); --line: rgba(255, 255, 255, .08); color-scheme: dark; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color: var(--t); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color: var(--t); font: 14px/1.45 var(--sd-font, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif); }
 button, input, textarea { font: inherit; color: inherit; }
 .search svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #backdrop { position: fixed; inset: 0; background: radial-gradient(1200px 700px at 30% 10%, color-mix(in srgb, var(--a) 22%, transparent), transparent 70%), rgba(8, 10, 14, .78); animation: fade .18s ease; }

@@ -1,7 +1,7 @@
 // Customize window: live preview (drag widgets to move them) + wallpaper / widget / Home / general settings.
 import { mountWallpaper } from './wallpaper-view.js';
 import { PETS, petSvg } from './pets.js';
-import { applyAccent, wallFor } from './common.js';
+import { applyAccent, wallFor, esc } from './common.js';
 
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -269,3 +269,107 @@ paint();
 
 // nothing picked: Windows' own background, changed in Windows' Settings
 $('winBg').onclick = (e) => { e.preventDefault(); sd.windowsSettings('background'); };
+
+// ---------- themes (after Seelen UI's: variables + CSS per part, several on at once, shared as .sdtheme files) ----------
+let thList = [], thSurfaces = {}, thVarNames = {}, thEditing = null, thSaveT = 0;
+const thActive = () => (s.themes?.active || []).filter((id) => thList.some((t) => t.id === id));
+const setActive = (list) => save({ themes: { active: list } });
+function thNote(text) { $('thNote').textContent = text; clearTimeout(thNote.t); thNote.t = setTimeout(() => { $('thNote').textContent = ''; }, 5000); }
+async function loadThemes() {
+  const r = await sd.themes('list').catch(() => null);
+  if (!r) return;
+  thList = r.themes; thSurfaces = r.surfaces; thVarNames = r.variables;
+  paintThemes();
+}
+function mockOf(t) {
+  const m = document.createElement('div'); m.className = 'mock';
+  m.innerHTML = '<div class="tb"></div><div class="il"></div><div class="pn">Aa<i></i><i></i></div><div class="dk"><b></b><b></b><b></b><b></b></div>';
+  for (const [k, v] of Object.entries(t.variables || {})) m.style.setProperty(k, v);
+  m.style.setProperty('--acc', t.accent || s.accent || '#5e7d9c');
+  return m;
+}
+function paintThemes() {
+  const act = thActive();
+  $('thActive').replaceChildren(...(act.length ? act.map((id, i) => {
+    const t = thList.find((x) => x.id === id);
+    const c = document.createElement('div'); c.className = 'th-chip';
+    c.innerHTML = `<span></span><small>${i === act.length - 1 && act.length > 1 ? 'wins' : ''}</small><button title="Earlier">↑</button><button title="Later (wins)">↓</button><button title="Stop using">✕</button>`;
+    c.querySelector('span').textContent = t.name;
+    const [up, down, off] = c.querySelectorAll('button');
+    up.disabled = i === 0; down.disabled = i === act.length - 1;
+    up.onclick = () => { const l = [...act]; [l[i - 1], l[i]] = [l[i], l[i - 1]]; setActive(l); };
+    down.onclick = () => { const l = [...act]; [l[i + 1], l[i]] = [l[i], l[i + 1]]; setActive(l); };
+    off.onclick = () => setActive(act.filter((x) => x !== id));
+    return c;
+  }) : [Object.assign(document.createElement('span'), { className: 'muted', textContent: 'None: the standard look.' })]));
+  $('thGrid').replaceChildren(...thList.map((t) => {
+    const on = act.includes(t.id);
+    const c = document.createElement('div'); c.className = 'th-card' + (on ? ' on' : '') + (t.broken ? ' broken' : '');
+    c.append(mockOf(t));
+    c.insertAdjacentHTML('beforeend', '<h4></h4><p></p><div class="tags"></div><div class="acts"></div>');
+    c.querySelector('h4').textContent = t.name + (t.author && !t.builtin ? ` · ${t.author}` : '');
+    c.querySelector('p').textContent = t.broken ? `Can't be read: ${t.broken}` : t.description || '';
+    c.querySelector('.tags').replaceChildren(...[t.builtin ? 'built in' : 'yours', ...(t.tags || [])].map((x) => Object.assign(document.createElement('span'), { textContent: x })));
+    const acts = c.querySelector('.acts');
+    const btn = (label, fn, cls = 'btn') => { const b = document.createElement('button'); b.className = cls; b.textContent = label; b.onclick = fn; acts.append(b); };
+    if (!t.broken) btn(on ? 'Stop using' : 'Use', () => setActive(on ? act.filter((x) => x !== t.id) : [...act, t.id]), on ? 'btn ghost' : 'btn pri');
+    if (!t.broken) btn(t.builtin ? 'Make a copy to edit' : 'Edit', async () => { const id = t.builtin ? await sd.themes('new', t.id) : t.id; await loadThemes(); openEditor(id); }, 'btn ghost');
+    if (!t.broken) btn('Export…', async () => { if (await sd.themes('export', t.id).catch(() => false)) thNote(`Saved ${t.name}. Send the file to share it.`); }, 'btn ghost');
+    if (t.broken) btn('Delete', async () => { await sd.themes('delete', t.id); loadThemes(); }, 'btn ghost danger');
+    return c;
+  }));
+}
+async function openEditor(id) {
+  const t = await sd.themes('get', id).catch(() => null);
+  if (!t || t.builtin) return;
+  thEditing = t;
+  $('thEditor').hidden = false; $('thEdName').textContent = t.name;
+  for (const el of document.querySelectorAll('[data-th]')) el.value = el.dataset.th === 'tags' ? (t.tags || []).join(', ') : t[el.dataset.th] || '';
+  $('thAccOn').checked = !!t.accent; $('thAcc').value = t.accent || s.accent || '#5e7d9c'; $('thAcc').disabled = !t.accent;
+  const keys = [...new Set([...Object.keys(thVarNames), ...Object.keys(t.variables || {})])];
+  $('thVars').replaceChildren(...keys.flatMap((k) => {
+    const label = document.createElement('span'); label.innerHTML = `${esc(thVarNames[k] || 'Your own variable')}<small>${esc(k)}</small>`;
+    const sw = document.createElement('i'); sw.className = 'sw'; sw.style.setProperty('--v', t.variables?.[k] || 'transparent');
+    const inp = document.createElement('input'); inp.className = 'field'; inp.value = t.variables?.[k] || ''; inp.placeholder = 'standard';
+    inp.oninput = () => { const v = inp.value.trim(); if (v) thEditing.variables[k] = v; else delete thEditing.variables[k]; sw.style.setProperty('--v', v || 'transparent'); queueThemeSave(); };
+    return [label, sw, inp];
+  }));
+  const parts = [['shared', 'Every part'], ...Object.entries(thSurfaces)];
+  $('thCss').replaceChildren(...parts.map(([k, name]) => {
+    const d = document.createElement('details');
+    const val = k === 'shared' ? t.shared || '' : t.styles?.[k] || '';
+    if (val) d.open = true;
+    d.innerHTML = `<summary>${esc(name)}</summary><textarea spellcheck="false" placeholder="/* CSS for ${esc(name.toLowerCase())} */"></textarea>`;
+    const ta = d.querySelector('textarea'); ta.value = val;
+    ta.oninput = () => { if (k === 'shared') thEditing.shared = ta.value; else { thEditing.styles = thEditing.styles || {}; thEditing.styles[k] = ta.value; } queueThemeSave(); };
+    return d;
+  }));
+  $('thEditor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function queueThemeSave() {
+  clearTimeout(thSaveT);
+  thSaveT = setTimeout(async () => {
+    if (!thEditing) return;
+    try { thEditing = await sd.themes('save', thEditing.id, thEditing); $('thEdName').textContent = thEditing.name; thNote('Saved'); loadThemes(); }
+    catch (e) { thNote(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); }
+  }, 450);
+}
+document.querySelectorAll('[data-th]').forEach((el) => el.oninput = () => {
+  if (!thEditing) return;
+  thEditing[el.dataset.th] = el.dataset.th === 'tags' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value;
+  queueThemeSave();
+});
+$('thAccOn').onchange = () => { if (!thEditing) return; $('thAcc').disabled = !$('thAccOn').checked; if ($('thAccOn').checked) thEditing.accent = $('thAcc').value; else delete thEditing.accent; queueThemeSave(); };
+$('thAcc').oninput = () => { if (!thEditing || !$('thAccOn').checked) return; thEditing.accent = $('thAcc').value; queueThemeSave(); };
+$('thClose').onclick = () => { $('thEditor').hidden = true; thEditing = null; };
+$('thExport').onclick = async () => { if (thEditing && await sd.themes('export', thEditing.id).catch(() => false)) thNote('Exported. Send the file to share your theme.'); };
+$('thDelete').onclick = async () => { if (!thEditing || !confirm(`Delete "${thEditing.name}"?`)) return; await sd.themes('delete', thEditing.id); $('thEditor').hidden = true; thEditing = null; loadThemes(); };
+$('thImport').onclick = async () => {
+  try { const ids = await sd.themes('import'); if (ids.length) { await loadThemes(); thNote(`Imported ${ids.length} theme${ids.length > 1 ? 's' : ''}. Press Use to turn it on.`); } }
+  catch (e) { thNote(`Couldn't import: ${String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`); }
+};
+$('thNew').onclick = async () => { const id = await sd.themes('new'); await loadThemes(); openEditor(id); };
+$('thFolder').onclick = () => sd.themes('folder');
+sd.onTheme?.(() => loadThemes()); // a file added to the themes folder, a theme changed elsewhere
+sd.onSettings?.(() => paintThemes());
+loadThemes();

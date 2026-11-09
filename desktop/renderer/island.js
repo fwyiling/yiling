@@ -1,6 +1,6 @@
 // The island: compact live view (timer ring + time, or cover + equalizer) that opens on hover into
 // media controls and the timer, and pops out when the timer is done.
-import { applyAccent } from './common.js';
+import { applyAccent, useTheme } from './common.js';
 import { PETS, PET_IDS, petSvg } from './pets.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -339,3 +339,4 @@ sd.onSwitching?.((ms) => {
   document.body.classList.add('switching'); clearTimeout(switchT);
   switchT = setTimeout(() => { document.body.classList.remove('switching'); if (!asleep && !np.playing) react('look', 1200); }, ms || 750); // "where are we?"
 });
+useTheme('island'); // Customize > Themes

@@ -10,6 +10,7 @@ const media = require('./media');
 const sysctl = require('./sysctl');
 const netpower = require('./netpower');
 const vdesk = require('./vdesk');
+const themes = require('./themes');
 const systray = require('./tray'); // other programs' tray icons, for the top bar
 const shots = require('./shots');
 const taskbar = require('./taskbar');
@@ -382,6 +383,9 @@ const TIMER_ACTIONS = {
 let deskNow = -1, lastSwitchLabel = [], quietUntil = 0, deskWorker = null, deskWorkerReady = false;
 const QUIET_MS = 750; // Windows' slide, with a little to spare
 const quiet = () => Date.now() < quietUntil;
+// ---------- themes ----------
+const themeBundle = () => themes.bundle(store.get().themes?.active);
+function broadcastTheme() { const b = themeBundle(); all().forEach((w) => w.webContents.send('theme', b)); }
 // which virtual desktop is showing (its id), for a different wallpaper on each desktop
 let deskId = '';
 function readDeskId() { if (win32.isWin) { const v = win32.virtualDesktops(); deskId = v.ids[v.current] || deskId; } return deskId; }
@@ -861,6 +865,7 @@ function applySettings(patch) {
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.topbar?.look !== undefined) applyTopbarLook();
   if (patch.topbar?.tray !== undefined) syncTray();
+  if (patch.themes !== undefined) broadcastTheme();
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
@@ -1005,6 +1010,30 @@ function wireIpc() {
     return '';
   });
   ipcMain.handle('open', (_e, url) => { if (!httpOnly(url)) throw new Error('only web links'); toggleHome(false); return shell.openExternal(url); });
+  // themes (Customize > Themes)
+  const themeMeta = (t) => ({ id: t.id, name: t.name, author: t.author, description: t.description, tags: t.tags, builtin: !!t.builtin, broken: t.broken || '', accent: t.accent || '', variables: t.variables });
+  ipcMain.handle('theme:bundle', () => themeBundle());
+  ipcMain.handle('themes:list', () => ({ themes: themes.all().map(themeMeta), surfaces: themes.SURFACE_NAMES, variables: themes.VARIABLES }));
+  ipcMain.handle('themes:get', (_e, id) => themes.get(String(id)));
+  ipcMain.handle('themes:new', (_e, from) => { const id = themes.create(from ? String(from) : ''); broadcastTheme(); return id; });
+  ipcMain.handle('themes:save', (_e, id, t) => { themes.save(String(id), t); broadcastTheme(); return themes.get(String(id)); });
+  ipcMain.handle('themes:delete', (_e, id) => { const ok = themes.remove(String(id)); if (ok) applySettings({ themes: { active: (store.get().themes.active || []).filter((x) => x !== id) } }); return ok; });
+  ipcMain.handle('themes:folder', () => shell.openPath(themes.dir()));
+  ipcMain.handle('themes:import', async (e) => {
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Themes', extensions: ['sdtheme', 'json'] }] });
+    if (r.canceled) return [];
+    const ids = [];
+    for (const f of r.filePaths.slice(0, 20)) { try { ids.push(themes.install(f)); } catch (err) { throw new Error(`${path.basename(f)}: ${err.message}`); } }
+    broadcastTheme();
+    return ids;
+  });
+  ipcMain.handle('themes:export', async (e, id) => {
+    const t = themes.get(String(id)); if (!t) return false;
+    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), { defaultPath: `${t.id}.sdtheme`, filters: [{ name: 'Syndicates theme', extensions: ['sdtheme'] }] });
+    if (r.canceled || !r.filePath) return false;
+    themes.exportTo(t.id, r.filePath);
+    return true;
+  });
   ipcMain.handle('pick-file', async (e, kind) => {
     const filters = kind === 'video' ? [{ name: 'Videos', extensions: ['mp4', 'webm', 'mkv', 'mov'] }]
       : kind === 'app' ? [{ name: 'Apps and shortcuts', extensions: ['exe', 'lnk', 'url', 'bat'] }]
@@ -1293,6 +1322,7 @@ function bringForward(p) {
 app.whenReady().then(() => {
   const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
   store = new Store(app.getPath('userData'));
+  themes.init(app.getPath('userData')); themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
   if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
   if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating

@@ -15,6 +15,7 @@
     <button data-tab="home"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Home panel</button>
     <button data-tab="taskbar"><svg viewBox="0 0 24 24"><rect x="3" y="15" width="18" height="5" rx="1.8"/><path d="M7 17.5h.01M10.5 17.5h.01M14 17.5h.01"/><path d="M6 5h12M6 9h8"/></svg>Taskbar</button>
     <button data-tab="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>Lock screen</button>
+    <button data-tab="themes"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.4 1.6-1.4H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="14.5" cy="7" r="1.2"/></svg>Themes</button>
     <button data-tab="general"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>General</button>
     <div class="grow"></div>
     <button id="openHome" class="ghost">Open Home <kbd id="hk"></kbd></button>
@@ -98,6 +99,32 @@
       </div>
       <label class="switch"><span><b>Keep it updated</b><small>Refreshes the picture shortly after you change the wallpaper or widgets.</small></span><input type="checkbox" data-k="lock.auto"></label>
       <label class="switch"><span><b>Also make it the Windows wallpaper</b><small>Shown right after signing in, before Syndicates Desktop starts.</small></span><input type="checkbox" data-k="lock.alsoWallpaper"></label>
+    </section>
+    <section data-panel="themes">
+      <h2>Themes</h2>
+      <p class="muted">Themes restyle the dock, top bar, island, panels, Home, the desktops overview and the desktop widgets. Turn on several: where they overlap, the later one wins. Make your own here, or share one as a <b>.sdtheme</b> file: your friend imports it.</p>
+      <div class="row"><button id="thImport" class="btn">Import theme…</button><button id="thNew" class="btn ghost">New theme</button><button id="thFolder" class="btn ghost">Open themes folder</button><span id="thNote" class="muted"></span></div>
+      <h2>In use</h2>
+      <div id="thActive" class="th-active"></div>
+      <div id="thEditor" class="th-editor" hidden>
+        <div class="th-edhead"><h2>Editing <span id="thEdName"></span></h2><button id="thClose" class="btn ghost">Done</button></div>
+        <div class="th-meta">
+          <label><span>Name</span><input class="field" data-th="name"></label>
+          <label><span>Author</span><input class="field" data-th="author"></label>
+          <label class="wide"><span>Description</span><input class="field" data-th="description"></label>
+          <label><span>Tags</span><input class="field" data-th="tags" placeholder="dock, top bar…"></label>
+          <label><span>Accent colour</span><span class="th-acc"><input type="checkbox" id="thAccOn" title="Use its own accent colour"><input type="color" id="thAcc"></span></label>
+        </div>
+        <h3>Variables</h3>
+        <p class="muted small">Colours, borders, corners and the font of each part. Any CSS value works: <code>#1d2230</code>, <code>rgba(0, 0, 0, .8)</code>, <code>linear-gradient(…)</code>. Empty: the standard look.</p>
+        <div id="thVars" class="th-vars"></div>
+        <h3>CSS</h3>
+        <p class="muted small">For anything else: CSS for every part, or one part. Changes apply as you type.</p>
+        <div id="thCss" class="th-css"></div>
+        <div class="row"><button id="thExport" class="btn">Export…</button><button id="thDelete" class="btn ghost danger">Delete this theme</button></div>
+      </div>
+      <h2>All themes</h2>
+      <div id="thGrid" class="th-grid"></div>
     </section>
     <section data-panel="general">
       <div class="mac-swipe">

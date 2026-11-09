@@ -1,5 +1,5 @@
 // The desktops overview (Ctrl+Alt+Up): every desktop along the top, this desktop's windows below as live previews.
-import { applyAccent } from './common.js';
+import { applyAccent, useTheme } from './common.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
 const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -106,3 +106,4 @@ addEventListener('keydown', (e) => {
 // a click on the empty background closes it, like Mission Control
 $('ov').addEventListener('click', (e) => { if (e.target === $('ov') || e.target.classList.contains('wins') || e.target.classList.contains('strip') || e.target.classList.contains('hint')) sd.ov('hide'); });
 addEventListener('resize', () => { if (data && $('ov').classList.contains('on')) renderWins(); });
+useTheme('overview'); // Customize > Themes

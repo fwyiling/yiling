@@ -1,5 +1,5 @@
 // Home panel (Alt+Space): search apps and the web, pinned apps, to-dos, notes, system stats.
-import { greeting, fmtTime, fmtDate, applyAccent, esc, DAYS, weekday, nextClass, byTime } from './common.js';
+import { greeting, fmtTime, fmtDate, applyAccent, esc, DAYS, weekday, nextClass, byTime, useTheme } from './common.js';
 const why = (e) => String(e?.message || e || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/^TypeError: fetch failed$|net::ERR_[A-Z_]+/, "can't reach the internet right now");
 // open an app or file; if Windows can't, Home stays open and says why (it used to fail silently)
 async function openItem(p) {
@@ -339,3 +339,4 @@ $('hint').textContent = `${s.home.hotkey} opens this panel · drag apps here to 
 apps = await sd.apps().catch(() => []);
 renderGrid(); renderTodos(); renderReading(); onShown();
 requestAnimationFrame(() => sd.homeReady()); // drawn: the window may appear now
+useTheme('home'); // Customize > Themes

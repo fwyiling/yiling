@@ -1,5 +1,5 @@
 // The top bar's menu and the control centre (Wi-Fi, Bluetooth, brightness, volume, music…).
-import { applyAccent } from './common.js';
+import { applyAccent, useTheme } from './common.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
 let s = await sd.get(), sys = await sd.sys().catch(() => null), np = await sd.media().catch(() => ({ on: false }));
@@ -293,3 +293,4 @@ async function renderTrayPanel(list) {
   }));
 }
 sd.onTray?.((list) => { if (!$('trayp').hidden) renderTrayPanel(list); });
+useTheme('panels'); // Customize > Themes

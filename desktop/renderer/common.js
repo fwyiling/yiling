@@ -50,7 +50,21 @@ export function upcomingClass(timetable, d = new Date()) {
   return null;
 }
 
-export function applyAccent(accent) { document.documentElement.style.setProperty('--a', accent || '#5e7d9c'); }
+// a theme can bring its own accent colour; while it's on, it wins over the one picked in Customize
+let themeAccent = '', lastAccent = '';
+export function applyAccent(accent) { lastAccent = accent; document.documentElement.style.setProperty('--a', themeAccent || accent || '#5e7d9c'); }
+/** The active themes on this page (surface: dock, topbar, island, panels, home, overview, wallpaper), kept live. */
+export async function useTheme(surface) {
+  const paint = (b) => {
+    let el = document.getElementById('sd-theme');
+    if (!el) { el = document.createElement('style'); el.id = 'sd-theme'; document.head.append(el); } // after the page's own styles, so it wins
+    const vars = Object.entries(b?.vars || {}).map(([k, v]) => `${k}: ${v};`).join(' ');
+    el.textContent = b ? `:root { ${vars} }\n${b.shared || ''}\n${b.styles?.[surface] || ''}` : '';
+    themeAccent = b?.accent || ''; applyAccent(lastAccent);
+  };
+  window.sd?.onTheme?.(paint);
+  paint(await window.sd?.theme?.().catch(() => null));
+}
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /** The wallpaper for a desktop: its own when "a different wallpaper on each desktop" is on and it has one. */

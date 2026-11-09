@@ -1,5 +1,5 @@
 // Top bar: Syndicates menu, the app in front, now playing, weather, battery, quick settings, clock.
-import { applyAccent } from './common.js';
+import { applyAccent, useTheme } from './common.js';
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
 let s = await sd.get();
@@ -127,3 +127,4 @@ function renderTray() {
 }
 sd.onTray?.((list) => { trayIcons = list || []; renderTray(); });
 sd.trayList?.().then((list) => { trayIcons = list || []; renderTray(); }).catch(() => {});
+useTheme('topbar'); // Customize > Themes

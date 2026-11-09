@@ -4,12 +4,12 @@
 :root { --a: #5e7d9c; --h: 64px; --op: .96; --t: #eef1f4; --m: #9aa3ad; --isz: calc(var(--h) - 20px); color-scheme: dark; }
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 13px/1.2 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--t); user-select: none; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 13px/1.2 var(--sd-font, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif); color: var(--t); user-select: none; }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
 
 #dock { position: absolute; bottom: 8px; left: 50%; height: var(--h); display: flex; align-items: center; gap: 12px; padding: 0 10px;
-  border-radius: 20px; background: linear-gradient(rgba(36, 42, 52, var(--op)), rgba(20, 24, 31, var(--op)));
-  border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .45), inset 0 1px rgba(255, 255, 255, .06);
+  border-radius: var(--sd-dock-radius, 20px); background: var(--sd-dock-bg, linear-gradient(rgba(36, 42, 52, var(--op)), rgba(20, 24, 31, var(--op))));
+  border: var(--sd-dock-border, 1px solid rgba(255, 255, 255, .1)); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .45), inset 0 1px rgba(255, 255, 255, .06);
   transform: translateX(-50%); transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
 body.away #dock { transform: translate(-50%, calc(100% + 14px)); opacity: 0; }
 body.full #dock { left: 0; right: 0; bottom: 0; border-radius: 0; border-width: 1px 0 0; transform: none; justify-content: space-between; padding: 0 14px; }

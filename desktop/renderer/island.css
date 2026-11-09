@@ -4,12 +4,12 @@
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none;
-  font: 500 13px/1.25 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--t); }
+  font: 500 13px/1.25 var(--sd-font, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif); color: var(--t); }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
 button:focus { outline: none; }
 svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-#island { position: absolute; top: var(--top); left: 50%; transform: translateX(-50%); overflow: hidden; background: #000;
+#island { position: absolute; top: var(--top); left: 50%; transform: translateX(-50%); overflow: hidden; background: var(--sd-island-bg, #000);
   width: 118px; height: var(--ch); border-radius: 999px; box-shadow: 0 0 0 .5px rgba(255, 255, 255, .06);
   transition: width .5s cubic-bezier(.3, 1.25, .45, 1), height .5s cubic-bezier(.3, 1.25, .45, 1), border-radius .45s ease, box-shadow .3s; will-change: width, height; }
 #island.live { width: 214px; }

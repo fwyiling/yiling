@@ -1,5 +1,5 @@
 // Syndicates dock: Start, Home, pinned apps, open windows grouped by app, now playing, quick settings, clock.
-import { applyAccent, esc } from './common.js';
+import { applyAccent, esc, useTheme } from './common.js';
 
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -269,3 +269,4 @@ sd.onWindows((list) => { wins = list; render(); });
 applyLook(); tick(); setInterval(tick, 1000);
 wins = await sd.windows().catch(() => []);
 render();
+useTheme('dock'); // Customize > Themes
