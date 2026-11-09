@@ -115,14 +115,21 @@ function renderTray() {
   const list = trayIcons.filter((x) => !x.hidden && x.icon && (!x.system || s.topbar?.traySystem)); // Windows' own sound / battery icons: the bar has its own
   $('tray').hidden = s.topbar?.tray === false || !list.length;
   if ($('tray').hidden) return;
-  const shown = list.length > TRAY_MAX ? list.slice(0, TRAY_MAX - 1) : list;
-  const items = shown.map(trayButton);
-  if (list.length > shown.length) {
-    const more = document.createElement('button'); more.className = 'more'; more.title = `${list.length - shown.length} more`;
-    more.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
-    more.onclick = () => { const r = more.getBoundingClientRect(); sd.flyout('tray', Math.round(r.left + r.width / 2), { skip: shown.length }); };
-    items.push(more);
-  }
+  const hide = new Set(s.topbar?.trayHidden || []);
+  const inBar = list.filter((x) => !hide.has(x.key)), shown = inBar.slice(0, TRAY_MAX);
+  const items = shown.map((it) => {
+    const b = trayButton(it);
+    b.onauxclick = (e) => { if (e.button === 1) sd.set({ topbar: { trayHidden: [...hide, it.key] } }); }; // middle-click: hide it (it stays in the › panel)
+    b.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
+    return b;
+  });
+  // always there: the icons that don't fit or that you hid, and where to hide / show them
+  const more = document.createElement('button'); more.className = 'more';
+  const rest = list.length - shown.length;
+  more.title = rest ? `${rest} more · hide or show icons` : 'Hide or show icons';
+  more.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+  more.onclick = () => { const r = more.getBoundingClientRect(); sd.flyout('tray', Math.round(r.left + r.width / 2), { skip: 0 }); };
+  items.push(more);
   $('tray').replaceChildren(...items);
 }
 sd.onTray?.((list) => { trayIcons = list || []; renderTray(); });

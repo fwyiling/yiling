@@ -278,19 +278,32 @@ async function placeThumbs() {
   for (const el of boxes) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
 }
 
-// ---------- tray icons that didn't fit in the top bar ----------
+// ---------- tray icons: the ones in the top bar and the ones you hid ----------
+const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.5 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.4-1.1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 async function renderTrayPanel(list) {
-  const [d, all] = await Promise.all([sd.flyoutData().catch(() => null), list ? Promise.resolve(list) : sd.trayList().catch(() => [])]);
-  const rest = all.filter((x) => !x.hidden && x.icon && (!x.system || s.topbar?.traySystem)).slice(d?.skip || 0);
-  if (!rest.length) { sd.flyoutAction('close'); return; }
-  $('trayGrid').replaceChildren(...rest.map((it) => {
+  const all = list || await sd.trayList().catch(() => []);
+  const icons = all.filter((x) => !x.hidden && x.icon && (!x.system || s.topbar?.traySystem));
+  if (!icons.length) { sd.flyoutAction('close'); return; }
+  const hide = new Set(s.topbar?.trayHidden || []);
+  const tile = (it, hidden) => {
+    const w = document.createElement('div'); w.className = 'ti';
     const b = document.createElement('button'); b.title = it.tip || '';
     const img = new Image(); img.alt = ''; img.src = it.icon; b.append(img);
     const at = (kind) => { const r = b.getBoundingClientRect(); sd.trayClick(it.id, kind, r.left + r.width / 2, r.top + r.height / 2).catch(() => {}); };
     b.onclick = () => at('left'); b.ondblclick = () => at('double');
     b.oncontextmenu = (e) => { e.preventDefault(); at('right'); };
-    return b;
-  }));
+    const eye = document.createElement('button'); eye.className = 'eye'; eye.title = hidden ? 'Show in the top bar' : 'Hide from the top bar';
+    eye.innerHTML = hidden ? EYE : EYE_OFF;
+    eye.onclick = (e) => { e.stopPropagation(); const next = new Set(hide); if (hidden) next.delete(it.key); else next.add(it.key); sd.set({ topbar: { trayHidden: [...next] } }); };
+    w.append(b, eye);
+    return w;
+  };
+  const none = (t) => Object.assign(document.createElement('span'), { className: 'none', textContent: t });
+  const inBar = icons.filter((x) => !hide.has(x.key)), hid = icons.filter((x) => hide.has(x.key));
+  $('trayGrid').replaceChildren(...(inBar.length ? inBar.map((x) => tile(x, false)) : [none('None')]));
+  $('trayHid').replaceChildren(...(hid.length ? hid.map((x) => tile(x, true)) : [none('None: every icon shows in the top bar')]));
 }
 sd.onTray?.((list) => { if (!$('trayp').hidden) renderTrayPanel(list); });
+sd.onSettings?.(() => { if (!$('trayp').hidden) renderTrayPanel(); });
 useTheme('panels'); // Customize > Themes

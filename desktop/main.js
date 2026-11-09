@@ -551,7 +551,11 @@ function topbarTick() {
 // the system tray's icons in the top bar (tray.js): only while the top bar is there to show them
 // Windows' own tray icons (sound, network, battery…) belong to Explorer: the top bar shows those itself, so they're
 // marked and left out unless asked for
-const markTray = (list) => list.map((x) => ({ ...x, system: win32.isWin && /\\explorer\.exe$/i.test(win32.processExe(x.pid)) }));
+// key: the same icon after a restart (its window changes): the program and its icon number, or the icon's own GUID
+const markTray = (list) => list.map((x) => {
+  const exe = win32.isWin ? win32.processExe(x.pid) : '';
+  return { ...x, system: /\\explorer\.exe$/i.test(exe), key: x.id.includes(':') ? `${path.basename(exe || 'app').toLowerCase()}#${x.id.split(':')[1]}` : `guid:${x.id}` };
+});
 function syncTray() {
   const t = store.get().topbar;
   if (win32.isWin && t.on && t.tray !== false) systray.resume(); else systray.stop();
@@ -673,7 +677,7 @@ function startDockExtras() {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { tray: { w: 252, h: 230 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 424 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { tray: { w: 300, h: 330 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 424 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 // an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
 const WIN_CARD = { w: 212, h: 150, gap: 10 };
 function windowsPanelSize(n) {

@@ -141,7 +141,14 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .wins .tb.live em { display: none; }
 
 /* tray icons that didn't fit in the top bar */
-.traygrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-height: 170px; overflow-y: auto; }
+.traygrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 104px; overflow-y: auto; min-height: 40px; }
+.traygrid .none { grid-column: 1 / -1; color: var(--m); font-size: 12px; align-self: center; }
+.tray-h { font-size: 11.5px; margin-bottom: -6px; } .tray-tip { margin: 0; font-size: 11.5px; }
+.traygrid .ti { position: relative; }
+.traygrid .ti .eye { position: absolute; top: -3px; right: -3px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: #2a3039; box-shadow: 0 0 0 1px var(--line); opacity: 0; transition: opacity .12s; padding: 0; height: 18px; }
+.traygrid .ti:hover .eye { opacity: 1; } .traygrid .ti .eye:hover { background: var(--a); }
+.traygrid .ti .eye svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#trayHid img { opacity: .6; }
 .traygrid button { height: 40px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, .05); border: 0; cursor: pointer; }
 .traygrid button:hover { background: rgba(255, 255, 255, .12); }
 .traygrid img { width: 20px; height: 20px; object-fit: contain; }
