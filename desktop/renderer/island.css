@@ -23,8 +23,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 
 /* compact */
 .mini { display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 6px; }
-.lead { position: relative; width: 20px; height: 20px; }
-.ring, .mini-art { position: absolute; inset: 0; width: 20px; height: 20px; }
+.lead { position: relative; width: min(20px, calc(var(--ch) - 4px)); height: min(20px, calc(var(--ch) - 4px)); }
+.ring, .mini-art { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ring circle { stroke-width: 2.6; } .ring .bg { stroke: rgba(255, 255, 255, .16); }
 .ring .fg { stroke: var(--a); transform: rotate(-90deg); transform-origin: center; stroke-dasharray: 50.27; stroke-dashoffset: 50.27; transition: stroke-dashoffset .4s linear; }
 .mini-art { border-radius: 6px; background: center / cover no-repeat, color-mix(in srgb, var(--a) 50%, #222); }

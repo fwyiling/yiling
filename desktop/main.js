@@ -11,6 +11,7 @@ const sysctl = require('./sysctl');
 const netpower = require('./netpower');
 const vdesk = require('./vdesk');
 const themes = require('./themes');
+const gallery = require('./gallery');
 const systray = require('./tray'); // other programs' tray icons, for the top bar
 const shots = require('./shots');
 const taskbar = require('./taskbar');
@@ -1017,6 +1018,10 @@ function wireIpc() {
     return '';
   });
   ipcMain.handle('open', (_e, url) => { if (!httpOnly(url)) throw new Error('only web links'); toggleHome(false); return shell.openExternal(url); });
+  // the anime wallpaper gallery (Customize > Wallpaper)
+  ipcMain.handle('gallery:search', (_e, o) => gallery.search({ sort: String(o?.sort || 'top'), q: String(o?.q || ''), page: Number(o?.page) || 1 }));
+  ipcMain.handle('gallery:use', (_e, id) => gallery.use(String(id)));
+  ipcMain.handle('gallery:downloaded', () => gallery.downloaded().map((name) => ({ name, path: gallery.fileOf(name) })));
   // themes (Customize > Themes)
   const themeMeta = (t) => ({ id: t.id, name: t.name, author: t.author, description: t.description, tags: t.tags, builtin: !!t.builtin, broken: t.broken || '', accent: t.accent || '', variables: t.variables });
   ipcMain.handle('theme:bundle', () => themeBundle());
@@ -1329,6 +1334,7 @@ function bringForward(p) {
 app.whenReady().then(() => {
   const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
   store = new Store(app.getPath('userData'));
+  gallery.init(app.getPath('userData'));
   themes.init(app.getPath('userData')); themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
   if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
@@ -1349,6 +1355,11 @@ app.whenReady().then(() => {
       const f = wallFor(store.get().wallpaper, u.searchParams.get('desk') || '').file;
       if (!f || !fs.existsSync(f)) return new Response('no file', { status: 404 });
       return net.fetch(pathToFileURL(f).href, { headers: req.headers }); // forwards Range for video seeking
+    }
+    if (u.host === 'media' && u.pathname === '/gallery') { // a picture downloaded from the gallery (by name, only from its folder)
+      const f = gallery.fileOf(u.searchParams.get('f') || '');
+      if (!f || !fs.existsSync(f)) return new Response('not found', { status: 404 });
+      return net.fetch(pathToFileURL(f).href);
     }
     if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
       const id = u.searchParams.get('desk') || '';

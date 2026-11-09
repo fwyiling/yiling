@@ -10,8 +10,9 @@ let s = await sd.get(), timer = await sd.timer(), np = { on: false }, open = fal
 function look() {
   applyAccent(s.accent);
   // sit inside the top bar when it's on, a little below the edge otherwise
-  document.documentElement.style.setProperty('--top', s.topbar?.on ? '1px' : '8px');
-  document.documentElement.style.setProperty('--ch', s.topbar?.on ? '22px' : '32px');
+  // with the top bar: centred in it (24 px), the height of its items plus a little, never touching what's below
+  document.documentElement.style.setProperty('--top', s.topbar?.on ? '2px' : '8px');
+  document.documentElement.style.setProperty('--ch', s.topbar?.on ? '20px' : '32px');
   dressPets();
 }
 

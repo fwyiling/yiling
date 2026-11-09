@@ -373,3 +373,56 @@ $('thFolder').onclick = () => sd.themes('folder');
 sd.onTheme?.(() => loadThemes()); // a file added to the themes folder, a theme changed elsewhere
 sd.onSettings?.(() => paintThemes());
 loadThemes();
+
+// ---------- anime wallpaper gallery (Wallhaven, safe for work only) ----------
+let galSort = 'top', galPage = 1, galBusy = false, galT = 0;
+const galNote = (t) => { $('galNote').textContent = t; };
+const errText = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+function galTile(bg, label, onPick, isOn) {
+  const b = document.createElement('button');
+  b.style.backgroundImage = `url("${bg}")`;
+  if (label) b.innerHTML = `<span>${esc(label)}</span>`;
+  b.classList.toggle('on', !!isOn);
+  b.onclick = async () => {
+    if (b.classList.contains('busy')) return;
+    b.classList.add('busy');
+    try { await onPick(); document.querySelectorAll('#galGrid button').forEach((x) => x.classList.toggle('on', x === b)); galNote(''); }
+    catch (e) { galNote(`Couldn't use it: ${errText(e)}`); }
+    b.classList.remove('busy');
+  };
+  return b;
+}
+async function galLoad(more = false) {
+  if (galBusy) return;
+  galBusy = true;
+  const grid = $('galGrid');
+  if (!more) { galPage = 1; grid.replaceChildren(); }
+  galNote(more ? 'Loading more…' : 'Loading…');
+  try {
+    const current = editing().file || '';
+    if (galSort === 'mine') {
+      const list = await sd.gallery('downloaded');
+      grid.replaceChildren(...(list.length ? list.map((x) => galTile(`sd://media/gallery?f=${encodeURIComponent(x.name)}`, '', () => savePick({ scene: 'image', file: x.path, fileStamp: Date.now() }), x.path === current))
+        : [Object.assign(document.createElement('div'), { className: 'empty', textContent: 'Nothing downloaded yet: pick one from the other tabs.' })]));
+      $('galMore').hidden = true; galNote('');
+    } else {
+      const r = await sd.gallery('search', { sort: galSort, q: $('galQ').value, page: galPage });
+      grid.append(...r.items.map((w) => galTile(w.thumb, w.res, async () => { const file = await sd.gallery('use', w.id); await savePick({ scene: 'image', file, fileStamp: Date.now() }); }, current.includes(`wallhaven-${w.id}.`))));
+      if (!grid.children.length) grid.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'Nothing found. Try another word.' }));
+      $('galMore').hidden = r.page >= r.last;
+      galNote('');
+    }
+  } catch (e) { galNote(`Couldn't reach Wallhaven: ${errText(e)}`); $('galMore').hidden = true; }
+  galBusy = false;
+}
+document.querySelectorAll('#galSort button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('#galSort button').forEach((x) => x.classList.toggle('on', x === b));
+  galSort = b.value; galLoad();
+});
+$('galQ').oninput = () => { clearTimeout(galT); galT = setTimeout(() => { if (galSort === 'mine') { galSort = 'top'; document.querySelectorAll('#galSort button').forEach((x) => x.classList.toggle('on', x.value === 'top')); } galLoad(); }, 500); };
+$('galMore').onclick = () => { galPage++; galLoad(true); };
+// loaded when the Wallpaper page is first looked at (no request to Wallhaven otherwise)
+let galStarted = false;
+const galStart = () => { if (!galStarted && !document.querySelector('[data-panel="wallpaper"]').hidden && document.querySelector('[data-panel="wallpaper"]').classList.contains('on')) { galStarted = true; galLoad(); } };
+document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => setTimeout(galStart, 0)));
+galStart();

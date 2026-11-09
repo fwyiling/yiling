@@ -95,6 +95,7 @@ contextBridge.exposeInMainWorld('sd', {
   theme: () => ipcRenderer.invoke('theme:bundle'),
   onTheme: on('theme'),
   themes: (what, ...args) => ipcRenderer.invoke(`themes:${what}`, ...args),
+  gallery: (what, ...args) => ipcRenderer.invoke(`gallery:${what}`, ...args),
   onOverview: on('overview'),
   onOverviewClose: on('overview-close'),
   ov: (what, ...args) => ipcRenderer.invoke(`ov:${what}`, ...args),

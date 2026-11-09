@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' sd: data:; media-src sd:; frame-src https: http:; connect-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' sd: data: https://th.wallhaven.cc; media-src sd:; frame-src https: http:; connect-src 'self'">
   <title>Syndicates Desktop</title>
   <link rel="stylesheet" href="wallpaper.css">
   <link rel="stylesheet" href="settings.css">
@@ -33,6 +33,11 @@
       <div id="fileRow" class="row" hidden><button id="pick" class="btn">Choose a photo…</button><span id="fileName" class="muted"></span></div>
       <div id="urlRow" class="row" hidden><input id="url" class="field" placeholder="https://… a page to use as your wallpaper"><button id="urlSet" class="btn">Use</button></div>
       <p class="muted" id="wpNote">Nothing picked yet: your Windows background shows. <a href="#" id="winBg">Change it in Windows</a></p>
+      <h2>Anime gallery</h2>
+      <p class="muted small">Anime wallpapers from <b>Wallhaven</b>, safe-for-work only, full HD or bigger. Click one to use it (for the desktop you're setting, when each has its own); it's kept, so it works offline too.</p>
+      <div class="row gal-bar"><div class="seg-b" id="galSort"><button value="top" class="on">Top this month</button><button value="liked">Most liked</button><button value="new">Newest</button><button value="random">Random</button><button value="mine">Downloaded</button></div><input id="galQ" class="field" placeholder="Search: scenery, night, city, sky…"></div>
+      <div id="galGrid" class="gal-grid"></div>
+      <div class="row"><button id="galMore" class="btn ghost" hidden>Load more</button><span id="galNote" class="muted"></span></div>
       <label class="slider"><span>Darken</span><input type="range" min="0" max="0.7" step="0.05" data-k="wallpaper.dim"><em></em></label>
       <label class="switch"><span><b>Follow the mouse</b><small>The wallpaper and widgets drift a little with your cursor.</small></span><input type="checkbox" data-k="wallpaper.parallax"></label>
     </section>
