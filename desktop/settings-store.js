@@ -31,7 +31,7 @@ const DEFAULTS = {
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, deskMotion: true, edgeSwitch: true, ownOsd: true, lowPower: null },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, bin: true, shots: true, hide: 'smart', reserve: true, prevAutoHide: null },
   island: { on: true, pet: 'cat' },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)
-  topbar: { on: true, tray: true, weather: true, media: true, battery: true, ime: false, look: 'solid', opacity: 0.96 }, // look: solid | glass (frosted, the desktop blurred behind) // a slim bar along the top, like macOS
+  topbar: { on: true, tray: true, traySystem: false, weather: true, media: true, battery: true, ime: false, look: 'solid', opacity: 0.96 }, // look: solid | glass (frosted, the desktop blurred behind) // a slim bar along the top, like macOS
   themes: { active: ['default'] }, // themes in use, in order: a later one wins where they overlap
   desktops: { names: {} },  // names you gave desktops in the overview (by desktop id)
   lock: { auto: false, alsoWallpaper: true, last: '', lastAt: 0, lastError: '' },

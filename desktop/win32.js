@@ -800,5 +800,6 @@ module.exports = {
   thumbUnregister: safe('thumbUnregister', thumbUnregister, false),
   closeWindow: safe('closeWindow', closeWindow, false),
   lock: safe('lock', () => load() && u.LockWorkStation(), false),
+  processExe: safe('processExe', (pid) => (load() && pid ? exeOf(pid) : ''), ''), // the program a process runs (cached)
   capsLock: safe('capsLock', () => !!(load() && (u.GetKeyState(0x14) & 1)), false),
 };

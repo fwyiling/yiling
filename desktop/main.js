@@ -549,6 +549,9 @@ function topbarTick() {
   if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
 }
 // the system tray's icons in the top bar (tray.js): only while the top bar is there to show them
+// Windows' own tray icons (sound, network, battery…) belong to Explorer: the top bar shows those itself, so they're
+// marked and left out unless asked for
+const markTray = (list) => list.map((x) => ({ ...x, system: win32.isWin && /\\explorer\.exe$/i.test(win32.processExe(x.pid)) }));
 function syncTray() {
   const t = store.get().topbar;
   if (win32.isWin && t.on && t.tray !== false) systray.resume(); else systray.stop();
@@ -1054,7 +1057,7 @@ function wireIpc() {
     return shell.openExternal(pages[page]);
   });
   ipcMain.handle('windows', () => windowsList);
-  ipcMain.handle('tray:list', () => systray.icons());
+  ipcMain.handle('tray:list', () => markTray(systray.icons()));
   // a click on a tray icon in the top bar (or its overflow panel): x, y within that window, in its pixels
   ipcMain.handle('tray:click', (e, id, kind, x, y) => {
     const w = BrowserWindow.fromWebContents(e.sender);
@@ -1361,7 +1364,7 @@ app.whenReady().then(() => {
   wireIpc();
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
   media.onChange((st) => broadcast('media', st));
-  systray.onChange((list) => { for (const w of [topWin, flyWin]) if (w && !w.isDestroyed()) w.webContents.send('tray', list); });
+  systray.onChange((list) => { const marked = markTray(list); for (const w of [topWin, flyWin]) if (w && !w.isDestroyed()) w.webContents.send('tray', marked); });
   // system controls: the control centre shows them, the island pops up when volume / brightness change
   sysctl.onChange((st, prev) => { broadcast('sys', st); outputsChanged(st, prev); }); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)
   sysctl.start();

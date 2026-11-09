@@ -281,7 +281,7 @@ async function placeThumbs() {
 // ---------- tray icons that didn't fit in the top bar ----------
 async function renderTrayPanel(list) {
   const [d, all] = await Promise.all([sd.flyoutData().catch(() => null), list ? Promise.resolve(list) : sd.trayList().catch(() => [])]);
-  const rest = all.filter((x) => !x.hidden && x.icon).slice(d?.skip || 0);
+  const rest = all.filter((x) => !x.hidden && x.icon && (!x.system || s.topbar?.traySystem)).slice(d?.skip || 0);
   if (!rest.length) { sd.flyoutAction('close'); return; }
   $('trayGrid').replaceChildren(...rest.map((it) => {
     const b = document.createElement('button'); b.title = it.tip || '';

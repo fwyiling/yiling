@@ -112,7 +112,7 @@ function trayButton(it) {
   return b;
 }
 function renderTray() {
-  const list = trayIcons.filter((x) => !x.hidden && x.icon);
+  const list = trayIcons.filter((x) => !x.hidden && x.icon && (!x.system || s.topbar?.traySystem)); // Windows' own sound / battery icons: the bar has its own
   $('tray').hidden = s.topbar?.tray === false || !list.length;
   if ($('tray').hidden) return;
   const shown = list.length > TRAY_MAX ? list.slice(0, TRAY_MAX - 1) : list;
