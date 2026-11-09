@@ -1339,7 +1339,7 @@ app.whenReady().then(() => {
   // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
   if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
   if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating
-  protocol.handle('sd', (req) => {
+  const sdHandler = (req) => {
     const u = new URL(req.url);
     if (u.host === 'ui') {
       const file = path.normalize(path.join(UI_DIR, decodeURIComponent(u.pathname)));
@@ -1369,7 +1369,12 @@ app.whenReady().then(() => {
       return net.fetch(pathToFileURL(f).href);
     }
     return new Response('not found', { status: 404 });
-  });
+  };
+  protocol.handle('sd', sdHandler);
+  // the lock screen snapshot renders in its own session (its zoom must not reach the app's pages): same pages there
+  session.fromPartition('sd-snapshot').protocol.handle('sd', sdHandler);
+  // a zoom left on the app's pages (the old snapshot did that, and Chromium remembers it): back to 100%
+  app.on('web-contents-created', (_e, wc) => wc.on('did-finish-load', () => { try { if (wc.getURL().startsWith('sd://') && Math.abs(wc.getZoomFactor() - 1) > 0.001 && wc.getType() === 'window' && wc.session === session.defaultSession) wc.setZoomFactor(1); } catch {} }));
   // device names (headphones connected…) for the island: our own pages may read them
   session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => (permission === 'media' ? String(origin).startsWith('sd://') : true));
   // nothing may capture the screen (the music-reactive wallpaper that did is gone)

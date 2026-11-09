@@ -8,13 +8,15 @@ const fs = require('fs');
 const path = require('path');
 const win32 = require('./win32');
 
-/** Render the wallpaper page off-screen at the primary display's real resolution and save a JPEG. */
-async function snapshot(dir, url, preload) {
+/** Render the wallpaper page off-screen at the primary display's real resolution and save a JPEG.
+ *  In its own in-memory session (partition): Chromium keeps one zoom level per site and session, so zooming this
+ *  page up to the screen's scale in the normal session zoomed every page of the app (top bar, dock, Customize). */
+async function snapshot(dir, url, preload, partition = 'sd-snapshot') {
   const d = screen.getPrimaryDisplay();
   const sf = d.scaleFactor || 1;
   const w = new BrowserWindow({
     width: Math.round(d.size.width * sf), height: Math.round(d.size.height * sf), show: false, frame: false,
-    webPreferences: { offscreen: true, preload, contextIsolation: true, sandbox: true, zoomFactor: sf },
+    webPreferences: { offscreen: true, preload, contextIsolation: true, sandbox: true, zoomFactor: sf, partition },
   });
   try {
     let last = null;
