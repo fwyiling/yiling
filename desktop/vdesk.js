@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const win32 = require('./win32');
+const { psArgs } = require('./ps-script');
 
 const PS = `
 $ErrorActionPreference = 'Stop'
@@ -173,7 +174,7 @@ const waiting = new Map();
 function start() {
   if (!supported() || child || stopped) return;
   const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(PS, 'utf16le').toString('base64')], { windowsHide: true });
+  child = spawn(ps, psArgs(PS, 'vdesk'), { windowsHide: true });
   let buf = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (d) => {
