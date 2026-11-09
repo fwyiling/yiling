@@ -10,6 +10,7 @@ sd.onSettings((n) => { s = n; applyAccent(s.accent); });
 const I = {
   home: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>', customize: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   timer: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/>', gamer: '<path d="M6 9h12a4 4 0 0 1 3.9 4.9l-.8 3.4A2.5 2.5 0 0 1 16.8 18L15 16H9l-1.8 2a2.5 2.5 0 0 1-4.3-.7l-.8-3.4A4 4 0 0 1 6 9z"/><path d="M8 12v2M7 13h2M16 12.5h.01M17.5 14h.01"/>',
+  overview: '<rect x="3" y="4" width="8" height="6.5" rx="1.5"/><rect x="13" y="4" width="8" height="6.5" rx="1.5"/><rect x="3" y="13.5" width="18" height="6.5" rx="1.5"/>',
   newdesk: '<rect x="3" y="5" width="13" height="10" rx="2"/><path d="M19 9v10H7M19 3v4M17 5h4"/>', showdesk: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 20h8"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>', taskmgr: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
@@ -17,7 +18,7 @@ const I = {
 async function renderMenu() {
   const st = await sd.flyoutState().catch(() => ({}));
   const items = [['home', 'Open Home', st.hotkey || 'Alt+Space'], ['customize', 'Customize…', 'Ctrl+Alt+S'], '-', ['timer', 'Timer', 'Ctrl+Alt+T'], ['gamer', 'Gamer mode', st.gamer ? '' : 'Ctrl+Alt+G', st.gamer],
-    ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L']];
+    ['overview', 'Desktops overview', 'Ctrl+Alt+Up'], ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L']];
   $('menu').replaceChildren(...items.map((it) => {
     if (it === '-') return document.createElement('hr');
     const b = document.createElement('button'); if (it[3]) b.className = 'on';

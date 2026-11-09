@@ -47,12 +47,16 @@ interface IVirtualDesktopPinnedApps {
   void PinView(IApplicationView view);
   void UnpinView(IApplicationView view);
 }
+// the public (documented) interface: which desktop a window is on, for any program's window
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("A5CD92FF-29BE-454C-8D04-D82879FB3F1B")]
+interface IVirtualDesktopManager { [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr hwnd, out int on); [PreserveSig] int GetWindowDesktopId(IntPtr hwnd, out Guid id); }
 [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("6D5140C1-7436-11CE-8034-00AA006009FA")]
 interface IServiceProvider10 { [return: MarshalAs(UnmanagedType.IUnknown)] object QueryService(ref Guid service, ref Guid riid); }
 public static class SdDesk {
   static IVirtualDesktopManagerInternal mgr;
   static IApplicationViewCollection views;
   static IVirtualDesktopPinnedApps pins;
+  static IVirtualDesktopManager pub;
   static System.Collections.Generic.Dictionary<long, bool> carried = new System.Collections.Generic.Dictionary<long, bool>();
   static void Init() {
     if (mgr != null) return;
@@ -62,6 +66,7 @@ public static class SdDesk {
     Guid vsvc = typeof(IApplicationViewCollection).GUID, viid = typeof(IApplicationViewCollection).GUID;
     views = (IApplicationViewCollection)shell.QueryService(ref vsvc, ref viid);
     try { Guid psvc = new Guid("B5A399E7-1C87-46B8-88E9-FC5747B171BD"), piid = typeof(IVirtualDesktopPinnedApps).GUID; pins = (IVirtualDesktopPinnedApps)shell.QueryService(ref psvc, ref piid); } catch { pins = null; }
+    try { pub = (IVirtualDesktopManager)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A"))); } catch { pub = null; }
   }
   static IVirtualDesktop Next(bool right) {
     IVirtualDesktop target;
@@ -102,6 +107,34 @@ public static class SdDesk {
     mgr.MoveViewToDesktop(view, mgr.GetCurrentDesktop());
     return true;
   }
+  // the desktops overview: which desktop each window is on ({GUID}, or empty), a desktop by number, a window onto one
+  public static string Map(string list) {
+    Init();
+    var sb = new System.Text.StringBuilder();
+    foreach (var s in list.Split(',')) {
+      long h; Guid g = Guid.Empty;
+      if (pub != null && long.TryParse(s, out h) && pub.GetWindowDesktopId(new IntPtr(h), out g) != 0) g = Guid.Empty;
+      if (sb.Length > 0) sb.Append(',');
+      if (g != Guid.Empty) sb.Append(g.ToString("B").ToUpperInvariant());
+    }
+    return sb.ToString();
+  }
+  static IVirtualDesktop At(int i) {
+    IObjectArray arr; mgr.GetDesktops(out arr);
+    int n; arr.GetCount(out n);
+    if (i < 0 || i >= n) return null;
+    object o; Guid iid = typeof(IVirtualDesktop).GUID; arr.GetAt(i, ref iid, out o);
+    return (IVirtualDesktop)o;
+  }
+  public static bool MoveTo(IntPtr hwnd, int i) {
+    Init();
+    IApplicationView view;
+    if (views.GetViewForHwnd(hwnd, out view) != 0 || view == null) return false;
+    var d = At(i); if (d == null) return false;
+    mgr.MoveViewToDesktop(view, d);
+    return true;
+  }
+  public static bool SwitchTo(int i) { Init(); var d = At(i); if (d == null) return false; mgr.SwitchDesktop(d); return true; }
   // straight to the desktop next door (no slide): only when Windows' own Win+Ctrl+arrow didn't get through
   public static bool Switch(bool right) { Init(); var target = Next(right); if (target == null) return false; mgr.SwitchDesktop(target); return true; }
 }
@@ -113,11 +146,17 @@ while ($true) {
   $p = $l.Trim().Split(' ')
   $ans = '{"id":' + [int]$p[0] + ',"ok":false}'
   try {
+    if ($p[1] -eq 'map') { # answers with data: the desktop of each window
+      $d = [SdDesk]::Map($(if ($p.Length -gt 2) { $p[2] } else { '' }))
+      [Console]::Out.WriteLine('{"id":' + [int]$p[0] + ',"ok":true,"data":"' + $d + '"}'); [Console]::Out.Flush(); continue
+    }
     $ok = switch ($p[1]) {
       'move' { [SdDesk]::Move([IntPtr][long]$p[2], $p[3] -eq 'right') }
       'carry' { [SdDesk]::Carry([IntPtr][long]$p[2], $p[3] -eq 'right') }
       'settle' { [SdDesk]::Settle([IntPtr][long]$p[2]) }
       'switch' { [SdDesk]::Switch($p[2] -eq 'right') }
+      'switchto' { [SdDesk]::SwitchTo([int]$p[2]) }
+      'moveto' { [SdDesk]::MoveTo([IntPtr][long]$p[2], [int]$p[3]) }
       'count' { [SdDesk]::Count() -gt 0 }
       default { $false }
     }
@@ -145,7 +184,7 @@ function start() {
       let j; try { j = JSON.parse(line); } catch { continue; }
       if (j.ready) { ready = true; count = j.count; restarts = 0; continue; }
       const w = waiting.get(j.id); if (!w) continue;
-      waiting.delete(j.id); if (j.error) lastError = j.error; w(!!j.ok);
+      waiting.delete(j.id); if (j.error) lastError = j.error; w(j.data !== undefined ? j : !!j.ok);
     }
   });
   child.stderr.on('data', (d) => { const l = String(d).split('\n').map((x) => x.trim()).find((x) => x && !x.startsWith('#< CLIXML') && !x.startsWith('<Objs')); if (l) { lastError = l; console.warn('[vdesk]', l); } });
@@ -173,4 +212,13 @@ module.exports = {
   carry: (hwnd, right) => ask(`carry ${Math.trunc(Number(hwnd))} ${right ? 'right' : 'left'}`),
   settle: (hwnd) => ask(`settle ${Math.trunc(Number(hwnd))}`),
   switchTo: (right) => ask(`switch ${right ? 'right' : 'left'}`),
+  /** The desktop ({GUID}, '' when unknown) of each window, in order. */
+  async map(hwnds) {
+    const list = hwnds.map((h) => Math.trunc(Number(h))).filter(Number.isFinite).slice(0, 200);
+    if (!list.length) return [];
+    const r = await ask(`map ${list.join(',')}`, 3000);
+    return r && typeof r.data === 'string' ? r.data.split(',') : list.map(() => '');
+  },
+  goTo: (i) => ask(`switchto ${Math.trunc(Number(i))}`),
+  moveTo: (hwnd, i) => ask(`moveto ${Math.trunc(Number(hwnd))} ${Math.trunc(Number(i))}`),
 };

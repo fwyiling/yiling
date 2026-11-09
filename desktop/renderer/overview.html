@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: sd:; media-src sd:; connect-src 'self'">
+  <title>Syndicates Overview</title>
+  <link rel="stylesheet" href="overview.css">
+</head>
+<body>
+  <div id="ov">
+    <div class="bg" id="bg"></div>
+    <!-- every desktop: its wallpaper, name and apps; + adds one -->
+    <div class="strip"><div id="desks" class="desks"></div></div>
+    <!-- this desktop's windows, as live previews -->
+    <div id="wins" class="wins"></div>
+    <p class="hint">Click a window to go to it · drag it onto a desktop to move it · double-click a name to rename · Esc to close</p>
+  </div>
+  <script type="module" src="overview.js"></script>
+</body>
+</html>

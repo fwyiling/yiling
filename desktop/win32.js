@@ -673,23 +673,25 @@ function exeOf(pid) {
   } finally { u.CloseHandle(h); }
 }
 // one callback, registered once (registering a native callback on every call was wasteful)
-let enumCb = null, enumOut = [], enumFg = 0, enumOwn = [];
-function listWindows(ownPids = []) {
+let enumCb = null, enumOut = [], enumFg = 0, enumOwn = [], enumAll = false;
+/** The open app windows (the dock's list). allDesktops: also those on other virtual desktops (the overview). */
+function listWindows(ownPids = [], allDesktops = false) {
   if (!load()) return [];
-  enumOut = []; enumFg = Number(u.GetForegroundWindow()); enumOwn = ownPids;
+  enumOut = []; enumFg = Number(u.GetForegroundWindow()); enumOwn = ownPids; enumAll = allDesktops;
   enumCb ||= u.koffi.register((hwnd) => {
     if (!u.IsWindowVisible(hwnd) || !isNull(u.GetWindow(hwnd, 4))) return true; // GW_OWNER
     const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
     if ((ex & 0x80) && !(ex & 0x40000)) return true; // WS_EX_TOOLWINDOW without WS_EX_APPWINDOW
     const cloaked = [0];
-    if (u.DwmGetWindowAttribute(hwnd, 14, cloaked, 4) === 0 && cloaked[0]) return true; // DWMWA_CLOAKED: hidden UWP / other desktops
+    // DWMWA_CLOAKED: hidden UWP windows (always skipped), and windows on other desktops (cloaked by the shell: 2)
+    if (u.DwmGetWindowAttribute(hwnd, 14, cloaked, 4) === 0 && cloaked[0] && !(enumAll && cloaked[0] === 2)) return true;
     const tb = new Uint16Array(256), n = u.GetWindowTextW(hwnd, tb, 256);
     if (!n) return true;
     const cls = new Uint16Array(128), cn = u.GetClassNameW(hwnd, cls, 128);
     if (SHELL_CLASSES.has(String.fromCharCode(...cls.slice(0, cn)))) return true;
     const pid = [0]; u.GetWindowThreadProcessId(hwnd, pid);
     if (enumOwn.includes(pid[0])) return true;
-    enumOut.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === enumFg, minimized: !!u.IsIconic(hwnd) });
+    enumOut.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === enumFg, minimized: !!u.IsIconic(hwnd), elsewhere: !!cloaked[0] });
     return true;
   }, u.koffi.pointer(u.EnumProc));
   u.EnumWindows(enumCb, 0);

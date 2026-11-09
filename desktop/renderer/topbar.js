@@ -76,6 +76,7 @@ sd.onPower?.(battery); // plugged in / unplugged: at once
 $('logo').onclick = () => sd.flyout('menu', Math.round($('logo').getBoundingClientRect().left));
 $('quick').onclick = () => { const r = $('quick').getBoundingClientRect(); sd.flyout('control', Math.round(r.left + r.width / 2)); };
 $('timerBtn').onclick = () => sd.topbarTimer();
+$('ovBtn').onclick = () => sd.overview();
 const anchor = (el) => { const r = el.getBoundingClientRect(); return Math.round(r.left + r.width / 2); };
 $('clock').onclick = () => sd.flyout('calendar', anchor($('clock')));
 $('wifiBtn').onclick = () => sd.flyout('wifi', anchor($('wifiBtn')));

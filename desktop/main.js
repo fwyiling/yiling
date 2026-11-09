@@ -169,6 +169,7 @@ function registerHotkey() {
   if (!hotkeyStatus.switchKeys) console.warn('[switch] Ctrl+Alt+Shift+Left/Right is taken by another app');
   reg('Ctrl+Alt+T', () => openIslandTimer()); // the timer, from anywhere
   reg('Ctrl+Alt+G', () => setGamer(!gamer)); // gamer mode
+  reg('Ctrl+Alt+Up', () => openOverview()); // the desktops overview, like Mission Control
 }
 
 // ---------- settings window ----------
@@ -665,7 +666,7 @@ function startDockExtras() {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { tray: { w: 252, h: 230 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { tray: { w: 252, h: 230 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 424 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 // an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
 const WIN_CARD = { w: 212, h: 150, gap: 10 };
 function windowsPanelSize(n) {
@@ -686,7 +687,7 @@ function openFlyout(panel, anchorX, data = null) {
   if (same && flyWin.isVisible()) { flyWin.hide(); return; } // a second click closes it
   // the click on the button already closed it (the panel lost focus a moment ago): don't open it again
   if (same && Date.now() - flyHiddenAt < 350) return;
-  clearThumbs();
+  clearThumbs(flyWin);
   if (!flyWin || flyWin.isDestroyed()) {
     flyWin = new BrowserWindow({ ...bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
       alwaysOnTop: true, backgroundColor: '#00000000', title: 'Syndicates Panel', webPreferences: webPrefs });
@@ -694,7 +695,7 @@ function openFlyout(panel, anchorX, data = null) {
     // the click that opened it can blur it a moment later (the top bar takes focus): only a real click away closes it
     flyWin.on('blur', () => { if (Date.now() - flyShownAt < 300) return; flyWin?.hide(); flyHiddenAt = Date.now(); });
     flyWin.once('ready-to-show', () => win32.makeToolWindow(flyWin));
-    flyWin.on('hide', clearThumbs); // previews belong to the panel: gone with it
+    flyWin.on('hide', () => clearThumbs(flyWin)); // previews belong to the panel: gone with it
     flyWin.loadURL(ui('flyout.html'));
     flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey;
     flyReveal(1500);
@@ -718,18 +719,24 @@ function flyShow() {
   flyShownAt = Date.now(); flyWin.show(); flyWin.focus();
 }
 // live previews in the windows panel: DWM draws each window into the panel at the spots the page measured
-const thumbs = new Map(); // hwnd -> DWM thumbnail
-function clearThumbs() { for (const t of thumbs.values()) win32.thumbUnregister(t); thumbs.clear(); }
-function setThumbs(rects) {
-  if (!win32.isWin || !flyWin || flyWin.isDestroyed() || flyWin.panel !== 'windows' || !Array.isArray(rects)) { clearThumbs(); return []; }
-  const sf = screen.getDisplayMatching(flyWin.getBounds()).scaleFactor || 1;
+// live previews: DWM draws each window into one of ours (the dock's windows panel, the desktops overview) at the
+// spots its page measured; a preview belongs to the window it's drawn in and goes when that one hides
+const thumbs = new Map(); // our window -> Map(hwnd -> DWM thumbnail)
+function clearThumbs(host) {
+  for (const [w, m] of thumbs) { if (host && w !== host) continue; for (const t of m.values()) win32.thumbUnregister(t); thumbs.delete(w); }
+}
+function setThumbs(host, rects, allowed, max = 8) {
+  if (!win32.isWin || !host || host.isDestroyed() || !Array.isArray(rects)) { clearThumbs(host); return []; }
+  if (!thumbs.has(host)) thumbs.set(host, new Map());
+  const mine = thumbs.get(host);
+  const sf = screen.getDisplayMatching(host.getBounds()).scaleFactor || 1;
   const want = new Set(rects.map((r) => r.hwnd));
-  for (const [h, t] of thumbs) if (!want.has(h)) { win32.thumbUnregister(t); thumbs.delete(h); }
+  for (const [h, t] of mine) if (!want.has(h)) { win32.thumbUnregister(t); mine.delete(h); }
   const shown = [];
-  for (const r of rects.slice(0, 8)) {
-    if (!windowsList.some((w) => w.hwnd === r.hwnd)) continue; // only windows the dock listed
-    let t = thumbs.get(r.hwnd);
-    if (!t) { t = win32.thumbRegister(flyWin, r.hwnd); if (!t) continue; thumbs.set(r.hwnd, t); }
+  for (const r of rects.slice(0, max)) {
+    if (!allowed.some((w) => w.hwnd === r.hwnd)) continue; // only windows we listed ourselves
+    let t = mine.get(r.hwnd);
+    if (!t) { t = win32.thumbRegister(host, r.hwnd); if (!t) continue; mine.set(r.hwnd, t); }
     const src = win32.thumbSize(t), box = { x: r.x * sf, y: r.y * sf, w: r.w * sf, h: r.h * sf };
     // a minimized window has nothing worth showing (a sliver of title bar): the page's icon stays instead
     if (!src || src.w < 80 || src.h < 60) { win32.thumbPlace(t, box, false); continue; }
@@ -739,9 +746,62 @@ function setThumbs(rects) {
   }
   return shown;
 }
+
+// ---------- desktops overview (like Mission Control) ----------
+// Every desktop along the top (its wallpaper, name and apps) and this desktop's windows as live previews: click a
+// window to go to it, a desktop to switch, drag a window onto a desktop to move it, + adds one. Ctrl+Alt+Up.
+let ovWin = null, ovWindows = [], ovShownAt = 0, ovHoldUntil = 0;
+async function goToDesk(target) { // the way Windows does it (its slide), one desktop at a time
+  if (!win32.isWin) return;
+  const vd = win32.virtualDesktops(), steps = Math.max(-9, Math.min(9, Math.round(target) - vd.current));
+  for (let i = 0; i < Math.abs(steps); i++) { win32.pressKeys([0x5B, 0x11, steps > 0 ? 0x27 : 0x25]); await new Promise((r) => setTimeout(r, 260)); }
+}
+async function overviewData() {
+  const st = store.get();
+  const vd = win32.isWin ? win32.virtualDesktops(true) : { count: 1, current: 0, ids: [], names: [] };
+  const ids = vd.ids.length ? vd.ids : ['local'];
+  let wins = win32.isWin ? win32.listWindows(ownPids(), true) : [];
+  const where = win32.isWin && vdesk.status().ready ? await vdesk.map(wins.map((w) => w.hwnd)) : wins.map(() => '');
+  // a window whose desktop can't be told: this desktop's if it's showing here, otherwise left out
+  wins = wins.map((w, i) => ({ ...w, desk: where[i] || (w.elsewhere ? '' : ids[vd.current]) })).filter((w) => ids.includes(w.desk));
+  ovWindows = wins;
+  const names = st.desktops?.names || {};
+  return {
+    current: vd.current,
+    desks: ids.map((id, i) => { const w = wallFor(st.wallpaper, id); return { id, name: names[id] || vd.names[i] || `Desktop ${i + 1}`, wall: { scene: w.scene, has: !!(w.scene === 'web' ? w.url : w.file), stamp: w.fileStamp || 0 } }; }),
+    windows: wins.map((w) => ({ hwnd: w.hwnd, title: w.title, exe: w.exe, desk: w.desk, active: w.active, minimized: w.minimized })),
+  };
+}
+async function refreshOverview() { if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) ovWin.webContents.send('overview', await overviewData()); }
+function closeOverview() {
+  if (!ovWin || ovWin.isDestroyed() || !ovWin.isVisible()) return;
+  clearThumbs(ovWin);
+  ovWin.webContents.send('overview-close');
+  setTimeout(() => { if (ovWin && !ovWin.isDestroyed()) ovWin.hide(); }, 140); // after its fade
+}
+async function openOverview() {
+  if (gamer) return;
+  if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) { closeOverview(); return; }
+  const d = screen.getPrimaryDisplay();
+  if (!ovWin || ovWin.isDestroyed()) {
+    ovWin = new BrowserWindow({ ...d.bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
+      alwaysOnTop: true, backgroundColor: '#00000000', title: 'Syndicates Overview', webPreferences: webPrefs });
+    ovWin.setAlwaysOnTop(true, 'screen-saver');
+    ovWin.on('hide', () => clearThumbs(ovWin));
+    ovWin.on('blur', () => { if (Date.now() - ovShownAt > 400 && Date.now() > ovHoldUntil) closeOverview(); }); // clicked away
+    ovWin.on('closed', () => { clearThumbs(ovWin); ovWin = null; });
+    ovWin.loadURL(ui('overview.html'));
+    await new Promise((r) => ovWin.webContents.once('did-finish-load', r));
+    win32.makeToolWindow(ovWin); // on every desktop: it stays open while desktops are added / switched
+  }
+  ovWin.setBounds(d.bounds);
+  ovWin.webContents.send('overview', await overviewData());
+  ovShownAt = Date.now(); ovWin.show(); ovWin.focus();
+}
+
 const FLY_ACTIONS = {
   home: () => toggleHome(true), customize: openSettings, timer: openIslandTimer, gamer: () => setGamer(!gamer),
-  newdesk: () => win32.pressKeys([0x5B, 0x11, 0x44]), showdesk: () => win32.pressKeys([0x5B, 0x44]),
+  newdesk: () => win32.pressKeys([0x5B, 0x11, 0x44]), showdesk: () => win32.pressKeys([0x5B, 0x44]), overview: () => openOverview(),
   settings: () => shell.openExternal('ms-settings:'), taskmgr: () => win32.pressKeys([0x11, 0x10, 0x1B]), lock: () => win32.lock(),
   notifications: () => win32.pressKeys([0x5B, 0x4E]),
 };
@@ -980,7 +1040,7 @@ function wireIpc() {
   ipcMain.handle('window:new', async (_e, exe) => { if (!exe || !windowsList.some((w) => w.exe === exe)) throw new Error('unknown app'); win32.allowForeground(); await launchApp(exe); });
   ipcMain.handle('window:focus', (_e, hwnd, toggle = true) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd, toggle !== false); setTimeout(() => pollWindows(true), 150); });
   ipcMain.handle('exe-icon', async (_e, exe) => {
-    if (!windowsList.some((w) => w.exe === exe)) return '';
+    if (!windowsList.some((w) => w.exe === exe) && !ovWindows.some((w) => w.exe === exe)) return '';
     return iconFor(exe, 'large');
   });
   ipcMain.handle('pin-target', (_e, p) => { // what a pinned shortcut points at, to match it with open windows
@@ -1020,17 +1080,43 @@ function wireIpc() {
   // click a desktop dot: step there with Win+Ctrl+Left/Right (Windows' own switch, with its slide animation)
   ipcMain.handle('topbar:desk', async (e, target) => {
     if (!topWin || e.sender !== topWin.webContents || !win32.isWin) return;
-    const vd = win32.virtualDesktops(), steps = Math.max(-9, Math.min(9, Math.round(target) - vd.current));
-    for (let i = 0; i < Math.abs(steps); i++) { win32.pressKeys([0x5B, 0x11, steps > 0 ? 0x27 : 0x25]); await new Promise((r) => setTimeout(r, 260)); }
+    await goToDesk(target);
     topApp = ''; topbarTick();
   });
+  ipcMain.handle('overview:open', () => openOverview());
   ipcMain.handle('ime:get', () => imeNow);
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
   ipcMain.handle('flyout:open', (_e, panel, x, data) => openFlyout(panel, x, !data ? null
     : panel === 'windows' ? { hwnds: (data.hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8), name: String(data.name || '').slice(0, 80) }
     : panel === 'tray' ? { skip: Math.max(0, data.skip | 0) } : null));
   ipcMain.handle('flyout:data', () => flyWin?.data || null);
-  ipcMain.handle('thumbs', (_e, rects) => setThumbs((rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }))));
+  ipcMain.handle('thumbs', (e, rects) => {
+    const host = BrowserWindow.fromWebContents(e.sender), list = (rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }));
+    if (host && host === flyWin && flyWin.panel === 'windows') return setThumbs(flyWin, list, windowsList);
+    if (host && host === ovWin) return setThumbs(ovWin, list, ovWindows, 24);
+    if (host) clearThumbs(host);
+    return [];
+  });
+  // the desktops overview
+  const fromOv = (e) => ovWin && !ovWin.isDestroyed() && e.sender === ovWin.webContents;
+  ipcMain.handle('ov:hide', (e) => { if (fromOv(e)) closeOverview(); });
+  ipcMain.handle('ov:focus', (e, hwnd) => { if (!fromOv(e) || !ovWindows.some((w) => w.hwnd === hwnd)) return; closeOverview(); setTimeout(() => { win32.focusWindow(hwnd, false); pollWindows(true); }, 60); });
+  ipcMain.handle('ov:desk', (e, i) => { if (!fromOv(e)) return; closeOverview(); setTimeout(() => goToDesk(i), 120); });
+  ipcMain.handle('ov:move', async (e, hwnd, i) => { if (!fromOv(e) || !ovWindows.some((w) => w.hwnd === hwnd)) return false; const ok = await vdesk.moveTo(hwnd, i); await refreshOverview(); return ok; });
+  ipcMain.handle('ov:close-window', (e, hwnd) => { if (!fromOv(e) || !ovWindows.some((w) => w.hwnd === hwnd)) return; win32.closeWindow(hwnd); setTimeout(refreshOverview, 400); });
+  ipcMain.handle('ov:add', (e) => { // Windows makes it and goes there; the overview stays (it's on every desktop) and shows it
+    if (!fromOv(e) || !win32.isWin) return;
+    ovHoldUntil = Date.now() + 2500; win32.pressKeys([0x5B, 0x11, 0x44]);
+    setTimeout(async () => { await refreshOverview(); ovWin?.focus(); }, 900);
+  });
+  ipcMain.handle('ov:remove', async (e, i) => { // closing a desktop moves its windows next door, as in Windows
+    if (!fromOv(e) || !win32.isWin || win32.virtualDesktops().count < 2) return;
+    ovHoldUntil = Date.now() + 4000;
+    await goToDesk(i); await new Promise((r) => setTimeout(r, 500));
+    win32.pressKeys([0x5B, 0x11, 0x73]); // Win+Ctrl+F4
+    setTimeout(async () => { await refreshOverview(); ovWin?.focus(); }, 900);
+  });
+  ipcMain.handle('ov:rename', (e, id, name) => { if (fromOv(e) && typeof id === 'string' && id.length < 60) applySettings({ desktops: { names: { [id]: String(name || '').trim().slice(0, 40) } } }); });
   // files dropped on an app in the dock: opened in that app (a Store app or one started through a launcher: each file
   // opens in its usual app instead)
   ipcMain.handle('dock:openWith', async (e, target, files) => {
