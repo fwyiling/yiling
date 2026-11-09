@@ -72,7 +72,11 @@ jobs:
           node -e "const v = require('./win32').taskbarVisible(); console.log('taskbar visible after quitting:', v); process.exit(v ? 0 : 1)"
       - name: Upload the Windows build
         uses: actions/upload-artifact@v4
+        # a copy for this run only: the release below is where the builds live. Kept for a day, and never a reason
+        # to fail (the account's artifact storage filled up with 90-day copies of every build, ~160 MB each)
+        continue-on-error: true
         with:
+          retention-days: 1
           name: Syndicates-Desktop-Windows
           path: |
             desktop/dist/Syndicates-Desktop-Setup.exe
@@ -90,7 +94,9 @@ jobs:
       - name: Upload the desktop screenshot from the test
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: smoke-desktop-screenshot
           path: desktop/smoke-*.png
           if-no-files-found: ignore
