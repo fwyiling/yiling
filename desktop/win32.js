@@ -128,6 +128,18 @@ function bind() {
     // the same function for DWMWA_EXTENDED_FRAME_BOUNDS (the visible frame, without the invisible resize border)
     DwmGetFrameRect: u.dwmapi.func('__stdcall', 'DwmGetWindowAttribute', 'long', ['intptr_t', 'uint32', koffi.out(koffi.pointer(RECT)), 'uint32']),
   });
+  // the dock: Windows tells a "shell hook" window when windows open, close, come forward or flash for attention
+  // (what the taskbar listens to), instead of the dock looking every second
+  u.RegisterWindowMessageW = user32.func('uint32 __stdcall RegisterWindowMessageW(str16 name)');
+  u.RegisterShellHookWindow = user32.func('bool __stdcall RegisterShellHookWindow(intptr_t hwnd)');
+  u.DeregisterShellHookWindow = user32.func('bool __stdcall DeregisterShellHookWindow(intptr_t hwnd)');
+  // live window previews: DWM draws another window, scaled, into one of ours (how the taskbar's previews work: no screenshots)
+  u.DWM_THUMBNAIL_PROPERTIES = koffi.struct('DWM_THUMBNAIL_PROPERTIES', { dwFlags: 'uint32', rcDestination: RECT, rcSource: RECT, opacity: 'uint8', fVisible: 'int32', fSourceClientAreaOnly: 'int32' });
+  u.SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
+  u.DwmRegisterThumbnail = u.dwmapi.func('long __stdcall DwmRegisterThumbnail(intptr_t dest, intptr_t src, _Out_ intptr_t *thumb)');
+  u.DwmUnregisterThumbnail = u.dwmapi.func('long __stdcall DwmUnregisterThumbnail(intptr_t thumb)');
+  u.DwmUpdateThumbnailProperties = u.dwmapi.func('long __stdcall DwmUpdateThumbnailProperties(intptr_t thumb, DWM_THUMBNAIL_PROPERTIES *props)');
+  u.DwmQueryThumbnailSourceSize = u.dwmapi.func('long __stdcall DwmQueryThumbnailSourceSize(intptr_t thumb, _Out_ SIZE *size)');
   return u;
 }
 /** Run a Win32 helper without ever letting an error escape into the app (timers call these). */
@@ -686,6 +698,36 @@ function focusWindow(hwnd, toggle = true) {
   return Number(u.GetForegroundWindow()) === Number(hwnd);
 }
 
+// ---------- the dock: shell hook and live previews ----------
+/** Ask Windows to tell this window about other windows (opened, closed, activated, flashing). Returns the message id. */
+function shellHook(win) {
+  if (!load()) return 0;
+  const msg = u.RegisterWindowMessageW('SHELLHOOK');
+  return msg && u.RegisterShellHookWindow(hwndOf(win)) ? msg : 0;
+}
+const unhookShell = (win) => load() && u.DeregisterShellHookWindow(hwndOf(win));
+/** A live, scaled copy of window `src` drawn into our window `win` (until unregistered). Returns its handle or 0. */
+function thumbRegister(win, src) {
+  if (!load()) return 0;
+  const out = [0];
+  return u.DwmRegisterThumbnail(hwndOf(win), src, out) === 0 ? Number(out[0]) : 0;
+}
+function thumbSize(thumb) {
+  if (!load()) return null;
+  const sz = {};
+  return u.DwmQueryThumbnailSourceSize(thumb, sz) === 0 ? { w: sz.cx, h: sz.cy } : null;
+}
+/** Place a preview (physical pixels, in our window's client area); hidden when `visible` is false. */
+function thumbPlace(thumb, rect, visible = true) {
+  if (!load()) return false;
+  const props = { dwFlags: 0x1 | 0x4 | 0x8 | 0x10, opacity: 255, fVisible: visible ? 1 : 0, fSourceClientAreaOnly: 0, // destination, opacity, visible, whole window
+    rcDestination: { left: Math.round(rect.x), top: Math.round(rect.y), right: Math.round(rect.x + rect.w), bottom: Math.round(rect.y + rect.h) }, rcSource: { left: 0, top: 0, right: 0, bottom: 0 } };
+  return u.DwmUpdateThumbnailProperties(thumb, props) === 0;
+}
+const thumbUnregister = (thumb) => load() && u.DwmUnregisterThumbnail(thumb) === 0;
+/** Ask a window to close, like its X button (the app can still ask to save first). */
+const closeWindow = (hwnd) => load() && u.PostMessageW(hwnd, 0x0010, 0, 0); // WM_CLOSE
+
 module.exports = {
   isWin,
   RAISED_STRATEGIES,
@@ -733,6 +775,13 @@ module.exports = {
   windowRect: safe('windowRect', windowRect, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
+  shellHook: safe('shellHook', shellHook, 0),
+  unhookShell: safe('unhookShell', unhookShell, false),
+  thumbRegister: safe('thumbRegister', thumbRegister, 0),
+  thumbSize: safe('thumbSize', thumbSize, null),
+  thumbPlace: safe('thumbPlace', thumbPlace, false),
+  thumbUnregister: safe('thumbUnregister', thumbUnregister, false),
+  closeWindow: safe('closeWindow', closeWindow, false),
   lock: safe('lock', () => load() && u.LockWorkStation(), false),
   capsLock: safe('capsLock', () => !!(load() && (u.GetKeyState(0x14) & 1)), false),
 };

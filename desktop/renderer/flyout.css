@@ -122,3 +122,20 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .shots .empty { grid-column: 1 / -1; cursor: default; text-align: center; color: var(--m); padding: 28px 10px; line-height: 1.8; }
 .shots .empty:hover { background: none; }
 .shots kbd { font: 600 11px system-ui; padding: 1px 6px; border-radius: 5px; background: rgba(255, 255, 255, .1); color: var(--t); }
+
+/* a dock app's windows: live previews (DWM draws each window into its box; the icon shows until it does) */
+.wins { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--cols, 2), 200px); gap: 10px; }
+.wins li { display: grid; gap: 6px; padding: 6px; border-radius: 12px; cursor: pointer; transition: background .15s; }
+.wins li:hover { background: rgba(255, 255, 255, .08); }
+.wins li.active .tb { box-shadow: 0 0 0 1.5px var(--a); }
+.wins .wt { display: flex; align-items: center; gap: 7px; height: 22px; min-width: 0; }
+.wins .wt img { width: 16px; height: 16px; flex: none; }
+.wins .wt span { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wins .x { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; color: var(--m); opacity: 0; transition: opacity .12s, background .12s; }
+.wins li:hover .x { opacity: 1; } .wins .x:hover { background: #e5484d; color: #fff; }
+.wins .x svg { width: 12px; height: 12px; }
+.wins .tb { height: 112px; border-radius: 8px; background: rgba(255, 255, 255, .05); display: grid; place-items: center; box-shadow: 0 0 0 1px var(--line); }
+.wins .tb img { width: 40px; height: 40px; opacity: .8; transition: opacity .2s; }
+.wins .tb.live img { opacity: 0; }
+.wins .tb em { font-style: normal; font-size: 11px; color: var(--m); margin-top: -18px; }
+.wins .tb.live em { display: none; }

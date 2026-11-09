@@ -268,8 +268,34 @@ async function pollWindows(fresh = false) {
   hideTaskbar(); // Explorer brings it back now and then (Start menu, display changes)
   if (!store.get().dock.running) return;
   const list = currentWindows(fresh ? 0 : 900);
-  const key = list.map((w) => `${w.hwnd}${w.active ? '*' : ''}${w.title}`).join('|');
+  // a window that flashed for attention stays marked until you go to it (or it closes), like the taskbar's orange
+  for (const w of list) { if (w.active) attention.delete(w.hwnd); w.attention = attention.has(w.hwnd); }
+  for (const h of attention.keys()) if (!list.some((w) => w.hwnd === h)) attention.delete(h);
+  const key = list.map((w) => `${w.hwnd}${w.active ? '*' : ''}${w.attention ? '!' : ''}${w.title}`).join('|');
   if (key !== windowsKey) { windowsKey = key; dockWin.webContents.send('windows', list); } // redraw the dock only when something changed
+}
+// Windows tells the dock when a window opens, closes, comes forward, changes its title or flashes for attention
+// (the shell hook the taskbar itself listens to): the dock updates at once instead of up to a second later
+const attention = new Map(); // hwnd -> when it flashed
+let shellMsg = 0, shellT = 0;
+const HSHELL = { CREATED: 1, DESTROYED: 2, ACTIVATED: 4, REDRAW: 6, RUDE_ACTIVATED: 0x8004, FLASH: 0x8006 };
+function shellPoll(delay) {
+  if (shellT) return; // a burst (a title that keeps changing) is read once per delay, never starved
+  shellT = setTimeout(function run() { shellT = quiet() ? setTimeout(run, 400) : 0; if (!shellT) pollWindows(true); }, delay);
+}
+function hookShell() {
+  if (!win32.isWin || !dockWin || dockWin.isDestroyed()) return;
+  shellMsg = win32.shellHook(dockWin);
+  if (!shellMsg) return;
+  const num = (b) => (b.length >= 8 ? Number(b.readBigInt64LE(0)) : b.readInt32LE(0));
+  dockWin.hookWindowMessage(shellMsg, (wp, lp) => {
+    const code = num(wp) & 0xFFFF, hwnd = num(lp);
+    if (code === HSHELL.FLASH) attention.set(hwnd, Date.now());
+    else if (code === HSHELL.ACTIVATED || code === HSHELL.RUDE_ACTIVATED || code === HSHELL.DESTROYED) attention.delete(hwnd);
+    if (code === HSHELL.REDRAW) shellPoll(300); // titles (a page loading, a song) change often
+    else if (Object.values(HSHELL).includes(code)) shellPoll(40);
+  });
+  clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 3000); // only a safety net now
 }
 async function setDock(on) {
   const st = store.get();
@@ -281,7 +307,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); }); // tool window: on every virtual desktop
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -292,6 +318,7 @@ async function setDock(on) {
     clearInterval(dockTimer); clearInterval(dockEdgeTimer); clearInterval(taskbarTimer);
     if (win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
     store.set({ dock: { prevAutoHide: null } });
+    if (shellMsg) { win32.unhookShell(dockWin); shellMsg = 0; }
     dockWin.destroy(); dockWin = null;
   }
 }
@@ -626,17 +653,27 @@ function startDockExtras() {
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
 const FLY = { shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 390 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
-function openFlyout(panel, anchorX) {
-  if (!FLY[panel]) return;
-  const d = screen.getPrimaryDisplay(), z = FLY[panel];
+// an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
+const WIN_CARD = { w: 212, h: 150, gap: 10 };
+function windowsPanelSize(n) {
+  const cols = Math.max(1, Math.min(4, n)), rows = Math.max(1, Math.ceil(Math.min(n, 8) / 4));
+  return { w: 30 + cols * WIN_CARD.w + (cols - 1) * WIN_CARD.gap, h: 72 + rows * WIN_CARD.h + (rows - 1) * WIN_CARD.gap, dock: true };
+}
+function openFlyout(panel, anchorX, data = null) {
+  if (!FLY[panel] && panel !== 'windows') return;
+  if (panel === 'windows' && !(Array.isArray(data?.hwnds) && data.hwnds.length)) return;
+  const d = screen.getPrimaryDisplay(), z = panel === 'windows' ? windowsPanelSize(data.hwnds.length) : FLY[panel];
+  const dataKey = panel === 'windows' ? data.hwnds.join(',') : '';
+  const same = flyWin && !flyWin.isDestroyed() && flyWin.panel === panel && (flyWin.dataKey || '') === dataKey;
   const x = Math.round(Math.max(d.bounds.x + 6, Math.min(d.bounds.x + d.bounds.width - z.w - 6, d.bounds.x + anchorX - (panel === 'menu' ? 8 : z.w / 2))));
   if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel !== panel) flyWin.hide(); // one panel at a time, never two on top of each other
   // under the top bar; the dock's Screenshots stack opens upwards, just above the dock
   const dockTop = d.bounds.y + d.bounds.height - (DOCK_H[store.get().dock.size] || DOCK_H.m) - 10;
   const bounds = { x, y: z.dock ? dockTop - z.h : d.bounds.y + (store.get().topbar.on ? TOP_H : 0) + 6, width: z.w, height: z.h };
-  if (flyWin && !flyWin.isDestroyed() && flyWin.isVisible() && flyWin.panel === panel) { flyWin.hide(); return; } // a second click closes it
+  if (same && flyWin.isVisible()) { flyWin.hide(); return; } // a second click closes it
   // the click on the button already closed it (the panel lost focus a moment ago): don't open it again
-  if (flyWin && !flyWin.isDestroyed() && flyWin.panel === panel && Date.now() - flyHiddenAt < 350) return;
+  if (same && Date.now() - flyHiddenAt < 350) return;
+  clearThumbs();
   if (!flyWin || flyWin.isDestroyed()) {
     flyWin = new BrowserWindow({ ...bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
       alwaysOnTop: true, backgroundColor: '#00000000', title: 'Syndicates Panel', webPreferences: webPrefs });
@@ -644,12 +681,13 @@ function openFlyout(panel, anchorX) {
     // the click that opened it can blur it a moment later (the top bar takes focus): only a real click away closes it
     flyWin.on('blur', () => { if (Date.now() - flyShownAt < 300) return; flyWin?.hide(); flyHiddenAt = Date.now(); });
     flyWin.once('ready-to-show', () => win32.makeToolWindow(flyWin));
+    flyWin.on('hide', clearThumbs); // previews belong to the panel: gone with it
     flyWin.loadURL(ui('flyout.html'));
-    flyWin.panel = panel;
+    flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey;
     flyReveal(1500);
     return;
   }
-  flyWin.panel = panel;
+  flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey;
   flyWin.setBounds(bounds); flyWin.webContents.send('flyout', panel);
   flyReveal(400);
 }
@@ -665,6 +703,28 @@ function flyShow() {
   clearTimeout(flyPending); flyPending = null;
   if (!flyWin || flyWin.isDestroyed()) return;
   flyShownAt = Date.now(); flyWin.show(); flyWin.focus();
+}
+// live previews in the windows panel: DWM draws each window into the panel at the spots the page measured
+const thumbs = new Map(); // hwnd -> DWM thumbnail
+function clearThumbs() { for (const t of thumbs.values()) win32.thumbUnregister(t); thumbs.clear(); }
+function setThumbs(rects) {
+  if (!win32.isWin || !flyWin || flyWin.isDestroyed() || flyWin.panel !== 'windows' || !Array.isArray(rects)) { clearThumbs(); return []; }
+  const sf = screen.getDisplayMatching(flyWin.getBounds()).scaleFactor || 1;
+  const want = new Set(rects.map((r) => r.hwnd));
+  for (const [h, t] of thumbs) if (!want.has(h)) { win32.thumbUnregister(t); thumbs.delete(h); }
+  const shown = [];
+  for (const r of rects.slice(0, 8)) {
+    if (!windowsList.some((w) => w.hwnd === r.hwnd)) continue; // only windows the dock listed
+    let t = thumbs.get(r.hwnd);
+    if (!t) { t = win32.thumbRegister(flyWin, r.hwnd); if (!t) continue; thumbs.set(r.hwnd, t); }
+    const src = win32.thumbSize(t), box = { x: r.x * sf, y: r.y * sf, w: r.w * sf, h: r.h * sf };
+    // a minimized window has nothing worth showing (a sliver of title bar): the page's icon stays instead
+    if (!src || src.w < 80 || src.h < 60) { win32.thumbPlace(t, box, false); continue; }
+    const k = Math.min(box.w / src.w, box.h / src.h, 1), w = src.w * k, h = src.h * k; // fit, never blown up
+    win32.thumbPlace(t, { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h }, true);
+    shown.push(r.hwnd);
+  }
+  return shown;
 }
 const FLY_ACTIONS = {
   home: () => toggleHome(true), customize: openSettings, timer: openIslandTimer, gamer: () => setGamer(!gamer),
@@ -892,6 +952,9 @@ function wireIpc() {
     return shell.openExternal(pages[page]);
   });
   ipcMain.handle('windows', () => windowsList);
+  ipcMain.handle('window:close', (_e, hwnd) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.closeWindow(hwnd); setTimeout(() => pollWindows(true), 300); });
+  // middle-click on a dock icon: another window of that app (only apps that have a window open right now)
+  ipcMain.handle('window:new', async (_e, exe) => { if (!exe || !windowsList.some((w) => w.exe === exe)) throw new Error('unknown app'); win32.allowForeground(); await launchApp(exe); });
   ipcMain.handle('window:focus', (_e, hwnd, toggle = true) => { if (!windowsList.some((w) => w.hwnd === hwnd)) throw new Error('unknown window'); win32.focusWindow(hwnd, toggle !== false); setTimeout(() => pollWindows(true), 150); });
   ipcMain.handle('exe-icon', async (_e, exe) => {
     if (!windowsList.some((w) => w.exe === exe)) return '';
@@ -938,7 +1001,9 @@ function wireIpc() {
   });
   ipcMain.handle('ime:get', () => imeNow);
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
-  ipcMain.handle('flyout:open', (_e, panel, x) => openFlyout(panel, x));
+  ipcMain.handle('flyout:open', (_e, panel, x, data) => openFlyout(panel, x, data && { hwnds: (data.hwnds || []).map(Number).filter(Number.isFinite).slice(0, 8), name: String(data.name || '').slice(0, 80) }));
+  ipcMain.handle('flyout:data', () => flyWin?.data || null);
+  ipcMain.handle('thumbs', (_e, rects) => setThumbs((rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }))));
   // files dropped on an app in the dock: opened in that app (a Store app or one started through a launcher: each file
   // opens in its usual app instead)
   ipcMain.handle('dock:openWith', async (e, target, files) => {

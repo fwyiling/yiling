@@ -192,18 +192,20 @@ $('fPlus').onclick = () => { fMins = Math.min(240, fMins + 5); $('fMins').textCo
 $('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('close'); }; // runs in the island
 
 // ---------- which panel ----------
-const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots'];
+const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots', 'windows'];
 let lastPanel = '', lastShown = 0;
 function showPanel(panel) {
   if (panel === lastPanel && Date.now() - lastShown < 300) return; // the same request twice (message + ask): draw once
   lastPanel = panel; lastShown = Date.now();
   for (const p of PANELS) $(p).hidden = p !== panel;
+  if (panel !== 'windows') sd.thumbs([]).catch(() => {});
   if (panel === 'menu') renderMenu();
   else if (panel === 'control') { renderSys(); renderMedia(); renderBattery(); }
   else if (panel === 'wifi') { openNet = ''; renderWifi(); }
   else if (panel === 'battery') renderBatteryPanel();
   else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
   else if (panel === 'shots') renderShots();
+  else if (panel === 'windows') renderWindows();
 }
 // drawn: the window may appear (straight away; a hidden window gets no animation frames to wait for)
 const drawAndReady = (p) => { showPanel(p); setTimeout(() => sd.flyoutReady(), 0); };
@@ -234,3 +236,42 @@ async function renderShots(st) {
 sd.onShots?.((st) => { shotsState = st; if (!$('shots').hidden) renderShots(st); });
 $('shotFolder').onclick = () => sd.shotsFolder();
 $('shotTake').onclick = () => sd.takeShot();
+
+// ---------- a dock app's windows ----------
+const X = '<svg viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+let thumbT = 0;
+async function renderWindows() {
+  const [d, all] = await Promise.all([sd.flyoutData().catch(() => null), sd.windows().catch(() => [])]);
+  const list = (d?.hwnds || []).map((h) => all.find((w) => w.hwnd === h)).filter(Boolean);
+  if (!list.length) { sd.flyoutAction('close'); return; }
+  $('winsTitle').textContent = `${d.name || 'Windows'} · ${list.length} windows`;
+  $('winGrid').style.setProperty('--cols', Math.min(4, list.length));
+  const icon = await sd.exeIcon(list[0].exe).catch(() => '');
+  $('winGrid').replaceChildren(...list.map((w) => {
+    const li = document.createElement('li');
+    li.className = w.active ? 'active' : '';
+    li.innerHTML = `<div class="wt">${icon ? `<img src="${icon}" alt="">` : ''}<span></span><button class="x" title="Close">${X}</button></div><div class="tb" data-hwnd="${w.hwnd}">${icon ? `<img src="${icon}" alt="">` : ''}${w.minimized ? '<em>Minimized</em>' : ''}</div>`;
+    li.querySelector('span').textContent = w.title;
+    li.title = w.title;
+    const close = () => {
+      sd.closeWindow(w.hwnd).catch(() => {});
+      li.remove();
+      const left = $('winGrid').children.length;
+      if (!left) { sd.flyoutAction('close'); return; }
+      $('winsTitle').textContent = `${d.name || 'Windows'} · ${left} window${left > 1 ? 's' : ''}`;
+      placeThumbs();
+    };
+    li.onclick = () => { sd.focusWindow(w.hwnd, false).catch(() => {}); sd.flyoutAction('close'); };
+    li.onauxclick = (e) => { if (e.button === 1) close(); };
+    li.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
+    li.querySelector('.x').onclick = (e) => { e.stopPropagation(); close(); };
+    return li;
+  }));
+  clearTimeout(thumbT); thumbT = setTimeout(placeThumbs, 220); // once the panel has risen into place (DWM previews don't follow animations)
+}
+async function placeThumbs() {
+  if ($('windows').hidden) return;
+  const boxes = [...document.querySelectorAll('#winGrid .tb')];
+  const shown = await sd.thumbs(boxes.map((el) => { const r = el.getBoundingClientRect(); return { hwnd: +el.dataset.hwnd, x: r.left + 3, y: r.top + 3, w: r.width - 6, h: r.height - 6 }; })).catch(() => []);
+  for (const el of boxes) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
+}

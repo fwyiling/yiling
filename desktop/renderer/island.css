@@ -48,6 +48,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .ctl button { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; } .ctl button:hover { background: rgba(255, 255, 255, .1); }
 .ctl svg { width: 17px; height: 17px; } .ctl .pp svg { fill: currentColor; stroke-width: 1.3; }
 .ctl .pause, .playing .ctl .play { display: none; } .playing .ctl .pause { display: block; }
+/* where the song is: drag to jump (when the player allows it) */
+.prog { grid-column: 1 / -1; display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; gap: 8px; margin-top: -2px; font-size: 11px; color: var(--m); font-variant-numeric: tabular-nums; }
+.prog .p-dur { text-align: right; }
+.seek { -webkit-appearance: none; appearance: none; height: 14px; margin: 0; background: transparent; cursor: pointer; }
+.seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--t) var(--v, 0%), rgba(255, 255, 255, .16) var(--v, 0%)); transition: height .12s; }
+.seek:hover::-webkit-slider-runnable-track { height: 6px; }
+.seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--t); opacity: 0; transition: opacity .12s; }
+.seek:hover::-webkit-slider-thumb { opacity: 1; margin-top: -3px; }
+.seek:disabled { cursor: default; } .seek:disabled::-webkit-slider-thumb { opacity: 0 !important; }
 .media:not([hidden]) + .timer { padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .08); }
 .row { display: flex; align-items: center; gap: 8px; }
 .head { color: var(--m); font-size: 12px; } .head b { color: var(--t); font-size: 13px; } .ico { width: 16px; height: 16px; }

@@ -59,13 +59,44 @@ function renderMedia() {
   const art = /^data:image\//.test(np.art || '') ? `url("${np.art}")` : '';
   m.querySelector('.big-art').style.backgroundImage = art; m.querySelector('.big-art').classList.toggle('has', !!art);
   document.querySelector('.mini-art').style.backgroundImage = art;
+  progLoop();
 }
-document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.mediaControl(b.dataset.m).catch(() => {})); // the real state comes back from Windows (no guessing: guesses went out of sync)
+document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.mediaControl(b.dataset.m).catch(() => {}));
+// the song's position: Windows says when the song was at 0:00 (while playing) or where it stopped (paused), and the
+// seconds are counted here, only while the island is open; drag the bar to jump
+const prog = document.querySelector('.prog'), seekEl = prog.querySelector('.seek');
+const fmtT = (sec) => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), x = String(sec % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+const songPos = () => Math.min(np.dur || 0, np.playing && np.t0 ? (Date.now() - np.t0) / 1000 : np.pos || 0);
+let seeking = false, progT = 0;
+function renderProg() {
+  const ok = !!np.on && np.dur > 0;
+  prog.hidden = !ok;
+  if (!ok) return;
+  seekEl.max = String(Math.round(np.dur)); seekEl.disabled = !np.canSeek;
+  prog.querySelector('.p-dur').textContent = fmtT(np.dur);
+  if (seeking) return;
+  const p = songPos();
+  seekEl.value = String(Math.round(p)); seekEl.style.setProperty('--v', `${(p / np.dur) * 100}%`);
+  prog.querySelector('.p-now').textContent = fmtT(p);
+}
+function progLoop() {
+  const run = open && !!np.playing && np.dur > 0;
+  if (run && !progT) progT = setInterval(renderProg, 500); else if (!run && progT) { clearInterval(progT); progT = 0; }
+  renderProg();
+}
+seekEl.addEventListener('input', () => { seeking = true; seekEl.style.setProperty('--v', `${(seekEl.value / np.dur) * 100}%`); prog.querySelector('.p-now').textContent = fmtT(+seekEl.value); });
+seekEl.addEventListener('change', () => {
+  const to = +seekEl.value;
+  sd.mediaControl(`seek ${to}`).catch(() => {});
+  if (np.playing) np.t0 = Date.now() - to * 1000; else np.pos = to; // straight away; Windows confirms a moment later
+  seeking = false; renderProg();
+}); // the real state comes back from Windows (no guessing: guesses went out of sync)
 
 // ---------- shape ----------
 // the window grows before the island opens and shrinks after it has closed (it's just the pill most of the time)
 let shrinkT, bigWin = false;
 function shape() {
+  progLoop();
   const wantBig = open || alerting;
   clearTimeout(shrinkT);
   if (wantBig && !bigWin) { bigWin = true; sd.islandSize(true); setTimeout(applyShape, 40); return; } // let the window grow first

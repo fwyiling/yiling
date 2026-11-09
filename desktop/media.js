@@ -64,6 +64,7 @@ while ($true) {
           if ($c -eq 'toggle') { $op = $s.TryTogglePlayPauseAsync() }
           elseif ($c -eq 'next') { $op = $s.TrySkipNextAsync() }
           elseif ($c -eq 'prev') { $op = $s.TrySkipPreviousAsync() }
+          elseif ($c -match '^seek (\\d+(\\.\\d+)?)$') { $op = $s.TryChangePlaybackPositionAsync([long]([double]$Matches[1] * 10000000)) } # 100 ns units
         }
         $cmdResult = if ($op) { "$($c):$(Await $op ([bool]))" } else { "$($c):no-session" }
       } catch { $cmdResult = "$($c):$($_.Exception.Message)" }
@@ -80,7 +81,13 @@ while ($true) {
         $key = "$($p.Title)|$($p.Artist)"
         if ($key -ne $lastKey) { $lastKey = $key; $art = ''; $artTries = 0; $artError = '' }
         if (-not $art -and $artTries -lt 12) { $artTries++; $art = Read-Art $p }
-        $o = [ordered]@{ on = $true; title = $p.Title; artist = $p.Artist; app = $s.SourceAppUserModelId; playing = ($s.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing'); art = $art; artError = $artError; cmd = $cmdResult }
+        $pi = $s.GetPlaybackInfo(); $playing = ($pi.PlaybackStatus.ToString() -eq 'Playing')
+        # where the song is: while playing, the moment it was at 0:00 (steady, so this line only changes on a seek
+        # or a new song, and the island counts the seconds itself); while paused, the position
+        $tl = $s.GetTimelineProperties(); $dur = [math]::Round(($tl.EndTime - $tl.StartTime).TotalSeconds, 1); $pos = ($tl.Position - $tl.StartTime).TotalSeconds
+        $t0 = 0; if ($playing -and $dur -gt 0) { $t0 = [long]([math]::Round(($tl.LastUpdatedTime.ToUnixTimeMilliseconds() - $pos * 1000) / 1000) * 1000) }
+        $o = [ordered]@{ on = $true; title = $p.Title; artist = $p.Artist; app = $s.SourceAppUserModelId; playing = $playing; art = $art; artError = $artError; cmd = $cmdResult
+          dur = $dur; pos = $(if ($playing) { 0 } else { [math]::Round($pos) }); t0 = $t0; canSeek = [bool]$pi.Controls.IsPlaybackPositionEnabled }
       }
     } catch { $o = [ordered]@{ on = $false; error = $_.Exception.Message } }
     # non-ASCII (Chinese, Japanese, emoji…) as \\uXXXX escapes: the text survives whatever the console code page is
@@ -108,7 +115,8 @@ function start() {
     for (let i; (i = buf.indexOf('\n')) >= 0;) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line.startsWith('{')) continue;
-      try { const j = JSON.parse(line); restarts = 0; emit({ on: !!j.on, title: j.title || '', artist: j.artist || '', app: j.app || '', playing: !!j.playing, art: j.art || '', artError: j.artError || '', cmd: j.cmd || '', error: j.error || '' }); } catch {}
+      try { const j = JSON.parse(line); restarts = 0; emit({ on: !!j.on, title: j.title || '', artist: j.artist || '', app: j.app || '', playing: !!j.playing, art: j.art || '', artError: j.artError || '', cmd: j.cmd || '', error: j.error || '',
+        dur: +j.dur || 0, pos: +j.pos || 0, t0: +j.t0 || 0, canSeek: !!j.canSeek }); } catch {}
     }
   });
   let lastErr = '';
@@ -134,6 +142,8 @@ const KEYS = { toggle: 0xB3, next: 0xB0, prev: 0xB1 };
 // Through Windows' media session (works with players that ignore media keys, e.g. NetEase Cloud Music);
 // the media keys are only the fallback when the reader isn't running.
 function control(cmd) {
+  const seek = /^seek (\d{1,6}(\.\d+)?)$/.exec(cmd); // jump to a time in the song (seconds); needs the reader
+  if (seek) { if (child && child.stdin.writable) { child.stdin.write(`seek ${seek[1]}\n`); setTimeout(() => child?.stdin.writable && child.stdin.write('poll\n'), 350); } return; }
   if (!KEYS[cmd]) throw new Error('unknown media command');
   if (child && child.stdin.writable) { child.stdin.write(cmd + '\n'); setTimeout(() => child?.stdin.writable && child.stdin.write('poll\n'), 450); }
   else win32.mediaKey(KEYS[cmd]);

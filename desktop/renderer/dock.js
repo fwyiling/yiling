@@ -64,11 +64,19 @@ function iconFor(key, loader, name) {
   icons.get(key).then((url) => { if (url) { const img = new Image(); img.src = url; img.alt = ''; ph.replaceWith(img); } });
   return ph;
 }
-// click: bring forward; already in front: minimize; several windows: cycle through them
-function focusGroup(list) {
-  const i = list.findIndex((w) => w.active);
-  const target = i >= 0 && list.length > 1 ? list[(i + 1) % list.length] : list[i >= 0 ? i : 0];
-  sd.focusWindow(target.hwnd);
+// click: bring forward; already in front: minimize; several windows: live previews of them all to pick from
+function focusGroup(list, el, name) {
+  if (list.length > 1 && el) { const r = el.getBoundingClientRect(); hideTip(); sd.flyout('windows', Math.round(r.left + r.width / 2), { hwnds: list.map((w) => w.hwnd), name }); return; }
+  sd.focusWindow((list.find((w) => w.active) || list[0]).hwnd);
+}
+// an app asking for you (a message, a finished download) flashes in the taskbar; here its icon bounces, then glows
+const flagged = new Set();
+function markAttention(b, list, key) {
+  const on = list.some((w) => w.attention);
+  b.classList.toggle('attention', on);
+  if (on && !flagged.has(key)) { flagged.add(key); b.classList.add('nudge'); setTimeout(() => b.classList.remove('nudge'), 2700); }
+  if (!on) flagged.delete(key);
+  return on;
 }
 async function pinTarget(p) { if (!targets.has(p)) targets.set(p, sd.pinTarget(p).catch(() => p)); return targets.get(p); }
 
@@ -108,13 +116,16 @@ async function render() {
     b.append(iconFor(`pin:${p.path}|${p.icon || ""}`, () => sd.appIcon(p.path), p.name)); // a newly picked icon is a new key, so it loads instead of the cached one
     if (open.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${open.length}</span>`);
     if (open.length) launching.delete(p.path); else if (launching.has(p.path)) b.classList.add('launching'); // its window is up: stop bouncing
+    const wants = markAttention(b, open, `pin:${p.path}`);
+    b.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); sd.launch(p.path).catch(() => {}); } }; // middle-click: another window
+    b.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); }; // no auto-scroll cursor
     b.onclick = () => {
-      if (open.length) return focusGroup(open);
+      if (open.length) return focusGroup(wants ? open.filter((w) => w.attention) : open, b, p.name); // the window that asked comes first
       // like a Mac: the icon bounces until the app's window shows (at most a few seconds)
       launching.set(p.path, setTimeout(() => { launching.delete(p.path); render(); }, 4000)); b.classList.add('launching');
       sd.launch(p.path).catch((e) => { clearTimeout(launching.get(p.path)); launching.delete(p.path); b.classList.remove('launching'); flashTip(b, `Couldn't open ${p.name}: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`); });
     };
-    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Move left', () => movePin(i, -1)], ['Move right', () => movePin(i, 1)], ['Unpin', () => sd.unpin(p.path)]]); };
+    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [...(open.length > 1 ? [['Show all windows', () => focusGroup(open, b, p.name)]] : []), ...(open.length ? [['New window', () => sd.launch(p.path).catch(() => {})]] : []), ['Move left', () => movePin(i, -1)], ['Move right', () => movePin(i, 1)], ['Unpin', () => sd.unpin(p.path)], ...(open.length ? [[open.length > 1 ? `Close ${open.length} windows` : 'Close window', () => open.forEach((x) => sd.closeWindow(x.hwnd).catch(() => {}))]] : [])]); };
     // drag pinned icons to reorder them
     b.draggable = true;
     b.ondragstart = (e) => { e.dataTransfer.setData('text/x-pin', String(i)); e.dataTransfer.effectAllowed = 'move'; hideTip(); };
@@ -122,7 +133,7 @@ async function render() {
     b.ondragleave = () => b.classList.remove('dropbefore');
     b.ondrop = (e) => { if (!e.dataTransfer.types.includes('text/x-pin')) return; e.preventDefault(); b.classList.remove('dropbefore'); const from = +e.dataTransfer.getData('text/x-pin'); if (from !== i) reorderPins(from, i); };
     springLoad(b, open, p.path, p.name);
-    tip(b, open.length ? `${p.name} · ${open[0].title}` : p.name);
+    tip(b, open.length > 1 ? `${p.name} · ${open.length} windows` : open.length ? `${p.name} · ${open[0].title}` : p.name);
     return b;
   }));
   const rest = [...byExe.entries()].filter(([k]) => !used.has(k));
@@ -132,8 +143,11 @@ async function render() {
     b.className = 'item running' + (list.some((x) => x.active) ? ' active' : '');
     b.append(iconFor(`exe:${k}`, () => sd.exeIcon(w.exe), name));
     if (list.length > 1) b.insertAdjacentHTML('beforeend', `<span class="count">${list.length}</span>`);
-    b.onclick = () => focusGroup(list);
-    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Pin to dock', () => sd.dockPin(w.exe)]]); };
+    const wants = markAttention(b, list, `exe:${k}`);
+    b.onclick = () => focusGroup(wants ? list.filter((x) => x.attention) : list, b, name);
+    b.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); sd.newWindow(w.exe).catch(() => {}); } };
+    b.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
+    b.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, [['Pin to dock', () => sd.dockPin(w.exe)], ...(list.length > 1 ? [['Show all windows', () => focusGroup(list, b, name)]] : []), [list.length > 1 ? `Close ${list.length} windows` : 'Close window', () => list.forEach((x) => sd.closeWindow(x.hwnd).catch(() => {}))]]); };
     springLoad(b, list, w.exe, name);
     tip(b, list.length > 1 ? `${name} · ${list.length} windows` : w.title);
     return b;
