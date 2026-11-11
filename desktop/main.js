@@ -35,6 +35,8 @@ if (!app.requestSingleInstanceLock({ appPath: app.getAppPath() })) {
   }
   if (!ok) { app.quit(); process.exit(0); }
 }
+const crashguard = require('./crashguard'); // errors logged instead of fatal, crashed windows reloaded, crash.log
+crashguard.init();
 // keep the last warnings and errors for "Copy diagnostics"
 const recentLog = [];
 for (const level of ['warn', 'error']) {
@@ -600,7 +602,7 @@ function startDeskWatch() {
       else if (m.type === 'ime') onIme(m.m);
       else if (m.type === 'fail') { console.warn('[deskwatch]', m.error); deskWorker?.terminate(); }
     });
-    deskWorker.on('error', (e) => console.warn('[deskwatch]', e.message));
+    deskWorker.on('error', (e) => { console.warn('[deskwatch]', e.message); crashguard.log('deskwatch', e.stack || e.message); });
     deskWorker.on('exit', () => { deskWorker = null; deskWorkerReady = false; }); // back to watching here
   } catch (e) { console.warn('[deskwatch] worker unavailable:', e.message); deskWorker = null; }
 }
@@ -1154,7 +1156,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), update: updater.status(), stillLog, windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), update: updater.status(), stillLog, windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, crashes: crashguard.summary(), taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 

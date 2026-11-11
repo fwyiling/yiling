@@ -12,6 +12,9 @@ let u = null, setupError = null;
 
 // Builds the bindings once. If anything fails it stays off (and says why) instead of retrying:
 // a retry would re-register the same koffi types and throw "Duplicate type name".
+// a JavaScript error inside a callback Windows calls (EnumWindows) must never get back into Windows: it could take the
+// whole app down. Such a window is skipped and the walk goes on.
+const safeEnum = (fn) => (hwnd, l) => { try { return fn(hwnd, l); } catch { return true; } };
 function load() {
   if (u || !isWin || setupError) return u;
   try { u = bind(); } catch (e) { setupError = e; console.error('[win32] setup failed:', e.message); }
@@ -182,11 +185,11 @@ function findLayer() {
     const worker = u.FindWindowExW(progman, 0, 'WorkerW', null);
     if (!isNull(defView) && !isNull(worker)) return { raised: true, parent: progman, after: defView, worker };
     let classic = null;
-    const cb = u.koffi.register((hwnd) => {
+    const cb = u.koffi.register(safeEnum((hwnd) => {
       const view = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null);
       if (!isNull(view)) { const w = u.FindWindowExW(0, hwnd, 'WorkerW', null); if (!isNull(w)) classic = w; }
       return true;
-    }, u.koffi.pointer(u.EnumProc));
+    }), u.koffi.pointer(u.EnumProc));
     try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
     return classic ? { raised: false, parent: classic, after: null } : null;
   };
@@ -296,7 +299,7 @@ function setDesktopIcons(show) {
   const progman = u.FindWindowW('Progman', null);
   let view = u.FindWindowExW(progman, 0, 'SHELLDLL_DefView', null);
   if (isNull(view)) { // classic layout: the icons live in a WorkerW
-    const cb = u.koffi.register((hwnd) => { const v = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null); if (!isNull(v)) view = v; return true; }, u.koffi.pointer(u.EnumProc));
+    const cb = u.koffi.register(safeEnum((hwnd) => { const v = u.FindWindowExW(hwnd, 0, 'SHELLDLL_DefView', null); if (!isNull(v)) view = v; return true; }), u.koffi.pointer(u.EnumProc));
     try { u.EnumWindows(cb, 0); } finally { u.koffi.unregister(cb); }
   }
   if (isNull(view)) return false;
@@ -622,7 +625,7 @@ let popCb = null, popOut = [], popScreen = null;
 function hideSwitchLabel(screenRect) {
   if (!load()) return [];
   popOut = []; popScreen = screenRect;
-  popCb ||= u.koffi.register((hwnd) => {
+  popCb ||= u.koffi.register(safeEnum((hwnd) => {
     if (!u.IsWindowVisible(hwnd)) return true;
     const buf = new Uint16Array(128), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(hwnd, buf, 128)));
     if (KEEP_SHELL.has(cls)) return true;
@@ -635,7 +638,7 @@ function hideSwitchLabel(screenRect) {
     u.ShowWindow(hwnd, 0); // SW_HIDE
     popOut.push({ cls, rect: [r.left, r.top, w, h] });
     return true;
-  }, u.koffi.pointer(u.EnumProc));
+  }), u.koffi.pointer(u.EnumProc));
   u.EnumWindows(popCb, 0);
   return popOut;
 }
@@ -750,7 +753,7 @@ let enumCb = null, enumOut = [], enumFg = 0, enumOwn = [], enumAll = false;
 function listWindows(ownPids = [], allDesktops = false) {
   if (!load()) return [];
   enumOut = []; enumFg = Number(u.GetForegroundWindow()); enumOwn = ownPids; enumAll = allDesktops;
-  enumCb ||= u.koffi.register((hwnd) => {
+  enumCb ||= u.koffi.register(safeEnum((hwnd) => {
     if (!u.IsWindowVisible(hwnd) || !isNull(u.GetWindow(hwnd, 4))) return true; // GW_OWNER
     const ex = Number(u.GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
     if ((ex & 0x80) && !(ex & 0x40000)) return true; // WS_EX_TOOLWINDOW without WS_EX_APPWINDOW
@@ -765,7 +768,7 @@ function listWindows(ownPids = [], allDesktops = false) {
     if (enumOwn.includes(pid[0])) return true;
     enumOut.push({ hwnd: Number(hwnd), title: String.fromCharCode(...tb.slice(0, n)), exe: exeOf(pid[0]), active: Number(hwnd) === enumFg, minimized: !!u.IsIconic(hwnd), elsewhere: !!cloaked[0] });
     return true;
-  }, u.koffi.pointer(u.EnumProc));
+  }), u.koffi.pointer(u.EnumProc));
   u.EnumWindows(enumCb, 0);
   return enumOut;
 }
