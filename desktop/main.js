@@ -334,7 +334,27 @@ function hookShell() {
 // Start, search and flyouts sit on the taskbar: left alone. With an app in front, one frame later, in case Start
 // is just taking the front (pressing Win shows the taskbar a moment before Start appears).
 const tbHookStats = { heard: 0, hidden: 0 };
-function onTaskbarShown(hwnd) {
+// Windows' Task View (three-finger swipe up, Win+Tab) gives way to the desktops overview here: closed as it opens,
+// ours opened instead. Alt+Tab and Snap use the same kind of window: Task View is told apart by its title (in the
+// languages Windows ships most) and by Alt not being held.
+const TASK_VIEW_TITLES = new Set(['Task View', '任务视图', '工作檢視', 'タスク ビュー', 'Taskansicht', 'Affichage des tâches', 'Vista de tareas', 'Visualizzazione attività', '작업 보기', 'Visão de Tarefas', 'Visualização de Tarefas', 'Представление задач', 'Taakweergave', 'Widok zadań', 'Görev Görünümü']);
+const taskViewOn = () => win32.isWin && store.get().general.ownTaskView !== false;
+let lastTaskView = { title: '', taken: 0 };
+function onTaskView(hwnd) {
+  if (!taskViewOn() || gamer || app.isQuitting || win32.keyDown(0x12)) return; // Alt held: that's Alt+Tab
+  const title = win32.windowTitle(hwnd).trim();
+  lastTaskView.title = title;
+  if (!TASK_VIEW_TITLES.has(title)) return;
+  if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) return;
+  lastTaskView.taken++;
+  let tries = 0;
+  (function closeIt() { // Esc once Task View has the keyboard (it takes it a moment after appearing)
+    if (win32.isForeground(hwnd) || ++tries > 12) { win32.pressKeys([0x1B]); setTimeout(() => openOverview(), 80); }
+    else setTimeout(closeIt, 25);
+  })();
+}
+function onTaskbarShown(hwnd, what = 'taskbar') {
+  if (what === 'taskview') { onTaskView(hwnd); return; }
   tbHookStats.heard++;
   if (!dockWin || dockWin.isDestroyed() || gamer || app.isQuitting) return;
   tbHookStats.hidden++;
@@ -346,6 +366,7 @@ let tbWatchTimer = null;
 function syncTaskbarWatch(on) {
   clearInterval(tbWatchTimer);
   if (!win32.isWin) return;
+  on = !app.isQuitting && (on || taskViewOn()); // the dock's taskbar hiding, or Task View giving way to the overview
   if (!on) { win32.unwatchTaskbar(); return; }
   win32.watchTaskbar(onTaskbarShown);
   tbWatchTimer = setInterval(() => win32.watchTaskbar(onTaskbarShown), 10000); // Explorer restarted: listen to the new one
@@ -873,17 +894,18 @@ function setThumbs(host, rects, allowed, max = 8) {
   if (!thumbs.has(host)) thumbs.set(host, new Map());
   const mine = thumbs.get(host);
   const sf = screen.getDisplayMatching(host.getBounds()).scaleFactor || 1;
-  const want = new Set(rects.map((r) => r.hwnd));
+  const keyOf = (r) => (r.key ? `${r.hwnd}:${r.key}` : r.hwnd); // one window can be shown twice (big, and small in its desktop)
+  const want = new Set(rects.map(keyOf));
   for (const [h, t] of mine) if (!want.has(h)) { win32.thumbUnregister(t); mine.delete(h); }
   const shown = [];
   for (const r of rects.slice(0, max)) {
     if (!allowed.some((w) => w.hwnd === r.hwnd)) continue; // only windows we listed ourselves
-    let t = mine.get(r.hwnd);
-    if (!t) { t = win32.thumbRegister(host, r.hwnd); if (!t) continue; mine.set(r.hwnd, t); }
+    let t = mine.get(keyOf(r));
+    if (!t) { t = win32.thumbRegister(host, r.hwnd); if (!t) continue; mine.set(keyOf(r), t); }
     const src = win32.thumbSize(t), box = { x: r.x * sf, y: r.y * sf, w: r.w * sf, h: r.h * sf };
     // a minimized window has nothing worth showing (a sliver of title bar): the page's icon stays instead
     if (!src || src.w < 80 || src.h < 60) { win32.thumbPlace(t, box, false); continue; }
-    const k = Math.min(box.w / src.w, box.h / src.h, 1), w = src.w * k, h = src.h * k; // fit, never blown up
+    const k = r.fill ? Math.min(box.w / src.w, box.h / src.h) : Math.min(box.w / src.w, box.h / src.h, 1), w = src.w * k, h = src.h * k; // fit, never blown up (small ones: exactly their box)
     win32.thumbPlace(t, { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h }, true);
     shown.push(r.hwnd);
   }
@@ -912,7 +934,10 @@ async function overviewData() {
   return {
     current: vd.current,
     desks: ids.map((id, i) => { const w = wallFor(st.wallpaper, id); return { id, name: names[id] || vd.names[i] || `Desktop ${i + 1}`, wall: { scene: w.scene, has: !!(w.scene === 'web' ? w.url : w.file), stamp: w.fileStamp || 0 } }; }),
-    windows: wins.map((w) => ({ hwnd: w.hwnd, title: w.title, exe: w.exe, desk: w.desk, active: w.active, minimized: w.minimized })),
+    // where each window sits, as fractions of the screen: drawn small inside its desktop's picture
+    windows: wins.map((w) => { const r = !w.minimized && win32.isWin ? win32.hwndRect(w.hwnd) : null, sb = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+      const at = r && sb.width ? { x: (r.x - sb.x) / sb.width, y: (r.y - sb.y) / sb.height, w: r.w / sb.width, h: r.h / sb.height } : null;
+      return { hwnd: w.hwnd, title: w.title, exe: w.exe, desk: w.desk, active: w.active, minimized: w.minimized, at }; }),
   };
 }
 async function refreshOverview() { if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) ovWin.webContents.send('overview', await overviewData()); }
@@ -978,13 +1003,36 @@ function stillKey(desk) {
     st.themes?.active, themeStamp, lastWeatherJson, mediaKey(), now.toDateString(), now.getHours(), st.dock?.on]));
 }
 function loadApplied() { // across restarts of the app, for as long as Explorer keeps running
-  const saved = store.get().wallpaper.stillApplied, pid = win32.explorerPid();
+  const saved = store.get().wallpaper.stillApplied2, pid = win32.explorerPid();
   if (saved && pid && saved.explorer === pid) for (const [k, v] of Object.entries(saved.desks || {})) stillApplied.set(k, v);
 }
-const saveApplied = () => store.set({ wallpaper: { stillApplied: { explorer: win32.explorerPid(), desks: Object.fromEntries(stillApplied) } } });
+const saveApplied = () => store.set({ wallpaper: { stillApplied2: { explorer: win32.explorerPid(), desks: Object.fromEntries(stillApplied) } } });
+// What's on screen is the surest picture of it: the wallpaper window itself, captured (the clock and CPU hidden for that
+// frame). Offscreen rendering is the fallback (another desktop's wallpaper, or the window not drawn yet).
+async function captureLive(want, px) {
+  const w = wallpapers.get(screen.getPrimaryDisplay().id);
+  if (!w || w.isDestroyed() || paused) return false;
+  try {
+    const ready = await w.webContents.executeJavaScript(`(async () => {
+      const wt = document.querySelector('.w-weather'), pic = document.querySelector('.wp-media .wp-layer.in, .wp-media .wp-empty');
+      if (!pic || (wt && !wt.hidden && !wt.dataset.done)) return false;
+      document.documentElement.classList.add('still-cap');
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true; })()`);
+    if (!ready) return false;
+    const img = await Promise.race([w.webContents.capturePage(), new Promise((r) => setTimeout(() => r(null), 2500))]);
+    w.webContents.executeJavaScript("document.documentElement.classList.remove('still-cap')").catch(() => {});
+    if (!img || img.isEmpty()) return false;
+    const sz = img.getSize();
+    fs.mkdirSync(STILL_DIR(), { recursive: true });
+    fs.writeFileSync(want, (sz.width !== px.width || sz.height !== px.height ? img.resize({ ...px, quality: 'best' }) : img).toJPEG(92));
+    return true;
+  } catch (e) { console.warn('[still] capture', e.message); return false; }
+}
 async function renderStill(desk, key) {
   const d = screen.getPrimaryDisplay(), want = path.join(STILL_DIR(), `still-${key}.jpg`);
   if (fs.existsSync(want)) return want;
+  if (desk === deskId && await captureLive(want, { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) })) return want;
   const shot = await lockscreen.snapshot(STILL_DIR(), ui('wallpaper.html', `?snapshot=1&still=1&desk=${encodeURIComponent(desk)}`), webPrefs.preload);
   // exactly the screen's pixels (Windows draws it 1:1 with "fill"), whatever size the snapshot came out
   const img = nativeImage.createFromPath(shot), px = { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
@@ -999,11 +1047,16 @@ function pruneStills() {
   for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true });
 }
 /** Put a picture on desktop id (Windows' background there). The one showing: as Windows sets backgrounds; others: through the shell. */
+// The desktop showing gets it both ways: as Windows sets backgrounds (the general one, shown at sign-in, and the fit)
+// and as that desktop's own (a desktop with its own background ignores the general one: it kept Windows' default
+// picture, seen on every slide away from it). Other desktops: their own.
 async function setDeskBackground(id, i, file, style, cur) {
-  if (id === cur) return win32.setWindowsWallpaper(file, style);
+  let ok = id === cur ? win32.setWindowsWallpaper(file, style) : false;
   if (!vdesk.status().ready) vdesk.start();
-  return !!(await vdesk.wallpaper(i, file));
+  if (vdesk.status().ready && v11()) ok = !!(await vdesk.wallpaper(i, file)) || (id === cur && ok && !win32.regString(DESK_KEY(id), 'Wallpaper'));
+  return ok;
 }
+const v11 = () => vdesk.supported();
 function syncWindowsWallpaper(delay = 1500) {
   clearTimeout(stillT);
   stillT = setTimeout(async function run() {
@@ -1101,6 +1154,7 @@ function applySettings(patch) {
   }
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.home?.winKey !== undefined) syncWinKey();
+  if (patch.general?.ownTaskView !== undefined) syncTaskbarWatch(!!dockWin);
   if (patch.general?.startWithWindows !== undefined) { setAutostart(next.general.startWithWindows); if (!next.general.autostartChosen) store.set({ general: { autostartChosen: true } }); }
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
@@ -1112,7 +1166,7 @@ function applySettings(patch) {
     if (next.general.accentFromWallpaper) { store.set({ general: { accentManual: before.accent } }); syncWallAccent(); }
     else if (next.general.accentManual) { const back = next.general.accentManual; store.set({ general: { accentManual: '' } }); setTimeout(() => applySettings({ accent: back }), 0); }
   }
-  if (patch.wallpaper !== undefined) { syncWallAccent(); if (Object.keys(patch.wallpaper).some((k) => !['prevWindows', 'prevStyle', 'stillApplied'].includes(k))) syncWindowsWallpaper(); }
+  if (patch.wallpaper !== undefined) { syncWallAccent(); if (Object.keys(patch.wallpaper).some((k) => !['prevWindows', 'prevStyle', 'stillApplied', 'stillApplied2'].includes(k))) syncWindowsWallpaper(); }
   if (patch.widgets || patch.home?.todos || patch.home?.timetable || patch.name !== undefined || patch.accent !== undefined || patch.dock?.on !== undefined) syncWindowsWallpaper(3000); // the still shows the widgets
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
@@ -1130,7 +1184,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), taskView: { on: taskViewOn(), ...lastTaskView }, windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -1377,9 +1431,9 @@ function wireIpc() {
     : panel === 'tray' ? { skip: Math.max(0, data.skip | 0) } : null));
   ipcMain.handle('flyout:data', () => flyWin?.data || null);
   ipcMain.handle('thumbs', (e, rects) => {
-    const host = BrowserWindow.fromWebContents(e.sender), list = (rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }));
+    const host = BrowserWindow.fromWebContents(e.sender), list = (rects || []).map((r) => ({ hwnd: Number(r.hwnd), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0, key: /^[a-z0-9]{1,8}$/.test(r.key || '') ? r.key : '', fill: !!r.fill }));
     if (host && host === flyWin && flyWin.panel === 'windows') return setThumbs(flyWin, list, windowsList);
-    if (host && host === ovWin) return setThumbs(ovWin, list, ovWindows, 24);
+    if (host && host === ovWin) return setThumbs(ovWin, list, ovWindows, 60); // the big previews and the small ones in each desktop
     if (host) clearThumbs(host);
     return [];
   });
@@ -1595,6 +1649,7 @@ app.whenReady().then(() => {
   setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on
   themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   syncWinKey();
+  syncTaskbarWatch(false); // Task View -> the desktops overview (the dock adds its taskbar hiding once it's up)
   // it keeps running across restarts by default (like Lively), started from start.bat too: once, for everyone who
   // hasn't chosen yet; switch it off in the tray menu or Customize > General and it stays off
   if (!store.get().general.autostartChosen && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true, autostartChosen: true } });

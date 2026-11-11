@@ -25,10 +25,22 @@ function renderDesks() {
     el.querySelector('.shot').prepend(wallNode(d));
     if (data.desks.length < 2) el.querySelector('.x').remove();
     const name = el.querySelector('.name'); name.textContent = d.name; name.title = 'Double-click to rename';
-    const apps = data.windows.filter((w) => w.desk === d.id), seen = new Set(), box = el.querySelector('.apps');
-    for (const w of apps) { if (seen.has(w.exe) || seen.size >= 6) continue; seen.add(w.exe); const img = new Image(); img.alt = ''; iconOf(w.exe).then((u) => { if (u) img.src = u; else img.remove(); }); box.append(img); }
-    if (apps.length > 6) box.insertAdjacentHTML('beforeend', `<em>+${apps.length - 6}</em>`);
-    el.querySelector('.shot').onclick = () => sd.ov('desk', i);
+    // its windows, small, where they really are (live pictures where Windows gives them; the app's icon meanwhile);
+    // minimized ones as icons along the bottom
+    const apps = data.windows.filter((w) => w.desk === d.id), shot = el.querySelector('.shot'), box = el.querySelector('.apps');
+    for (const w of [...apps].reverse()) { // bottom-most first, so the window in front is drawn last
+      if (!w.at || w.minimized) continue;
+      const m = document.createElement('div'); m.className = 'mini'; m.dataset.hwnd = w.hwnd; m.title = w.title;
+      const cl = (v) => Math.max(0, Math.min(1, v));
+      const x = cl(w.at.x), y = cl(w.at.y), r = cl(w.at.x + w.at.w), b = cl(w.at.y + w.at.h);
+      if (r - x < 0.02 || b - y < 0.02) continue;
+      Object.assign(m.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${(r - x) * 100}%`, height: `${(b - y) * 100}%` });
+      const img = new Image(); img.alt = ''; iconOf(w.exe).then((u) => { if (u) img.src = u; else img.remove(); }); m.append(img);
+      shot.append(m); dragOf(m, w);
+    }
+    const mins = apps.filter((w) => w.minimized || !w.at), seen = new Set();
+    for (const w of mins) { if (seen.has(w.exe) || seen.size >= 6) continue; seen.add(w.exe); const img = new Image(); img.alt = ''; iconOf(w.exe).then((u) => { if (u) img.src = u; else img.remove(); }); box.append(img); }
+    shot.onclick = () => { if (!justDragged) sd.ov('desk', i); };
     el.querySelector('.x')?.addEventListener('click', (e) => { e.stopPropagation(); sd.ov('remove', i); });
     // rename: double-click the name, Enter keeps it, Esc puts it back
     name.ondblclick = () => {
@@ -37,15 +49,7 @@ function renderDesks() {
       name.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); done(true); } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } };
       name.onblur = () => done(true);
     };
-    // drop a window here: it moves to this desktop
-    el.ondragover = (e) => { if (e.dataTransfer.types.includes('text/x-hwnd') && i !== data.current) { e.preventDefault(); el.classList.add('drop'); } };
-    el.ondragleave = () => el.classList.remove('drop');
-    el.ondrop = (e) => {
-      e.preventDefault(); el.classList.remove('drop');
-      const hwnd = +e.dataTransfer.getData('text/x-hwnd');
-      document.querySelector(`.win[data-hwnd="${hwnd}"]`)?.classList.add('gone');
-      sd.ov('move', hwnd, i);
-    };
+    el.dataset.i = i; // a window dropped here moves to this desktop (see dragOf)
     return el;
   });
   const add = document.createElement('div'); add.className = 'desk add';
@@ -69,23 +73,65 @@ function renderWins() {
   $('wins').style.gridTemplateColumns = `repeat(${best.cols}, ${Math.floor(cw)}px)`;
   $('wins').replaceChildren(...list.map((w) => {
     const el = document.createElement('div');
-    el.className = 'win' + (w.active ? ' active' : ''); el.dataset.hwnd = w.hwnd; el.draggable = true;
+    el.className = 'win' + (w.active ? ' active' : ''); el.dataset.hwnd = w.hwnd;
     el.innerHTML = `<div class="tb" style="height:${Math.floor(ch)}px" data-hwnd="${w.hwnd}"><img alt="">${w.minimized ? '<em>Minimized</em>' : ''}</div><div class="wt"><img alt=""><span></span><button class="x" title="Close">${X}</button></div>`;
     el.querySelector('span').textContent = w.title; el.title = w.title;
     iconOf(w.exe).then((u) => el.querySelectorAll('img').forEach((img) => { if (u) img.src = u; else img.remove(); }));
-    el.onclick = () => sd.ov('focus', w.hwnd);
+    el.onclick = () => { if (!justDragged) sd.ov('focus', w.hwnd); };
     el.onauxclick = (e) => { if (e.button === 1) { el.classList.add('gone'); sd.ov('close-window', w.hwnd); } };
     el.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
     el.querySelector('.x').onclick = (e) => { e.stopPropagation(); el.classList.add('gone'); sd.ov('close-window', w.hwnd); };
-    el.ondragstart = (e) => { e.dataTransfer.setData('text/x-hwnd', String(w.hwnd)); e.dataTransfer.effectAllowed = 'move'; const img = el.querySelector('.wt img'); if (img?.src) e.dataTransfer.setDragImage(img, 8, 8); };
+    dragOf(el, w);
     return el;
   }));
   clearTimeout(thumbT); thumbT = setTimeout(placeThumbs, 170); // once the fade-in has settled (previews don't follow CSS animations)
 }
-async function placeThumbs() {
-  const boxes = [...document.querySelectorAll('.win:not(.gone) .tb')];
-  const shown = await sd.thumbs(boxes.map((el) => { const r = el.getBoundingClientRect(); return { hwnd: +el.dataset.hwnd, x: r.left + 4, y: r.top + 4, w: r.width - 8, h: r.height - 8 }; })).catch(() => []);
+// live pictures: the big previews of this desktop's windows, and the small windows inside every desktop
+async function placeThumbs(skip = 0) {
+  const boxes = [...document.querySelectorAll('.win:not(.gone) .tb')].filter((el) => +el.dataset.hwnd !== skip);
+  const minis = [...document.querySelectorAll('.desk .mini')].filter((el) => +el.dataset.hwnd !== skip && !el.closest('.win.gone'));
+  const rects = boxes.map((el) => { const r = el.getBoundingClientRect(); return { hwnd: +el.dataset.hwnd, x: r.left + 4, y: r.top + 4, w: r.width - 8, h: r.height - 8 }; })
+    .concat(minis.map((el) => { const r = el.getBoundingClientRect(); return { hwnd: +el.dataset.hwnd, key: 'm', fill: true, x: r.left, y: r.top, w: r.width, h: r.height }; }));
+  const shown = await sd.thumbs(rects).catch(() => []);
   for (const el of boxes) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
+  for (const el of minis) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
+}
+// dragging a window (a big preview, or a small one in a desktop) onto a desktop moves it there. Done with the pointer,
+// not the browser's drag and drop: a card follows the pointer (the live picture can't, it's drawn by Windows), the
+// desktop under it lights up, and letting go there moves the window.
+let justDragged = false;
+function dragOf(el, w) {
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('.x')) return;
+    const x0 = e.clientX, y0 = e.clientY; let ghost = null, over = null;
+    const move = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        ghost = document.createElement('div'); ghost.className = 'ghost';
+        ghost.innerHTML = '<img alt=""><span></span>'; ghost.querySelector('span').textContent = w.title;
+        iconOf(w.exe).then((u) => { if (u) ghost.querySelector('img').src = u; else ghost.querySelector('img').remove(); });
+        document.body.append(ghost); document.body.classList.add('dragging');
+        document.querySelectorAll(`[data-hwnd="${w.hwnd}"]`).forEach((n) => n.classList.add('lifted'));
+        placeThumbs(w.hwnd); // its live pictures off while it's carried
+      }
+      ghost.style.transform = `translate(${ev.clientX - 110}px, ${ev.clientY - 70}px)`;
+      const desk = document.elementsFromPoint(ev.clientX, ev.clientY).map((n) => n.closest?.('.desk:not(.add)')).find(Boolean) || null;
+      const ok = desk && data.desks[+desk.dataset.i]?.id !== w.desk; // not the desktop it's already on
+      if (over !== desk) { over?.classList.remove('drop'); over = desk; if (over && ok) over.classList.add('drop'); }
+    };
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      if (!ghost) return;
+      justDragged = true; setTimeout(() => { justDragged = false; }, 50);
+      ghost.remove(); document.body.classList.remove('dragging');
+      const target = over && over.classList.contains('drop') ? +over.dataset.i : -1;
+      over?.classList.remove('drop');
+      document.querySelectorAll(`[data-hwnd="${w.hwnd}"]`).forEach((n) => n.classList.remove('lifted'));
+      if (target >= 0) { document.querySelectorAll(`.win[data-hwnd="${w.hwnd}"]`).forEach((n) => n.classList.add('gone')); sd.ov('move', w.hwnd, target); }
+      else placeThumbs();
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  });
 }
 function render(d) {
   data = d; sel = -1;

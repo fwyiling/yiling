@@ -39,7 +39,7 @@ const BUILTIN = [
   const mecha = BUILTIN.find((t) => t.id === 'mecha');
   mecha.shared = MX.shared;
   mecha.styles.panels = MX.styles.panels; // replaces the first version's few lines
-  for (const k of ['home', 'settings', 'wallpaper', 'island', 'dock']) mecha.styles[k] = `${mecha.styles[k] || ''}\n${MX.styles[k]}`;
+  for (const k of ['home', 'settings', 'wallpaper', 'island', 'dock', 'overview']) mecha.styles[k] = `${mecha.styles[k] || ''}\n${MX.styles[k]}`;
   mecha.description = 'Line art like a mecha anime cockpit: bevel-cut plates, panels, switches and buttons with thin light outlines, everywhere from the dock to Customize.';
 }
 

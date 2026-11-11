@@ -206,4 +206,13 @@ const dock = `
 #start.item.sys { ${bev('f', 6)} } #start.item.sys:hover { ${swap('h')} }
 `;
 
-module.exports = { frame, shared, styles: { panels, home, settings, wallpaper, island, dock } };
+// the desktops overview: windows inside each desktop, the card carried while dragging, the desktop that takes it
+const overview = `
+.desk .mini { border-radius: 0; box-shadow: 0 0 0 1px rgba(236, 244, 252, .45); }
+.desk.drop .shot { transform: scale(1.06); filter: brightness(1.25) drop-shadow(0 0 10px rgba(166, 214, 242, .9)); }
+.desk.drop .name { color: #a6d6f2; }
+.ghost { ${bev('bigSel', 12)} filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .55)); }
+.ghost span { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+`;
+
+module.exports = { frame, shared, styles: { panels, home, settings, wallpaper, island, dock, overview } };

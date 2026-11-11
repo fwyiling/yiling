@@ -143,7 +143,7 @@
 /* the still for Windows' own background: the picture and its darkening, no widgets */
 .plain .wp-widgets { display: none !important; }
 /* the still with widgets: only the ones that don't change by the second */
-.still-shot .w-clock, .still-shot .w-stats { visibility: hidden !important; }
+.still-shot .w-clock, .still-shot .w-stats, .still-cap .w-clock, .still-cap .w-stats { visibility: hidden !important; }
 .still-shot *, .still-shot *::before, .still-shot *::after { animation: none !important; transition: none !important; }
 /* nothing picked: your Windows background, exactly where Windows draws it (no drift, no extra zoom) */
 .wp-media img.wp-native { transform: none !important; }

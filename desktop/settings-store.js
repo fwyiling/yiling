@@ -8,7 +8,7 @@ const DEFAULTS = {
     scene: 'image',           // image | video | web; nothing picked: your Windows background shows
     file: '',                 // the photo / video
     url: '',                  // the web page
-    parallax: true,           // drift with the mouse
+    parallax: false, parallaxV2: true, // drift with the mouse (off: Windows' background, shown mid-slide, matches exactly)
     dim: 0.15,                // darken the wallpaper so widgets stay readable
     matchWindows: true,       // keep Windows' own background a still of this wallpaper (it shows through during desktop slides)
     prevWindows: '',          // what Windows' background was before that, to put back
@@ -31,7 +31,7 @@ const DEFAULTS = {
   },
   name: '',
   home: { hotkey: 'Alt+Space', winKey: true, engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [] },
-  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, deskMotion: false, deskMotionV2: true, edgeSwitch: true, ownOsd: true, lowPower: null, accentFromWallpaper: false, accentManual: '' },
+  general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, ownTaskView: true, deskMotion: false, deskMotionV2: true, edgeSwitch: true, ownOsd: true, lowPower: null, accentFromWallpaper: false, accentManual: '' },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: false, startV2: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, bin: true, shots: true, hide: 'smart', reserve: true, prevAutoHide: null },
   island: { on: true, pet: 'cat' },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)
   topbar: { on: true, tray: true, traySystem: false, trayHidden: [], weather: true, media: true, battery: true, ime: false, look: 'solid', opacity: 0.96 }, // look: solid | glass (frosted, the desktop blurred behind) // a slim bar along the top, like macOS
@@ -64,6 +64,7 @@ class Store {
     if (saved?.topbar && !saved.topbar.imeV2) { delete saved.topbar.ime; saved.topbar.imeV2 = true; } // the input indicator is off by default now (it may get in the way of Pinyin's Shift)
     if (saved?.topbar?.opacity === 0.78) delete saved.topbar.opacity; // the old see-through default: the desktop showed through unblurred
     if (saved?.dock?.opacity === 0.85) delete saved.dock.opacity; // the old see-through default; text behind bled through
+    if (saved?.wallpaper && !saved.wallpaper.parallaxV2) { saved.wallpaper.parallax = false; saved.wallpaper.parallaxV2 = true; } // still by default: Windows' background is a picture of it, and a drifting picture never quite matched it mid-slide
     if (saved?.dock && !saved.dock.startV2) { saved.dock.start = false; saved.dock.startV2 = true; } // the Windows button did what the Syndicates one does (Home): one button
     if (saved?.general && !saved.general.deskMotionV2) { saved.general.deskMotion = false; saved.general.deskMotionV2 = true; } // the glide after a switch read as a jolt: still, as on a Mac (Customize > General brings it back)
     if (saved?.widgets && !saved.widgets.macOffered) { saved.widgets.layout = 'mac'; saved.widgets.macOffered = true; } // the new Mac-style widgets, once (Customize > Widgets switches back)

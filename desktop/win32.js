@@ -75,6 +75,8 @@ function bind() {
   const BITMAPINFOHEADER = koffi.struct('BITMAPINFOHEADER', { biSize: 'uint32', biWidth: 'int32', biHeight: 'int32', biPlanes: 'uint16', biBitCount: 'uint16',
     biCompression: 'uint32', biSizeImage: 'uint32', biXPelsPerMeter: 'int32', biYPelsPerMeter: 'int32', biClrUsed: 'uint32', biClrImportant: 'uint32' });
   const gdi32 = koffi.load('gdi32.dll');
+  u.CreateRectRgn = gdi32.func('intptr_t __stdcall CreateRectRgn(int l, int t, int r, int b)');
+  u.SetWindowRgn = user32.func('int __stdcall SetWindowRgn(intptr_t hwnd, intptr_t rgn, bool redraw)');
   // the input method of the window in front: Chinese (Pinyin) or English mode, for the top bar's 拼 / EN
   u.GetKeyboardLayout = user32.func('uintptr_t __stdcall GetKeyboardLayout(uint32 thread)');
   u.GetAsyncKeyState = user32.func('short __stdcall GetAsyncKeyState(int vk)');
@@ -478,11 +480,20 @@ function taskbarSeeThrough(h, hide) {
     if (layeredByUs.delete(Number(h))) u.SetWindowLongPtrW(h, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
   }
 }
+// Windows 11 ignores the transparency above, and Explorer shows the taskbar for a moment at the start of a desktop
+// switch, so the slide's picture of the desktop had a blue strip in it. An empty window region makes it draw nothing
+// at all, shown or not; taken off again whenever it's shown on purpose (and when the app quits).
+const clippedByUs = new Set();
+function taskbarClip(h, hide) {
+  if (hide) { if (!clippedByUs.has(Number(h)) && u.SetWindowRgn(h, u.CreateRectRgn(0, 0, 0, 0), true)) clippedByUs.add(Number(h)); }
+  else { clippedByUs.delete(Number(h)); u.SetWindowRgn(h, 0, true); } // always: also undoes a clip left by a run that crashed
+}
 function showTaskbar(show) {
   if (!load()) return false;
   let changed = false;
   for (const h of taskbars()) {
     taskbarSeeThrough(h, !show);
+    try { taskbarClip(h, !show); } catch {}
     if (!!u.IsWindowVisible(h) === !!show) continue;
     u.ShowWindow(h, show ? 5 : 0); changed = true; // SW_SHOW / SW_HIDE
   }
@@ -809,6 +820,7 @@ const closeWindow = (hwnd) => load() && u.PostMessageW(hwnd, 0x0010, 0, 0); // W
 // from its message loop (the app's main thread).
 let tbHook = 0, tbCb = null, tbPid = 0, tbOnShow = null;
 const TASKBAR_CLASSES = new Set(['Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+const TASKVIEW_CLASSES = new Set(['XamlExplorerHostIslandWindow', 'MultitaskingViewFrame']); // Task View (and Alt+Tab, Snap: told apart by the app)
 function watchTaskbar(onShow) {
   if (!load()) return false;
   tbOnShow = onShow;
@@ -822,7 +834,8 @@ function watchTaskbar(onShow) {
       if (idObject !== 0 || isNull(hwnd)) return; // OBJID_WINDOW only
       const root = u.GetAncestor(hwnd, 2); // GA_ROOT
       const buf = new Uint16Array(64), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(root, buf, 64)));
-      if (TASKBAR_CLASSES.has(cls)) tbOnShow?.(Number(root));
+      if (TASKBAR_CLASSES.has(cls)) tbOnShow?.(Number(root), 'taskbar');
+      else if (TASKVIEW_CLASSES.has(cls)) tbOnShow?.(Number(root), 'taskview');
     } catch {}
   }, u.koffi.pointer(u.WinEventProc));
   tbHook = Number(u.SetWinEventHook(0x8002, 0x8002, 0, tbCb, pid[0], 0, 0x0000 | 0x0002)); // EVENT_OBJECT_SHOW; out of context, skip our own process
@@ -869,6 +882,8 @@ module.exports = {
   regString: safe('regString', regString, ''),
   regSetString: safe('regSetString', regSetString, false),
   inputMode: safe('inputMode', inputMode, null),
+  windowTitle: safe('windowTitle', (hwnd) => { if (!load()) return ''; const b = new Uint16Array(256), n = u.GetWindowTextW(hwnd, b, 256); return String.fromCharCode(...b.slice(0, n)); }, ''),
+  isForeground: safe('isForeground', (hwnd) => { if (!load()) return false; const fg = u.GetForegroundWindow(); return !isNull(fg) && Number(u.GetAncestor(fg, 2)) === Number(hwnd); }, false),
   keyDown: safe('keyDown', (vk) => !!(load() && (u.GetAsyncKeyState(vk) & 0x8000)), false),
   foregroundId: safe('foregroundId', () => (load() ? Number(u.GetForegroundWindow()) : 0), 0),
   recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
@@ -905,6 +920,8 @@ module.exports = {
   makeToolWindow: safe('makeToolWindow', makeToolWindow),
   virtualDesktops: safe('virtualDesktops', virtualDesktops, { count: 1, current: 0, ids: [], names: [] }),
   windowRect: safe('windowRect', windowRect, null),
+  /** Where another program's window is on screen (physical pixels, without its invisible resize border), or null. */
+  hwndRect: safe('hwndRect', (hwnd) => { if (!load()) return null; const r = {}; if (u.DwmGetFrameRect(hwnd, 9, r, 16) !== 0 && !u.GetWindowRect(hwnd, r)) return null; return { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top }; }, null),
   foregroundRect: safe('foregroundRect', foregroundRect, null),
   pressKeys: safe('pressKeys', pressKeys),
   shellHook: safe('shellHook', shellHook, 0),
