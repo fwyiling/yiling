@@ -30,7 +30,7 @@ const DEFAULTS = {
     today:    { on: true,  x: 0.14, y: 0.86, scale: 1 },   // next class and to-dos (only shows when there's something)   // now playing (only shows while something plays)
   },
   name: '',
-  home: { hotkey: 'Alt+Space', winKey: true, engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [] },
+  home: { hotkey: 'Alt+Space', winKey: true, clipboard: true, engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [] },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, autoUpdate: true, deskMotion: false, deskMotionV2: true, edgeSwitch: true, ownOsd: true, lowPower: null, accentFromWallpaper: false, accentManual: '' },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: false, startV2: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, bin: true, shots: true, hide: 'smart', reserve: true, prevAutoHide: null },
   island: { on: true, pet: 'cat' },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)

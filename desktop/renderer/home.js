@@ -215,7 +215,36 @@ document.querySelectorAll('.tabs [data-t]').forEach((b) => b.onclick = () => {
   document.querySelectorAll('[data-p]').forEach((p) => { p.hidden = p.dataset.p !== tab; });
   if (tab === 'books' && !$('bookRes').children.length) searchBooks('');
   if (tab === 'files') loadFiles();
+  if (tab === 'clip') loadClips();
 });
+
+// ---------- clipboard history ----------
+let clipList = [];
+const PIN = '<svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 3v1H6v-1l4-3zM12 14v6"/></svg>', DEL = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const clipAgo = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "now" : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`; };
+async function loadClips() { clipList = await sd.clips('list').catch(() => []); renderClips(); }
+function renderClips() {
+  if (tab !== 'clip') return;
+  const q = $('clipQ').value.trim().toLowerCase();
+  const list = clipList.filter((c) => !q || (c.type !== 'image' && c.text.toLowerCase().includes(q))).sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at));
+  if (!list.length) { $('clipList').innerHTML = `<li class="empty muted">${clipList.length ? 'Nothing matches.' : 'Copy something (Ctrl+C) and it shows up here.'}</li>`; return; }
+  $('clipList').replaceChildren(...list.map((c) => {
+    const li = document.createElement('li'); li.className = `clip ${c.type}${c.pinned ? ' pinned' : ''}`; li.tabIndex = 0;
+    li.innerHTML = `<div class="body"></div><div class="meta"><small></small><button class="ic pin" title="${c.pinned ? 'Unpin' : 'Pin (kept when you clear)'}">${PIN}</button><button class="ic del" title="Remove">${DEL}</button></div>`;
+    const body = li.querySelector('.body');
+    if (c.type === 'image') { const img = new Image(); img.alt = ''; img.src = `sd://media/clip?f=${encodeURIComponent(c.img)}`; body.append(img); li.querySelector('small').textContent = `${c.w}×${c.h} · ${clipAgo(c.at)}`; }
+    else { body.textContent = c.text; li.querySelector('small').textContent = `${c.type === 'link' ? 'Link' : `${c.text.length} chars`} · ${clipAgo(c.at)}`; }
+    const paste = () => sd.clips('use', c.id);
+    li.onclick = (e) => { if (!e.target.closest('button')) paste(); };
+    li.onkeydown = (e) => { if (e.key === 'Enter') paste(); if (e.key === 'Delete') sd.clips('remove', c.id); };
+    li.querySelector('.pin').onclick = () => sd.clips('pin', c.id, !c.pinned);
+    li.querySelector('.del').onclick = () => sd.clips('remove', c.id);
+    return li;
+  }));
+}
+sd.onClips?.((l) => { clipList = l; renderClips(); });
+$('clipQ').oninput = renderClips;
+$('clipClearH').onclick = () => sd.clips('clear');
 
 // ---------- timetable ----------
 let day = weekday(new Date());
@@ -331,11 +360,11 @@ $('customize').onclick = () => sd.openSettings();
 // power, as at the bottom of Windows' Start menu: one button, a menu above it; restart and shut down ask twice
 $('pwrBtn').onclick = (e) => { e.stopPropagation(); $('pwrMenu').hidden = !$('pwrMenu').hidden; };
 addEventListener('click', (e) => { if (!$('pwrMenu').hidden && !$('pwrMenu').contains(e.target)) $('pwrMenu').hidden = true; });
-for (const b of document.querySelectorAll('#pwrMenu [data-p]')) {
+for (const b of document.querySelectorAll('#pwrMenu [data-pw]')) {
   let armed = 0;
   b.onclick = (e) => {
     e.stopPropagation();
-    const k = b.dataset.p, label = b.querySelector('span');
+    const k = b.dataset.pw, label = b.querySelector('span');
     if ((k === 'restart' || k === 'shutdown') && !armed) {
       b.classList.add('armed'); label.dataset.was = label.textContent; label.textContent = `${label.textContent}? Click again`;
       armed = setTimeout(() => { armed = 0; b.classList.remove('armed'); label.textContent = label.dataset.was; }, 3000);
@@ -347,6 +376,7 @@ for (const b of document.querySelectorAll('#pwrMenu [data-p]')) {
 }
 function onHidden() { document.body.classList.add('off'); $('pwrMenu').hidden = true; $('q').value = ''; renderResults(); document.querySelector('.ctx')?.remove(); }
 function onShown(mode) {
+  if (mode === 'clip') document.querySelector('.tabs [data-t=clip]')?.click(); // Alt+Shift+V: straight to the clipboard history
   if (document.body.classList.contains('off')) {
     document.body.classList.remove('off');
     for (const e of [$('panel'), $('backdrop')]) { e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; }

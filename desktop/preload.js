@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('sd', {
   update: (what) => ipcRenderer.invoke(`update:${what === 'check' || what === 'apply' ? what : 'status'}`),
   updateToken: (t) => ipcRenderer.invoke('update:token', t),
   onUpdate: on('update'),
+  clips: (what, ...args) => ipcRenderer.invoke(`clip:${['list', 'use', 'copy', 'pin', 'remove', 'clear'].includes(what) ? what : 'list'}`, ...args),
+  onClips: on('clips'),
   theme: () => ipcRenderer.invoke('theme:bundle'),
   onTheme: on('theme'),
   themes: (what, ...args) => ipcRenderer.invoke(`themes:${what}`, ...args),

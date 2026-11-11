@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gutenberg.org; connect-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: sd: https://www.gutenberg.org; connect-src 'self'">
   <title>Syndicates Home</title>
   <link rel="stylesheet" href="home.css">
 </head>
@@ -22,7 +22,7 @@
     <div class="cols">
       <section class="apps main">
         <nav class="tabs">
-          <button data-t="apps" class="on">Apps</button><button data-t="time">Timetable</button><button data-t="books">Books</button><button data-t="files">Files</button>
+          <button data-t="apps" class="on">Apps</button><button data-t="time">Timetable</button><button data-t="books">Books</button><button data-t="files">Files</button><button data-t="clip">Clipboard</button>
         </nav>
         <div data-p="apps">
           <div class="sec-h"><h2 id="appsTitle">Pinned</h2><div><button id="allBtn" class="chip">All apps</button><button id="addPin" class="chip" title="Pin an app or file">+ Pin</button></div></div>
@@ -45,6 +45,10 @@
           <div id="reading" class="books"></div>
           <div class="sec-h"><h2 id="bookResH">Popular</h2></div>
           <div id="bookRes" class="books"></div>
+        </div>
+        <div data-p="clip" hidden>
+          <div class="sec-h"><input id="clipQ" class="mini-search" placeholder="Search what you copied…" autocomplete="off" spellcheck="false"><span><span class="muted" id="clipHint">Click to paste · Alt+Shift+V</span><button id="clipClearH" class="chip">Clear</button></span></div>
+          <ul id="clipList" class="clips"></ul>
         </div>
         <div data-p="files" hidden>
           <div class="sec-h"><div id="fileKinds" class="days">
@@ -83,11 +87,11 @@
         <button id="customize" class="chip">Customize desktop…</button>
         <button id="pwrBtn" class="chip pbtn" title="Lock, sleep, restart, shut down"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg>Power</button>
         <div id="pwrMenu" class="pmenu" hidden>
-          <button data-p="lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>Lock</span></button>
-          <button data-p="sleep"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span>Sleep</span></button>
-          <button data-p="restart"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg><span>Restart</span></button>
-          <button data-p="shutdown"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg><span>Shut down</span></button>
-          <button data-p="signout"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></svg><span>Sign out</span></button>
+          <button data-pw="lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>Lock</span></button>
+          <button data-pw="sleep"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span>Sleep</span></button>
+          <button data-pw="restart"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg><span>Restart</span></button>
+          <button data-pw="shutdown"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg><span>Shut down</span></button>
+          <button data-pw="signout"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></svg><span>Sign out</span></button>
         </div>
       </div>
     </footer>

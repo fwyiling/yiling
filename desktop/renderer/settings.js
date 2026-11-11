@@ -484,3 +484,4 @@ $('tokSave').onclick = async () => {
   try { paintUpdate(await sd.updateToken(v)); $('tokText').textContent = v.trim() ? 'Token saved (encrypted on this PC).' : 'Token removed.'; }
   catch (e) { $('tokText').textContent = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
 };
+$('clipClear').onclick = () => { sd.clips('clear'); $('clipClear').textContent = 'Cleared'; setTimeout(() => { $('clipClear').textContent = 'Clear clipboard history'; }, 1500); };

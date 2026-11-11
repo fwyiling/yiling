@@ -15,6 +15,7 @@ const gallery = require('./gallery');
 const systray = require('./tray'); // other programs' tray icons, for the top bar
 const winkey = require('./winkey'); // the Windows key opens Home
 const updater = require('./updater'); // updates from the desktop-latest release
+const clips = require('./clipboard'); // clipboard history, in Home
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -205,6 +206,7 @@ function registerHotkey() {
   if (!hotkeyStatus.switchKeys) console.warn('[switch] Ctrl+Alt+Shift+Left/Right is taken by another app');
   reg('Ctrl+Alt+T', () => openIslandTimer()); // the timer, from anywhere
   reg('Ctrl+Alt+G', () => setGamer(!gamer)); // gamer mode
+  if (store.get().home.clipboard !== false) reg('Alt+Shift+V', () => toggleHome(true, 'clip')); // the clipboard history (Win+V stays Windows')
 }
 
 // ---------- settings window ----------
@@ -1127,6 +1129,7 @@ function applySettings(patch) {
   }
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.home?.winKey !== undefined) syncWinKey();
+  if (patch.home?.clipboard !== undefined) { if (next.home.clipboard !== false) clips.start(); else clips.stop(); registerHotkey(); }
   if (patch.general?.autoUpdate !== undefined) { if (next.general.autoUpdate) updater.start(); else updater.stop(); }
   if (patch.general?.startWithWindows !== undefined) { setAutostart(next.general.startWithWindows); if (!next.general.autostartChosen) store.set({ general: { autostartChosen: true } }); }
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
@@ -1396,6 +1399,18 @@ function wireIpc() {
     await goToDesk(target);
     topApp = ''; topbarTick();
   });
+  // clipboard history (Home)
+  const fromHome = (e) => homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents;
+  ipcMain.handle('clip:list', (e) => (fromHome(e) ? clips.list() : []));
+  ipcMain.handle('clip:use', (e, id) => { // back on the clipboard, Home away, pasted where you were
+    if (!fromHome(e) || !clips.use(String(id))) return false;
+    hideHome(); if (win32.isWin) setTimeout(() => win32.pressKeys([0x11, 0x56]), 180); // Ctrl+V
+    return true;
+  });
+  ipcMain.handle('clip:copy', (e, id) => fromHome(e) && clips.use(String(id))); // only copy
+  ipcMain.handle('clip:pin', (e, id, on) => { if (fromHome(e)) clips.pin(String(id), !!on); });
+  ipcMain.handle('clip:remove', (e, id) => { if (fromHome(e)) clips.remove(String(id)); });
+  ipcMain.handle('clip:clear', (e) => { if (fromHome(e) || (settingsWin && e.sender === settingsWin.webContents)) clips.clear(); });
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:token', (_e, t) => { updater.setToken(t); return updater.check(); });
@@ -1601,6 +1616,9 @@ app.whenReady().then(() => {
   store = new Store(app.getPath('userData'));
   try { fs.writeFileSync(INSTANCE_FILE(), JSON.stringify({ appPath: app.getAppPath(), pid: process.pid, version: app.getVersion() })); } catch {}
   gallery.init(app.getPath('userData'));
+  clips.init(app.getPath('userData'), () => win32.clipboardSeq());
+  if (store.get().home.clipboard !== false) clips.start();
+  clips.onChange((l) => { if (homeWin && !homeWin.isDestroyed()) homeWin.webContents.send('clips', l); });
   themes.init(app.getPath('userData'));
   setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on
   themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
@@ -1630,6 +1648,10 @@ app.whenReady().then(() => {
       const f = gallery.fileOf(u.searchParams.get('f') || '');
       if (!f || !fs.existsSync(f)) return new Response('not found', { status: 404 });
       return net.fetch(pathToFileURL(f).href);
+    }
+    if (u.host === 'media' && u.pathname === '/clip') { // a picture from the clipboard history (by name, only from its folder)
+      const f = clips.imageFile(u.searchParams.get('f') || '');
+      return f && fs.existsSync(f) ? net.fetch(pathToFileURL(f).href) : new Response('not found', { status: 404 });
     }
     if (u.host === 'media' && u.pathname === '/still') { // a still of the wallpaper (the bottom edge strip), by its key
       const k = u.searchParams.get('k') || '';

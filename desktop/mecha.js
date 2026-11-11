@@ -136,6 +136,7 @@ h2, .sec-h h2 { text-transform: uppercase; letter-spacing: .14em; font-size: 12p
 .ctx { ${bev('menu', 10)} } .ctx button { border-radius: 0; } .ctx button:hover { ${bev('h')} }
 .rpin { ${bev('f')} }
 body.dropping #panel::after { border-radius: 0; }
+.clip { ${bev('cardSoft', 10)} } .clip:hover, .clip:focus-visible { ${swap('cardSel')} } .clip .ic { border-radius: 0; } .clip .ic:hover { ${bev('h')} } .clip.image img { border-radius: 0; ${clip(5)} }
 .pmenu { ${bev('menu', 10)} filter: drop-shadow(0 12px 24px rgba(0, 0, 0, .5)); } .pmenu button { border-radius: 0; } .pmenu button:hover { ${bev('h')} }
 .pmenu button.armed { ${bev('danger')} color: #fff; }
 `;

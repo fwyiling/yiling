@@ -80,6 +80,7 @@ function bind() {
   // the input method of the window in front: Chinese (Pinyin) or English mode, for the top bar's 拼 / EN
   u.GetKeyboardLayout = user32.func('uintptr_t __stdcall GetKeyboardLayout(uint32 thread)');
   u.GetAsyncKeyState = user32.func('short __stdcall GetAsyncKeyState(int vk)');
+  u.GetClipboardSequenceNumber = user32.func('uint32 __stdcall GetClipboardSequenceNumber()');
   u.SendMessageTimeoutNum = user32.func('__stdcall', 'SendMessageTimeoutW', 'intptr_t', ['intptr_t', 'uint', 'uintptr_t', 'intptr_t', 'uint', 'uint', koffi.out(koffi.pointer('uintptr_t'))]);
   try { u.ImmGetDefaultIMEWnd = koffi.load('imm32.dll').func('intptr_t __stdcall ImmGetDefaultIMEWnd(intptr_t hwnd)'); } catch {}
   Object.assign(u, {
@@ -882,6 +883,8 @@ module.exports = {
   inputMode: safe('inputMode', inputMode, null),
   windowTitle: safe('windowTitle', (hwnd) => { if (!load()) return ''; const b = new Uint16Array(256), n = u.GetWindowTextW(hwnd, b, 256); return String.fromCharCode(...b.slice(0, n)); }, ''),
   isForeground: safe('isForeground', (hwnd) => { if (!load()) return false; const fg = u.GetForegroundWindow(); return !isNull(fg) && Number(u.GetAncestor(fg, 2)) === Number(hwnd); }, false),
+  /** Changes with every copy (the clipboard history only reads the clipboard when it does). */
+  clipboardSeq: safe('clipboardSeq', () => (load() ? u.GetClipboardSequenceNumber() : -1), -1),
   keyDown: safe('keyDown', (vk) => !!(load() && (u.GetAsyncKeyState(vk) & 0x8000)), false),
   foregroundId: safe('foregroundId', () => (load() ? Number(u.GetForegroundWindow()) : 0), 0),
   recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
