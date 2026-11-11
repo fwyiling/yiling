@@ -465,3 +465,22 @@ $('find').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('find
 document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => { if ($('find').value) { $('find').value = ''; runFind(); } }));
 addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('find').focus(); $('find').select(); } });
 useTheme('settings'); // Customize > Themes: this window too
+
+// updates: which build this is, whether a newer one passed the tests, one click to install it
+function paintUpdate(u) {
+  if (!u) return;
+  const mine = u.current ? `This copy is build ${u.current.slice(0, 7)}` : 'This copy is from before updates were built in';
+  $('updText').textContent = u.busy ? `Downloading the update… ${u.progress || 0}%` : u.checking ? 'Checking…' : u.error ? `${mine}. Couldn't check: ${u.error}`
+    : u.available ? `${mine}. Build ${u.latest} is ready: Update now installs it, and the app starts again by itself.` : u.lastCheck ? `${mine}. You have the newest.` : mine;
+  $('updGo').hidden = !u.available || u.busy; $('updCheck').disabled = !!(u.checking || u.busy);
+  if (u.hasToken) $('tokIn').placeholder = '•••••••• (saved)';
+}
+sd.update?.('status').then(paintUpdate).catch(() => {});
+sd.onUpdate?.(paintUpdate);
+$('updCheck').onclick = () => sd.update('check').then(paintUpdate).catch(() => {});
+$('updGo').onclick = () => { $('updGo').hidden = true; sd.update('apply').catch((e) => { $('updText').textContent = `The update didn't install: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`; }); };
+$('tokSave').onclick = async () => {
+  const v = $('tokIn').value; $('tokIn').value = '';
+  try { paintUpdate(await sd.updateToken(v)); $('tokText').textContent = v.trim() ? 'Token saved (encrypted on this PC).' : 'Token removed.'; }
+  catch (e) { $('tokText').textContent = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
+};

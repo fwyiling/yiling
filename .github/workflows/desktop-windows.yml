@@ -24,6 +24,9 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - name: Stamp the build (the app's updater compares it with the release)
+        shell: pwsh
+        run: '@{ sha = $env:GITHUB_SHA; date = (Get-Date).ToUniversalTime().ToString("o") } | ConvertTo-Json | Set-Content -Encoding utf8 build.json'
       - name: Win32 bindings parse (fake DLLs)
         run: node test/win32-bindings.test.js
       - name: Settings, themes and helper-script checks
@@ -113,7 +116,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # the app's own files (no node_modules), for copies started with start.bat: the in-app updater unzips it over them
+          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('node_modules', 'dist', 'test', '.gitignore') -and $_.Name -notlike 'smoke-*' }
+          Compress-Archive -Path $items.FullName -DestinationPath dist/Syndicates-Desktop-Source.zip -Force
           gh release delete desktop-latest --yes --cleanup-tag 2>$null; $global:LASTEXITCODE = 0
-          gh release create desktop-latest dist/Syndicates-Desktop-Setup.exe dist/Syndicates-Desktop-Portable.exe `
+          gh release create desktop-latest dist/Syndicates-Desktop-Setup.exe dist/Syndicates-Desktop-Portable.exe dist/Syndicates-Desktop-Source.zip `
             --target $env:GITHUB_SHA --prerelease --title "Syndicates Desktop (latest)" `
             --notes "Built from $($env:GITHUB_SHA.Substring(0,7)) after passing the Windows tests. Setup.exe installs it (Start menu + desktop shortcut, starts with Windows); Portable.exe runs without installing."

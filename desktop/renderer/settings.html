@@ -170,6 +170,9 @@
     </section>
     <section data-panel="general">
       <h2>General</h2>
+      <div class="field-row"><span><b>Updates</b><small id="updText">Checking which version this is…</small></span><span class="row" style="margin:0"><button id="updCheck" class="btn">Check now</button><button id="updGo" class="btn pri" hidden>Update now</button></span></div>
+      <label class="field-row"><span>GitHub token <small id="tokText">Only while the project's repository is private: a fine-grained token with read access to its Contents. Kept encrypted on this PC, never shown again.</small></span><span class="row" style="margin:0"><input id="tokIn" class="field" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"><button id="tokSave" class="btn">Save</button></span></label>
+      <label class="switch"><span><b>Look for updates by itself</b><small>Every few hours, from the builds that passed the Windows tests. You're asked before anything is installed.</small></span><input type="checkbox" data-k="general.autoUpdate"></label>
       <label class="switch"><span><b>Gamer mode in full-screen games</b><small>While a game or video is full screen: wallpaper paused, bars and island hidden, nothing polling in the background. Ctrl+Alt+G turns gamer mode on or off any time.</small></span><input type="checkbox" data-k="general.autoGamer"></label>
       <label class="switch"><span><b>Start with Windows</b><small>Your wallpaper is back after every restart.</small></span><input type="checkbox" data-k="general.startWithWindows"></label>
       <label class="switch"><span><b>Pause during full-screen apps</b><small>Games and full-screen video get all the power.</small></span><input type="checkbox" data-k="general.pauseOnFullscreen"></label>

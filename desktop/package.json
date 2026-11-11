@@ -22,6 +22,7 @@
     "productName": "Syndicates Desktop",
     "files": [
       "*.js",
+      "build.json",
       "renderer/**",
       "assets/**",
       "!test/**"

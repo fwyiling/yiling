@@ -93,6 +93,9 @@ contextBridge.exposeInMainWorld('sd', {
   trayClick: (id, kind, x, y) => ipcRenderer.invoke('tray:click', id, kind, x, y),
   onTray: on('tray'),
   overview: () => ipcRenderer.invoke('overview:open'), // Windows' Task View
+  update: (what) => ipcRenderer.invoke(`update:${what === 'check' || what === 'apply' ? what : 'status'}`),
+  updateToken: (t) => ipcRenderer.invoke('update:token', t),
+  onUpdate: on('update'),
   theme: () => ipcRenderer.invoke('theme:bundle'),
   onTheme: on('theme'),
   themes: (what, ...args) => ipcRenderer.invoke(`themes:${what}`, ...args),

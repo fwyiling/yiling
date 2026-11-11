@@ -14,6 +14,7 @@ const themes = require('./themes');
 const gallery = require('./gallery');
 const systray = require('./tray'); // other programs' tray icons, for the top bar
 const winkey = require('./winkey'); // the Windows key opens Home
+const updater = require('./updater'); // updates from the desktop-latest release
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -1102,6 +1103,7 @@ function updateTray() {
     { label: 'Hide desktop icons', type: 'checkbox', checked: g.hideDesktopIcons, enabled: win32.isWin, click: (i) => applySettings({ general: { hideDesktopIcons: i.checked } }) },
     { label: 'Start with Windows', type: 'checkbox', checked: g.startWithWindows, click: (i) => applySettings({ general: { startWithWindows: i.checked } }) },
     { type: 'separator' },
+    ...(updater.status().available ? [{ label: `Update now (build ${updater.status().latest})`, click: () => updater.apply(() => app.quit()).catch(() => {}) }] : [{ label: 'Check for updates', click: () => updater.check() }]),
     { label: 'Quit', click: () => app.quit() },
   ]));
 }
@@ -1125,6 +1127,7 @@ function applySettings(patch) {
   }
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
   if (patch.home?.winKey !== undefined) syncWinKey();
+  if (patch.general?.autoUpdate !== undefined) { if (next.general.autoUpdate) updater.start(); else updater.stop(); }
   if (patch.general?.startWithWindows !== undefined) { setAutostart(next.general.startWithWindows); if (!next.general.autostartChosen) store.set({ general: { autostartChosen: true } }); }
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
@@ -1154,7 +1157,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), update: updater.status(), windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -1393,6 +1396,10 @@ function wireIpc() {
     await goToDesk(target);
     topApp = ''; topbarTick();
   });
+  ipcMain.handle('update:status', () => updater.status());
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:token', (_e, t) => { updater.setToken(t); return updater.check(); });
+  ipcMain.handle('update:apply', () => updater.apply(() => app.quit()).then(() => true, (e) => { throw e; }));
   ipcMain.handle('overview:open', () => { if (win32.isWin) win32.pressKeys([0x5B, 0x09]); }); // Windows' Task View (Win+Tab)
   ipcMain.handle('ime:get', () => imeNow);
   ipcMain.handle('topbar:timer', (e) => { if (topWin && e.sender === topWin.webContents) openIslandTimer(); });
@@ -1686,6 +1693,19 @@ app.whenReady().then(() => {
   else if (win32.isWin) win32.showTaskbar(true); // in case a crash left it hidden
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
   if (!process.argv.includes('--smoke') && !process.argv.includes('--autostart')) openSettings(); // first run: show what can be customized
+  // updates: checked 30 s after start and every 6 hours; a new build is announced once, installed with one click
+  if (!process.argv.includes('--smoke') && store.get().general.autoUpdate !== false) {
+    let told = '';
+    updater.start((st) => {
+      broadcast('update', st); updateTray();
+      if (st.available && st.latest && st.latest !== told && Notification.isSupported()) {
+        told = st.latest;
+        const n = new Notification({ title: 'Syndicates Desktop update', body: 'A new version is ready. Click to install it (the app restarts by itself).', silent: true });
+        n.on('click', () => updater.apply(() => app.quit()).catch(() => {}));
+        n.show();
+      }
+    });
+  } else updater.onChange((st) => { broadcast('update', st); updateTray(); });
   // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
   if (process.argv.includes('--smoke')) {
     // the taskbar hook: show the taskbar the way Explorer would, and it must be heard (and hidden again, the dock is on)
