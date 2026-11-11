@@ -137,3 +137,8 @@
 [data-layout="mac"] .w-weather .wr .wi svg { width: 1.9cqmin; height: 1.9cqmin; }
 [data-layout="mac"] .w-weather .hl { margin-left: 0; }
 [data-layout="mac"] .w-weather .hours { grid-column: 1 / -1; grid-row: 2; align-self: end; }
+
+/* the still for Windows' own background: the picture and its darkening, no widgets */
+.plain .wp-widgets { display: none !important; }
+/* nothing picked: your Windows background, exactly where Windows draws it (no drift, no extra zoom) */
+.wp-media img.wp-native { transform: none !important; }

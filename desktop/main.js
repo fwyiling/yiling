@@ -452,7 +452,7 @@ function wallFor(w, id) {
 }
 function onDeskSwitch(from, to, count, id) {
   deskNow = to;
-  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); }
+  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); syncWindowsWallpaper(900); }
   if (gamer) return;
   quietUntil = Date.now() + QUIET_MS;
   const dir = Math.sign(to - from);
@@ -886,6 +886,49 @@ function power([exe, args]) {
   require('child_process').execFile(full, args, { windowsHide: true }, () => {});
 }
 
+// ---------- Windows' own background, kept as a still of ours ----------
+// Windows draws its own wallpaper for a moment while desktops slide (and before the app has started). If that's a
+// different picture, or the same one cropped differently, every switch shows a jump. So Windows' background is set
+// to a still of this wallpaper, rendered by the same page at the screen's real size: the picture and its darkening,
+// no widgets. What Windows had before is remembered and put back when this is switched off or nothing is picked.
+const STILL_DIR = () => path.join(app.getPath('userData'), 'still');
+const isOurStill = (f) => !!f && path.dirname(path.resolve(f)).toLowerCase() === STILL_DIR().toLowerCase();
+// Windows 11 keeps a background per desktop, and setting it reaches the desktop showing: so each desktop gets its
+// still when you're on it (once per picture), which also covers a different wallpaper on each desktop.
+let stillT = 0, stillBusy = false;
+const stillSet = new Map(); // desktop id -> the still it was given this run
+function syncWindowsWallpaper(delay = 1500) {
+  clearTimeout(stillT);
+  stillT = setTimeout(async function run() {
+    if (!win32.isWin || app.isQuitting) return;
+    if (quiet() || stillBusy) { stillT = setTimeout(run, 400); return; }
+    const st = store.get(), desk = deskId, w = wallFor(st.wallpaper, desk), now = winwallFile(desk);
+    const picked = !!(w.scene === 'web' ? w.url : w.file);
+    if (!st.wallpaper.matchWindows || !picked) { // off, or nothing picked (Windows' background is the wallpaper): the user's own back
+      if (isOurStill(now) && st.wallpaper.prevWindows && fs.existsSync(st.wallpaper.prevWindows)) win32.setWindowsWallpaper(st.wallpaper.prevWindows);
+      stillSet.delete(desk);
+      return;
+    }
+    const d = screen.getPrimaryDisplay();
+    const key = require('crypto').createHash('sha1').update([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size.width, d.size.height, d.scaleFactor].join('|')).digest('hex').slice(0, 16);
+    const want = path.join(STILL_DIR(), `still-${key}.jpg`);
+    if (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want))) { stillSet.set(desk, want); return; }
+    stillBusy = true;
+    try {
+      if (!fs.existsSync(want)) {
+        const shot = await lockscreen.snapshot(STILL_DIR(), ui('wallpaper.html', '?snapshot=1&plain=1'), webPrefs.preload);
+        if (deskId !== desk || quiet()) { fs.rmSync(shot, { force: true }); stillBusy = false; stillT = setTimeout(run, 600); return; } // another desktop by now: its picture, not this one
+        fs.renameSync(shot, want);
+        const old = fs.readdirSync(STILL_DIR()).filter((f) => /^still-[0-9a-f]+\.jpg$/.test(f)).map((f) => ({ f, t: fs.statSync(path.join(STILL_DIR(), f)).mtimeMs })).sort((x, y) => y.t - x.t).slice(12);
+        for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true }); // a dozen is plenty
+      }
+      if (now && !isOurStill(now) && !st.wallpaper.prevWindows) store.set({ wallpaper: { prevWindows: now } });
+      if (win32.setWindowsWallpaper(want)) stillSet.set(desk, want);
+    } catch (e) { console.warn('[still]', e.message); }
+    stillBusy = false;
+  }, delay);
+}
+
 // ---------- lock screen ----------
 let lockTimer = null;
 async function applyLockScreen() {
@@ -893,7 +936,9 @@ async function applyLockScreen() {
   const file = await lockscreen.snapshot(path.join(app.getPath('userData'), 'lock'), ui('wallpaper.html', '?snapshot=1'), webPrefs.preload);
   const result = { file, lock: false, wallpaper: false, error: '' };
   try { result.lock = await lockscreen.setLockScreen(file); } catch (e) { result.error = e.message; }
-  if (st.lock.alsoWallpaper) result.wallpaper = win32.setWindowsWallpaper(file);
+  // Windows' own background gets the still without widgets (above), never this picture: baked-in widgets would show
+  // through, out of date, whenever Windows draws its background
+  if (st.lock.alsoWallpaper) { syncWindowsWallpaper(0); result.wallpaper = true; }
   store.set({ lock: { last: file, lastAt: Date.now(), lastError: result.error } });
   broadcast('settings', store.get());
   return result;
@@ -947,7 +992,7 @@ function applySettings(patch) {
     if (next.general.accentFromWallpaper) { store.set({ general: { accentManual: before.accent } }); syncWallAccent(); }
     else if (next.general.accentManual) { const back = next.general.accentManual; store.set({ general: { accentManual: '' } }); setTimeout(() => applySettings({ accent: back }), 0); }
   }
-  if (patch.wallpaper !== undefined) syncWallAccent();
+  if (patch.wallpaper !== undefined) { syncWallAccent(); if (Object.keys(patch.wallpaper).some((k) => k !== 'prevWindows')) syncWindowsWallpaper(); }
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
@@ -1411,7 +1456,7 @@ app.whenReady().then(() => {
   store = new Store(app.getPath('userData'));
   gallery.init(app.getPath('userData'));
   themes.init(app.getPath('userData'));
-  setTimeout(() => { readDeskId(); syncWallAccent(); }, 2500); // the accent from the wallpaper, if that's on themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
+  setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
   if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
   if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating
@@ -1488,6 +1533,7 @@ app.whenReady().then(() => {
   if (store.get().topbar.on) setTopbar(true);
   if (store.get().island.on) setIsland(true);
   if (store.get().dock.on) setDock(true);
+  else if (win32.isWin && win32.taskbarOpacity() < 255) win32.showTaskbar(true); // left transparent by a run that didn't end cleanly
   else if (win32.isWin) win32.showTaskbar(true); // in case a crash left it hidden
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
   if (!process.argv.includes('--smoke') && !process.argv.includes('--autostart')) openSettings(); // first run: show what can be customized

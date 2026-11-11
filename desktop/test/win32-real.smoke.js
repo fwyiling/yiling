@@ -10,6 +10,19 @@ const wins = w.listWindows([process.pid]);
 assert.ok(Array.isArray(wins));
 console.log(`ok   listWindows: ${wins.length} windows`, wins.slice(0, 5).map((x) => `${x.title} (${x.exe.split('\\').pop()})`));
 console.log('ok   taskbarAutoHide:', w.taskbarAutoHide());
+// the dock keeps the taskbar hidden AND fully transparent (Explorer shows it again by itself during desktop slides);
+// showing it on purpose makes it opaque again
+{
+  const was = w.taskbarVisible();
+  w.showTaskbar(false);
+  assert.strictEqual(w.taskbarVisible(), false, 'the taskbar stayed visible');
+  assert.strictEqual(w.taskbarOpacity(), 0, 'the hidden taskbar is not transparent');
+  w.showTaskbar(true);
+  assert.strictEqual(w.taskbarVisible(), true, 'the taskbar did not come back');
+  assert.strictEqual(w.taskbarOpacity(), 255, 'the taskbar did not become opaque again');
+  if (!was) w.showTaskbar(false);
+  console.log('ok   taskbar: hidden and transparent, then back and opaque');
+}
 console.log('ok   fullscreenAppRunning:', w.fullscreenAppRunning([{ x: 0, y: 0, width: 1024, height: 768 }]));
 const ic = w.iconPixels('C:\\Windows\\explorer.exe', 0, 256);
 assert.ok(ic && ic.width === 256, 'no 256 px icon from explorer.exe');

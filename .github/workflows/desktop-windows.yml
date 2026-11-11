@@ -73,7 +73,7 @@ jobs:
           Remove-Item (Join-Path $dir 'settings.json')
           if ($out -notmatch '"dock":true') { throw 'the dock did not start' }
           if ($out -notmatch '"taskbarVisible":false') { throw 'the Windows taskbar stayed visible next to the dock' }
-          node -e "const v = require('./win32').taskbarVisible(); console.log('taskbar visible after quitting:', v); process.exit(v ? 0 : 1)"
+          node -e "const w = require('./win32'), v = w.taskbarVisible(), o = w.taskbarOpacity(); console.log('taskbar after quitting: visible', v, 'opacity', o); process.exit(v && o === 255 ? 0 : 1)"
       - name: Upload the Windows build
         uses: actions/upload-artifact@v4
         # a copy for this run only: the release below is where the builds live. Kept for a day, and never a reason

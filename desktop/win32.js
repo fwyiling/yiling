@@ -36,6 +36,7 @@ function bind() {
     GetWindowLongPtrW: user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hwnd, int index)'),
     SetWindowLongPtrW: user32.func('intptr_t __stdcall SetWindowLongPtrW(intptr_t hwnd, int index, intptr_t value)'),
     SetLayeredWindowAttributes: user32.func('bool __stdcall SetLayeredWindowAttributes(intptr_t hwnd, uint key, uint8 alpha, uint flags)'),
+    GetLayeredWindowAttributes: user32.func('bool __stdcall GetLayeredWindowAttributes(intptr_t hwnd, _Out_ uint32_t *key, _Out_ uint8_t *alpha, _Out_ uint32_t *flags)'),
     SetWindowPos: user32.func('bool __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int cx, int cy, uint flags)'),
     GetSystemMetrics: user32.func('int __stdcall GetSystemMetrics(int index)'),
     GetForegroundWindow: user32.func('intptr_t __stdcall GetForegroundWindow()'),
@@ -430,16 +431,42 @@ function refreshTaskbar() {
 
 /** Hide or show the Windows taskbar on every monitor (what Seelen UI does while its own dock is on).
  *  Explorer sometimes shows it again (e.g. after the Start menu), so the app re-applies this while the dock runs. */
-function showTaskbar(show) {
-  if (!load()) return false;
+function taskbars() {
   const bars = [explorerTray()];
   for (let h = 0, i = 0; i < 16; i++) { h = u.FindWindowExW(0, h, 'Shell_SecondaryTrayWnd', null); if (isNull(h)) break; bars.push(h); }
+  return bars.filter((h) => !isNull(h));
+}
+// Hidden AND fully transparent: Explorer shows the taskbar again by itself for a moment (switching desktops, Start,
+// display changes), and that flashed a strip in the accent colour during the desktop slide. Transparent, a taskbar
+// Explorer brings back stays unseen until it's hidden again. Back to opaque whenever it's shown on purpose.
+const layeredByUs = new Set(); // taskbars this run made layered (the style is taken off again when shown)
+function taskbarSeeThrough(h, hide) {
+  const ex = Number(u.GetWindowLongPtrW(h, GWL_EXSTYLE));
+  if (hide) {
+    if (!(ex & WS_EX_LAYERED)) { u.SetWindowLongPtrW(h, GWL_EXSTYLE, ex | WS_EX_LAYERED); layeredByUs.add(Number(h)); }
+    u.SetLayeredWindowAttributes(h, 0, 0, 0x2); // LWA_ALPHA
+  } else if (ex & WS_EX_LAYERED) {
+    u.SetLayeredWindowAttributes(h, 0, 255, 0x2);
+    if (layeredByUs.delete(Number(h))) u.SetWindowLongPtrW(h, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
+  }
+}
+function showTaskbar(show) {
+  if (!load()) return false;
   let changed = false;
-  for (const h of bars) {
-    if (isNull(h) || !!u.IsWindowVisible(h) === !!show) continue;
+  for (const h of taskbars()) {
+    taskbarSeeThrough(h, !show);
+    if (!!u.IsWindowVisible(h) === !!show) continue;
     u.ShowWindow(h, show ? 5 : 0); changed = true; // SW_SHOW / SW_HIDE
   }
   return changed;
+}
+/** How opaque Explorer's taskbar is: 255 normally, 0 while the dock keeps it out of sight. */
+function taskbarOpacity() {
+  if (!load()) return 255;
+  const h = explorerTray(); if (isNull(h)) return 255;
+  if (!(Number(u.GetWindowLongPtrW(h, GWL_EXSTYLE)) & WS_EX_LAYERED)) return 255;
+  const key = [0], alpha = [255], flags = [0];
+  return u.GetLayeredWindowAttributes(h, key, alpha, flags) && (flags[0] & 0x2) ? alpha[0] : 255;
 }
 
 /** An icon from an exe/dll/ico file as BGRA pixels at `size` (e.g. 256), or null. Sharp when the dock magnifies it. */
@@ -783,6 +810,7 @@ module.exports = {
   hideSwitchLabel: safe('hideSwitchLabel', hideSwitchLabel, []),
   lastOverlay: () => lastOverlay,
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
+  taskbarOpacity: safe('taskbarOpacity', taskbarOpacity, 255),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),

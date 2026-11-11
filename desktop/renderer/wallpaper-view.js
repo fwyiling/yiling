@@ -62,7 +62,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
         const key = `windows|${file}`;
         if (key === mediaKey) return;
         mediaKey = key;
-        const img = el('img'); img.alt = ''; img.src = `sd://media/winwall?desk=${encodeURIComponent(deskId)}&v=${encodeURIComponent(file)}`; show(img);
+        const img = el('img', 'wp-native'); img.alt = ''; img.src = `sd://media/winwall?desk=${encodeURIComponent(deskId)}&v=${encodeURIComponent(file)}`; show(img);
       });
       return;
     }
