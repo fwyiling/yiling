@@ -24,13 +24,14 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const dim = el('div', 'wp-dim');
   const layer = el('div', 'wp-widgets');
   // grouped layouts: the time in one hero stack, the info as a row (or column) of matching cards
-  const groups = { hero: el('div', 'wp-group wp-hero'), cards: el('div', 'wp-group wp-cards'), foot: el('div', 'wp-group wp-foot'), tl: el('div', 'wp-group wp-tl'), bl: el('div', 'wp-group wp-bl') };
+  const groups = { tl: el('div', 'wp-group wp-tl'), bl: el('div', 'wp-group wp-bl'), synl: el('div', 'wp-group wp-synl'), synb: el('div', 'wp-group wp-synb'), synr: el('div', 'wp-group wp-synr') };
   // Mac layout (after macOS desktop widgets): calendar + weather top left, reminders + now playing bottom left
   const MAC_GROUP = { calendar: 'tl', weather: 'tl', reminders: 'bl', media: 'bl' };
   const hidden = el('div', 'wp-hidden');
-  const GROUP_OF = { greeting: 'hero', clock: 'hero', date: 'hero', media: 'cards', today: 'cards', weather: 'cards', stats: 'cards', quote: 'foot' };
+  // Syndicates layout (made for the Mecha theme): a cockpit HUD down the left, a strip along the bottom, a rail on the right
+  const SYN_GROUP = { greeting: 'synl', clock: 'synl', date: 'synl', weather: 'synl', calendar: 'synl', reminders: 'synl', media: 'synb', today: 'synb', stats: 'synr', quote: 'synr' };
   const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'today', 'reminders', 'media', 'stats', 'quote'];
-  layer.append(groups.hero, groups.cards, groups.foot, groups.tl, groups.bl, hidden);
+  layer.append(groups.tl, groups.bl, groups.synl, groups.synb, groups.synr, hidden);
   root.append(media, dim, layer);
   let s = settings, mediaKey = '', deskId = desk, winToken = 0;
   // the preview in Customize shows a sample so the widget can be placed while nothing plays
@@ -89,7 +90,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
     media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
-  const layout = () => (['center', 'left', 'mac', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'center');
+  const layout = () => (['mac', 'syn', 'free'].includes(s.widgets.layout) ? s.widgets.layout : 'mac');
+  const cardsLayout = () => layout() === 'mac' || layout() === 'syn'; // the card-shaped widgets (calendar, reminders, the wide weather)
   // Today: the class on now / next (from the Home panel's timetable) and what's left on the to-do list
   function todayInfo() {
     const nc = upcomingClass(s.home?.timetable), open = (s.home?.todos || []).filter((t) => !t.done);
@@ -105,18 +107,18 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     else { lbl.textContent = 'Timetable'; b.textContent = 'No classes yet'; sub.textContent = 'Add them in Home (Alt+Space)'; }
     if (open.length) { e.querySelector('.todo b').textContent = `${open.length} left`; e.querySelector('.todo .sub').textContent = open[0].text || ''; }
   }
-  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on || layout() === 'mac')
+  const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on || cardsLayout())
 
   function placeWidgets() {
     const mode = layout();
-    layer.dataset.layout = mode;
+    layer.dataset.layout = mode; layer.classList.toggle('macish', mode === 'mac' || mode === 'syn');
     layer.dataset.dock = s.dock?.on ? 'on' : 'off'; // keep the bottom clear for the dock
     for (const k of ORDER) {
       const cfg = s.widgets[k];
       if (!cfg || !MAKERS[k]) continue;
       if (!widgets[k]) { widgets[k] = MAKERS[k](); widgets[k].dataset.w = k; }
       const e = widgets[k];
-      const g = mode === 'mac' ? MAC_GROUP[k] : mode === 'free' ? 'layer' : GROUP_OF[k];
+      const g = mode === 'mac' ? MAC_GROUP[k] : mode === 'syn' ? SYN_GROUP[k] : 'layer';
       const parent = g === 'layer' ? layer : groups[g] || hidden; // calendar and reminders only exist in the Mac layout
       parent.append(e); // keeps ORDER inside each group
       e.hidden = !visible(k, cfg) || parent === hidden;
@@ -162,8 +164,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     w.dataset.loaded = '1';
     try {
       const r = await sd.weather(city || '');
-      w.querySelector('.t').textContent = layout() === 'mac' ? `${r.temp}°` : `${r.temp}${r.unit}`;
-      w.querySelector('.d').textContent = layout() === 'mac' ? r.text : `${r.text} · ${r.place}`;
+      w.querySelector('.t').textContent = cardsLayout() ? `${r.temp}°` : `${r.temp}${r.unit}`;
+      w.querySelector('.d').textContent = cardsLayout() ? r.text : `${r.text} · ${r.place}`;
       w.querySelector('.place').textContent = r.place;
       w.querySelector('.wi').innerHTML = weatherIcon(r.code, r.day);
       w.querySelector('.hl').textContent = Number.isFinite(r.hi) ? `H:${r.hi}° L:${r.lo}°` : '';

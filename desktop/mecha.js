@@ -30,6 +30,8 @@ const F = {
   cardSel: frame({ s: 30, c: 10, fill: 'rgba(166,214,242,.08)', stroke: 'rgba(166,214,242,.85)' }), // a chosen card
   big: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.92)', stroke: 'rgba(236,244,252,.5)' }), // the search bar, a big panel
   bigSel: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.94)', stroke: 'rgba(166,214,242,.95)' }), // the search bar while typing
+  hudTop: frame({ s: 30, c: 10, corners: 'tl', fill: 'rgba(8,12,20,.62)', stroke: 'rgba(236,244,252,.5)' }), // the Syndicates layout's time panel, top half
+  hudBot: frame({ s: 30, c: 10, corners: 'br', fill: 'rgba(8,12,20,.62)', stroke: 'rgba(236,244,252,.5)' }), // and its bottom half
   danger: frame({ s: 16, c: 5, fill: 'rgba(229,72,77,.3)', stroke: 'rgba(255,140,140,.9)' }),
 };
 const bev = (v, c = 5) => `border: 1px solid transparent; border-radius: 0; border-image: var(--mx-${v}) ${c} fill / ${c}px stretch; background: none; box-shadow: none;`;
@@ -185,11 +187,16 @@ a { color: #a6d6f2; }
 
 // desktop widgets: their insides to match the bevel-cut cards
 const wallpaper = `
+/* the Syndicates layout: the time panel cut like the cards (top left on the clock, bottom right under the date) */
+[data-layout="syn"] .w-clock { border: 0; border-radius: 0; background: none; border-image: var(--mx-hudTop) 10 fill / 10px 10px 0 10px stretch; clip-path: polygon(9px 0, 100% 0, 100% 100%, 0 100%, 0 9px); }
+[data-layout="syn"] .w-date { border: 0; background: repeating-linear-gradient(90deg, rgba(166, 214, 242, .55) 0 1px, transparent 1px 1.2cqmin) 1.8cqmin bottom .6cqmin / calc(100% - 3.6cqmin) .6cqmin no-repeat; border-image: var(--mx-hudBot) 10 fill / 0 10px 10px 10px stretch; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%); }
+[data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-clock)::before, [data-layout="syn"] .w-quote::before { color: #a6d6f2; }
+[data-layout="syn"] .w-clock .hm { text-shadow: 0 0 2cqmin rgba(166, 214, 242, .35); }
 /* the card's background blur is a rectangle: cut it like the frame, or it showed as square corners */
-.w-card, [data-layout="mac"] .w-card { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); box-shadow: none; }
+.w-card, .macish .w-card { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); box-shadow: none; }
 .w-calendar .grid .today { border-radius: 0; background: #d6e6f6; color: ${INK}; ${clip(3)} }
 .w-reminders li i { border-radius: 0; transform: rotate(45deg) scale(.85); }
-.w-media .art, [data-layout="mac"] .w-media .art { border-radius: 0; ${clip(6)} }
+.w-media .art, .macish .w-media .art { border-radius: 0; ${clip(6)} }
 .w-card b.mo, .w-reminders .rh b, .w-weather .place { text-transform: uppercase; letter-spacing: .12em; }
 `;
 

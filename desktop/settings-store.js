@@ -17,7 +17,7 @@ const DEFAULTS = {
     desks: {},                // desktop id -> { scene, file, url, fileStamp } (null: same as the main one)
   },
   widgets: {
-    layout: 'mac',            // mac (corner widgets, like macOS) | center | left (grouped, tidy) | free (drag each widget anywhere)
+    layout: 'mac',            // mac (corner widgets, like macOS) | syn (Syndicates: a cockpit HUD, made for Mecha) | free (drag each widget anywhere)
     clock:    { on: true,  x: 0.5,  y: 0.34, scale: 1, style: 'big' },   // big | minimal | analog
     greeting: { on: true,  x: 0.5,  y: 0.22, scale: 1 },
     date:     { on: true,  x: 0.5,  y: 0.46, scale: 1 },
@@ -67,6 +67,7 @@ class Store {
     if (saved?.wallpaper && !saved.wallpaper.parallaxV2) { saved.wallpaper.parallax = false; saved.wallpaper.parallaxV2 = true; } // still by default: Windows' background is a picture of it, and a drifting picture never quite matched it mid-slide
     if (saved?.dock && !saved.dock.startV2) { saved.dock.start = false; saved.dock.startV2 = true; } // the Windows button did what the Syndicates one does (Home): one button
     if (saved?.general && !saved.general.deskMotionV2) { saved.general.deskMotion = false; saved.general.deskMotionV2 = true; } // the glide after a switch read as a jolt: still, as on a Mac (Customize > General brings it back)
+    if (['center', 'left'].includes(saved?.widgets?.layout)) saved.widgets.layout = 'mac'; // Centered and Left are gone
     if (saved?.widgets && !saved.widgets.macOffered) { saved.widgets.layout = 'mac'; saved.widgets.macOffered = true; } // the new Mac-style widgets, once (Customize > Widgets switches back)
     this.data = merge(DEFAULTS, saved);
   }

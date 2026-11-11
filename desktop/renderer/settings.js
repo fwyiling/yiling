@@ -21,7 +21,7 @@ preview.addEventListener('pointerdown', (e) => {
   const w = e.target.closest('.wp-widgets [data-w]');
   if (!w || !preview.classList.contains('editing')) return;
   e.preventDefault();
-  if ((s.widgets.layout || 'center') !== 'free') { // keep everything where it is, then let this one move freely
+  if ((s.widgets.layout || 'mac') !== 'free') { // keep everything where it is, then let this one move freely
     const pos = view.positions();
     s = { ...s, widgets: { ...s.widgets, layout: 'free', ...Object.fromEntries(Object.entries(pos).map(([k, p]) => [k, { ...s.widgets[k], ...p }])) } };
     view.update(s);

@@ -21,16 +21,6 @@
 .wp-widgets > .wp-group { display: flex; transform: translate(-50%, -50%) var(--drift); }
 .wp-group > * { position: relative; zoom: var(--scale, 1); }
 .wp-group:not(:has(> :not([hidden]))), .wp-widgets[data-layout="free"] > .wp-group { display: none; }
-/* Centered: time in the middle, one row of cards under it, the quote at the bottom */
-[data-layout="center"] > .wp-hero { left: 50%; top: 37%; flex-direction: column; align-items: center; gap: 1.4cqmin; }
-[data-layout="center"] > .wp-cards { left: 50%; top: 66%; gap: 1.6cqmin; align-items: stretch; }
-[data-layout="center"] > .wp-foot { left: 50%; top: 88%; }
-/* Left: time bottom-left (clear of the desktop icons), cards stacked on the right */
-[data-layout="left"] > .wp-hero { left: 6.5%; top: 66%; transform: translate(0, -50%) var(--drift); flex-direction: column; align-items: flex-start; gap: 1.2cqmin; }
-[data-layout="left"] > .wp-cards { left: auto; right: 4%; top: 66%; transform: translate(0, -50%) var(--drift); flex-direction: column; align-items: stretch; gap: 1.4cqmin; }
-[data-layout="left"] > .wp-foot { left: 6.5%; top: 88%; transform: translate(0, -50%) var(--drift); }
-[data-layout="left"] .w-quote { text-align: left; width: 44cqw; }
-
 /* ---------- time ---------- */
 .w-clock { font-weight: 600; letter-spacing: -.03em; line-height: 1; display: flex; align-items: baseline; gap: .12em; }
 .w-clock .hm { font-size: 15cqmin; font-variant-numeric: tabular-nums; }
@@ -81,21 +71,15 @@
 .w-today .col + .col:not([hidden]) { padding-left: 2.4cqmin; border-left: 1px solid rgba(255, 255, 255, .1); }
 .w-today b { font-size: 2cqmin; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .w-today .sub { font-size: 1.45cqmin; opacity: .7; overflow: hidden; text-overflow: ellipsis; }
-/* with the dock on, nothing sits where it appears */
-[data-layout="center"][data-dock="on"] > .wp-foot { top: 81%; }
-[data-layout="center"][data-dock="on"] > .wp-cards { top: 63%; }
-[data-layout="left"][data-dock="on"] > .wp-foot { top: 82%; }
-[data-layout="left"][data-dock="on"] > .wp-hero, [data-layout="left"][data-dock="on"] > .wp-cards { top: 60%; }
-
 /* ---------- Mac layout: frosted widgets in the left corners (after macOS desktop widgets) ---------- */
 .wp-hidden { display: none; }
-[data-layout="mac"] > .wp-hero, [data-layout="mac"] > .wp-cards, [data-layout="mac"] > .wp-foot { display: none; }
+.wp-widgets > .wp-hero, .wp-widgets > .wp-cards, .wp-widgets > .wp-foot { display: none; } /* the old Centered / Left groups */
 .wp-widgets > .wp-tl, .wp-widgets > .wp-bl { gap: 1.6cqmin; align-items: flex-start; }
 [data-layout="mac"] > .wp-tl { left: 2cqw; top: 6cqh; transform: var(--drift); }
 [data-layout="mac"] > .wp-bl { left: 2cqw; top: auto; bottom: 6cqh; transform: var(--drift); align-items: flex-end; }
 [data-layout="mac"][data-dock="on"] > .wp-bl { bottom: 11cqh; }
 .wp-widgets:not([data-layout="mac"]) > .wp-tl, .wp-widgets:not([data-layout="mac"]) > .wp-bl { display: none; }
-[data-layout="mac"] .w-card { border-radius: 2.6cqmin; padding: 1.6cqmin 1.8cqmin; background: rgba(255, 255, 255, .12); backdrop-filter: blur(26px) saturate(1.5);
+.macish .w-card { border-radius: 2.6cqmin; padding: 1.6cqmin 1.8cqmin; background: rgba(255, 255, 255, .12); backdrop-filter: blur(26px) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 1cqmin 3cqmin rgba(0, 0, 0, .18); min-height: 0; text-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
 /* calendar: square */
 .w-calendar { display: block; width: 15cqmin; height: 15cqmin; }
@@ -105,13 +89,13 @@
 .w-calendar .grid span { line-height: 1.55cqmin; border-radius: 50%; }
 .w-calendar .grid .today { background: color-mix(in srgb, var(--a) 40%, #ff6b5e); color: #fff; font-weight: 700; }
 /* weather: wide, with the next hours */
-[data-layout="mac"] .w-weather { display: grid; width: 32cqmin; height: 15cqmin; align-content: space-between; gap: .4cqmin; }
+.macish .w-weather { display: grid; width: 32cqmin; height: 15cqmin; align-content: space-between; gap: .4cqmin; }
 .w-weather .wh, .w-weather .wr, .w-weather .hours { display: none; }
-[data-layout="mac"] .w-weather .wh { display: grid; } [data-layout="mac"] .w-weather .wr { display: flex; align-items: center; gap: .6cqmin; } [data-layout="mac"] .w-weather .hours { display: grid; grid-template-columns: repeat(6, 1fr); text-align: center; }
+.macish .w-weather .wh { display: grid; } .macish .w-weather .wr { display: flex; align-items: center; gap: .6cqmin; } .macish .w-weather .hours { display: grid; grid-template-columns: repeat(6, 1fr); text-align: center; }
 .w-weather > .t, .w-weather > .d { display: block; }
-[data-layout="mac"] .w-weather .place { font-size: 1.4cqmin; font-weight: 700; }
-[data-layout="mac"] .w-weather .wh .t { font-size: 3.6cqmin; font-weight: 400; letter-spacing: -.02em; line-height: 1; }
-[data-layout="mac"] .w-weather .wr .d { font-size: 1.1cqmin; opacity: .9; } [data-layout="mac"] .w-weather .hl { margin-left: auto; font-size: 1.05cqmin; opacity: .85; }
+.macish .w-weather .place { font-size: 1.4cqmin; font-weight: 700; }
+.macish .w-weather .wh .t { font-size: 3.6cqmin; font-weight: 400; letter-spacing: -.02em; line-height: 1; }
+.macish .w-weather .wr .d { font-size: 1.1cqmin; opacity: .9; } .macish .w-weather .hl { margin-left: auto; font-size: 1.05cqmin; opacity: .85; }
 .w-weather .wi svg, .w-weather .hr i svg { width: 1.6cqmin; height: 1.6cqmin; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .w-weather .hr { display: grid; justify-items: center; gap: .25cqmin; } .w-weather .hr small { font-size: .95cqmin; opacity: .75; } .w-weather .hr b { font-size: 1.05cqmin; font-weight: 600; }
 .w-weather .hr i { font-style: normal; }
@@ -124,21 +108,21 @@
 .w-reminders li i { width: 1.15cqmin; height: 1.15cqmin; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .7); flex: none; }
 .w-reminders li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .w-reminders li.none { opacity: .7; }
 /* now playing as a square card */
-[data-layout="mac"] .w-media { display: grid; grid-template-columns: 1fr; align-content: space-between; width: 15cqmin; height: 15cqmin; gap: .5cqmin; max-width: none; }
-[data-layout="mac"] .w-media .art { width: 4.6cqmin; height: 4.6cqmin; border-radius: 1cqmin; }
-[data-layout="mac"] .w-media .txt { max-width: 100%; width: auto; } [data-layout="mac"] .w-media b { font-size: 1.25cqmin; } [data-layout="mac"] .w-media span { font-size: 1.1cqmin; }
-[data-layout="mac"] .w-media .eq { margin: 0; }
+.macish .w-media { display: grid; grid-template-columns: 1fr; align-content: space-between; width: 15cqmin; height: 15cqmin; gap: .5cqmin; max-width: none; }
+.macish .w-media .art { width: 4.6cqmin; height: 4.6cqmin; border-radius: 1cqmin; }
+.macish .w-media .txt { max-width: 100%; width: auto; } .macish .w-media b { font-size: 1.25cqmin; } .macish .w-media span { font-size: 1.1cqmin; }
+.macish .w-media .eq { margin: 0; }
 
 /* weather (Mac layout), laid out like the macOS widget so it always fits the card:
    city + temperature left, icon / condition / high-low right, the next hours along the bottom */
-[data-layout="mac"] .w-weather { grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; align-content: stretch; column-gap: 1cqmin; row-gap: .6cqmin; overflow: hidden; }
-[data-layout="mac"] .w-weather .wh { grid-column: 1; grid-row: 1; align-content: start; gap: .2cqmin; min-width: 0; }
-[data-layout="mac"] .w-weather .place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
-[data-layout="mac"] .w-weather .wh .t { font-size: 3.1cqmin; line-height: 1.05; }
-[data-layout="mac"] .w-weather .wr { grid-column: 2; grid-row: 1; display: grid; justify-items: end; align-content: start; gap: .25cqmin; text-align: right; }
-[data-layout="mac"] .w-weather .wr .wi svg { width: 1.9cqmin; height: 1.9cqmin; }
-[data-layout="mac"] .w-weather .hl { margin-left: 0; }
-[data-layout="mac"] .w-weather .hours { grid-column: 1 / -1; grid-row: 2; align-self: end; }
+.macish .w-weather { grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; align-content: stretch; column-gap: 1cqmin; row-gap: .6cqmin; overflow: hidden; }
+.macish .w-weather .wh { grid-column: 1; grid-row: 1; align-content: start; gap: .2cqmin; min-width: 0; }
+.macish .w-weather .place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
+.macish .w-weather .wh .t { font-size: 3.1cqmin; line-height: 1.05; }
+.macish .w-weather .wr { grid-column: 2; grid-row: 1; display: grid; justify-items: end; align-content: start; gap: .25cqmin; text-align: right; }
+.macish .w-weather .wr .wi svg { width: 1.9cqmin; height: 1.9cqmin; }
+.macish .w-weather .hl { margin-left: 0; }
+.macish .w-weather .hours { grid-column: 1 / -1; grid-row: 2; align-self: end; }
 
 /* the still for Windows' own background: the picture and its darkening, no widgets */
 .plain .wp-widgets { display: none !important; }
@@ -147,3 +131,44 @@
 .still-shot *, .still-shot *::before, .still-shot *::after { animation: none !important; transition: none !important; }
 /* nothing picked: your Windows background, exactly where Windows draws it (no drift, no extra zoom) */
 .wp-media img.wp-native { transform: none !important; }
+
+/* ---------- Syndicates layout: a cockpit HUD down the left (made for the Mecha theme, fine without it) ----------
+   time, weather, calendar and to-dos in one column under the top bar; what's playing and what's next along the
+   bottom; CPU and the quote in a thin rail on the right. Every panel is labelled like a cockpit readout. */
+.wp-widgets:not([data-layout="syn"]) > .wp-synl, .wp-widgets:not([data-layout="syn"]) > .wp-synb, .wp-widgets:not([data-layout="syn"]) > .wp-synr { display: none; }
+[data-layout="syn"] > .wp-synl { left: 2.2cqw; top: 7cqh; transform: var(--drift); width: 33.2cqmin; flex-wrap: wrap; align-items: stretch; gap: 1.2cqmin; }
+[data-layout="syn"] > .wp-synb { left: 2.2cqw; top: auto; bottom: 6cqh; transform: var(--drift); align-items: stretch; gap: 1.2cqmin; }
+[data-layout="syn"][data-dock="on"] > .wp-synb { bottom: 11cqh; }
+[data-layout="syn"] > .wp-synr { left: auto; right: 2.2cqw; top: 7cqh; transform: var(--drift); flex-direction: column; align-items: flex-end; gap: 1.2cqmin; }
+[data-layout="syn"] .w-card { --syn-pad: 2.6cqmin; position: relative; padding-top: var(--syn-pad); }
+/* the readout labels */
+[data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-time)::before, [data-layout="syn"] .w-quote::before {
+  position: absolute; left: 1.8cqmin; top: .9cqmin; font: 700 .95cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .22em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--a) 45%, #cfe6ff); opacity: .9; text-shadow: none; }
+[data-layout="syn"] .w-weather::before { content: "ENV // WEATHER"; }
+[data-layout="syn"] .w-media::before { content: "AUDIO // NOW PLAYING"; }
+[data-layout="syn"] .w-today::before { content: "SCHEDULE // NEXT"; }
+[data-layout="syn"] .w-stats::before { content: "CORE // LOAD"; }
+[data-layout="syn"] .w-quote::before { content: "LOG"; position: static; display: block; margin-bottom: .8cqmin; }
+/* time: one panel of clock, date and greeting, with a ruler under it */
+[data-layout="syn"] .w-greeting, [data-layout="syn"] .w-clock, [data-layout="syn"] .w-date { order: 0; width: 100%; box-sizing: border-box; }
+[data-layout="syn"] .w-clock { order: 1; position: relative; padding: 2.6cqmin 1.8cqmin .4cqmin; background: rgba(10, 15, 24, .5); backdrop-filter: blur(18px);
+  border: 1px solid rgba(236, 244, 252, .22); border-bottom: 0; text-shadow: 0 0 2.4cqmin color-mix(in srgb, var(--a) 40%, transparent); }
+[data-layout="syn"] .w-clock::before { content: "SYS // TIME"; position: absolute; left: 1.8cqmin; top: .9cqmin; font: 700 .95cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .22em; color: color-mix(in srgb, var(--a) 45%, #cfe6ff); }
+[data-layout="syn"] .w-clock .hm { font-size: 9.5cqmin; font-weight: 300; letter-spacing: .02em; }
+[data-layout="syn"] .w-clock .ap { font-size: 2cqmin; letter-spacing: .2em; }
+[data-layout="syn"] .w-date { order: 2; margin-top: -1.2cqmin; padding: .6cqmin 1.8cqmin 1.4cqmin; border-radius: 0; font-size: 1.25cqmin; letter-spacing: .24em; text-transform: uppercase;
+  background: repeating-linear-gradient(90deg, rgba(236, 244, 252, .45) 0 1px, transparent 1px 1.2cqmin) left bottom .5cqmin / 100% .6cqmin no-repeat, rgba(10, 15, 24, .5);
+  border: 1px solid rgba(236, 244, 252, .22); border-top: 0; backdrop-filter: blur(18px); }
+[data-layout="syn"] .w-greeting { order: 3; font-size: 1.5cqmin; letter-spacing: .08em; opacity: .85; padding-left: .4cqmin; }
+[data-layout="syn"] .w-weather { order: 4; width: 100%; }
+[data-layout="syn"] .w-calendar { order: 5; width: 16cqmin; height: 16cqmin; }
+[data-layout="syn"] .w-reminders { order: 6; width: 16cqmin; height: 16cqmin; }
+/* bottom strip: a wide now-playing bar, and the next class / to-do */
+.macish[data-layout="syn"] .w-media { grid-template-columns: auto 1fr auto; grid-template-rows: auto; align-items: center; width: 33.2cqmin; height: auto; min-height: 9cqmin; gap: 1.2cqmin; }
+.macish[data-layout="syn"] .w-media .art { width: 5.4cqmin; height: 5.4cqmin; }
+.macish[data-layout="syn"] .w-media b { font-size: 1.5cqmin; } .macish[data-layout="syn"] .w-media span { font-size: 1.2cqmin; }
+[data-layout="syn"] .w-today { min-height: 9cqmin; }
+/* right rail: CPU / memory as readouts, the quote small under it */
+[data-layout="syn"] .w-stats { padding-left: 2cqmin; padding-right: 2cqmin; }
+[data-layout="syn"] .w-quote { width: 24cqmin; text-align: right; } [data-layout="syn"] .w-quote blockquote { font-size: 1.4cqmin; } [data-layout="syn"] .w-quote figcaption { font-size: 1cqmin; }
