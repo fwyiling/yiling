@@ -426,7 +426,6 @@ let galStarted = false;
 const galStart = () => { if (!galStarted && !document.querySelector('[data-panel="wallpaper"]').hidden && document.querySelector('[data-panel="wallpaper"]').classList.contains('on')) { galStarted = true; galLoad(); } };
 document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => setTimeout(galStart, 0)));
 galStart();
-$('openOverview').onclick = () => sd.overview();
 
 // ---------- search across every tab ----------
 // Rows are the switches, fields, sliders and paragraphs; a row matches on its own text, and so does everything in

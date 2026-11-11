@@ -18,7 +18,7 @@ const I = {
 async function renderMenu() {
   const st = await sd.flyoutState().catch(() => ({}));
   const items = [['home', 'Open Home', st.hotkey || 'Alt+Space'], ['customize', 'Customize…', 'Ctrl+Alt+S'], '-', ['timer', 'Timer', 'Ctrl+Alt+T'], ['gamer', 'Gamer mode', st.gamer ? '' : 'Ctrl+Alt+G', st.gamer],
-    ['overview', 'Desktops overview', 'Ctrl+Alt+Up'], ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L'], 'power'];
+    ['overview', 'Task View', 'Win+Tab'], ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L'], 'power'];
   $('menu').replaceChildren(...items.map((it) => {
     if (it === '-') return document.createElement('hr');
     if (it === 'power') return powerRow();

@@ -1,7 +1,7 @@
 # Syndicates Desktop
 
 A desktop shell for Windows 10 and 11: wallpaper and widgets, a dock, a top bar with your tray icons, an
-island, a desktops overview and themes, in the same grey-blue style as the Syndicates Client.
+island and themes, in the same grey-blue style as the Syndicates Client.
 
 - **Wallpaper** behind your desktop icons: a photo, a video or a web page, or your Windows background if
   you pick nothing. Each virtual desktop can have its own. A built-in **anime gallery** (from Wallhaven,
@@ -19,7 +19,7 @@ island, a desktops overview and themes, in the same grey-blue style as the Syndi
 - **Island**: a pill at the top for the timer, what's playing (with a seek bar), volume / brightness and
   short notes (Caps Lock, headphones), with an **island pet** to keep you company.
 - **Desktops**: three-finger swipes like a MacBook, drag a window against the screen edge to take it to the
-  next desktop, and an **overview** of every desktop and its windows (`Ctrl+Alt+Up`).
+  next desktop; three-finger swipe up (or Win+Tab) is Windows' own Task View.
 - **Home panel** (`Alt+Space`, changeable, or the **Windows key** like a Start menu): search apps, files and
   the web, pinned apps, to-dos, notes, timetable, books, lock / sleep / restart / shut down. Win+E and other
   shortcuts still work; Ctrl+Esc opens Windows' own Start menu. Customize > Home switches the Windows key off.

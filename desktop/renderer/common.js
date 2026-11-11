@@ -53,7 +53,7 @@ export function upcomingClass(timetable, d = new Date()) {
 // a theme can bring its own accent colour; while it's on, it wins over the one picked in Customize
 let themeAccent = '', lastAccent = '';
 export function applyAccent(accent) { lastAccent = accent; document.documentElement.style.setProperty('--a', themeAccent || accent || '#5e7d9c'); }
-/** The active themes on this page (surface: dock, topbar, island, panels, home, overview, wallpaper), kept live. */
+/** The active themes on this page (surface: dock, topbar, island, panels, home, wallpaper, settings), kept live. */
 export async function useTheme(surface) {
   const paint = (b) => {
     let el = document.getElementById('sd-theme');
