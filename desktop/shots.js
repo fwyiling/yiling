@@ -40,14 +40,16 @@ async function list(n = 12) {
 }
 
 // a new screenshot (or one deleted): tell the dock, a moment after the file is fully written
-let watcher = null, watchedDir = '', timer = null;
+let watcher = null, watchedDir = '', timer = null, recheck = null, changed = null;
 function watch(onChange) {
+  changed = onChange;
   const dir = folder();
   if (dir !== watchedDir) {
     watcher?.close(); watcher = null; watchedDir = dir;
-    try { watcher = fs.watch(dir, () => { clearTimeout(timer); timer = setTimeout(onChange, 700); }); } catch { watchedDir = ''; } // not there yet
+    try { watcher = fs.watch(dir, () => { clearTimeout(timer); timer = setTimeout(() => changed?.(), 700); }); } catch { watchedDir = ''; } // not there yet
   }
-  setTimeout(() => watch(onChange), 60000); // folder moved or created since
+  clearTimeout(recheck); // one re-check loop, however often the dock is switched on
+  recheck = setTimeout(() => watch(changed), 60000); // folder moved or created since
 }
 
 module.exports = { folder, list, watch, isKnown: (p) => known.has(p), thumbFor: (p) => [...thumbs.entries()].find(([k]) => k.startsWith(`${p}|`))?.[1] || '' };

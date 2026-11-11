@@ -193,7 +193,7 @@ function showSwitch(st) {
 }
 $('accentFix').onclick = (e) => { e.preventDefault(); sd.windowsSettings('colors'); };
 sd.switchStatus().then(showSwitch).catch(() => {});
-setInterval(() => { if (document.querySelector('[data-panel=general].on')) sd.switchStatus().then(showSwitch).catch(() => {}); }, 2000);
+setInterval(() => { if (document.querySelector('[data-panel=desktops].on')) sd.switchStatus().then(showSwitch).catch(() => {}); }, 2000);
 $('switchTest').onclick = async () => showSwitch(await sd.switchTest());
 const GESTURE = { apps: 'switch apps', desktops: 'switch desktops ✓', volume: 'change the volume', nothing: 'do nothing', custom: 'press custom shortcuts' };
 function showGestures(g) {
@@ -426,3 +426,42 @@ let galStarted = false;
 const galStart = () => { if (!galStarted && !document.querySelector('[data-panel="wallpaper"]').hidden && document.querySelector('[data-panel="wallpaper"]').classList.contains('on')) { galStarted = true; galLoad(); } };
 document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => setTimeout(galStart, 0)));
 galStart();
+$('openOverview').onclick = () => sd.overview();
+
+// ---------- search across every tab ----------
+// Rows are the switches, fields, sliders and paragraphs; a row matches on its own text, and so does everything in
+// a tab whose name matches. Clearing the box goes back to the tab you were on.
+const mainEl = document.querySelector('main');
+for (const sec of document.querySelectorAll('[data-panel]')) sec.dataset.title = document.querySelector(`.side [data-tab="${sec.dataset.panel}"]`)?.textContent.trim() || '';
+function runFind() {
+  const q = $('find').value.trim().toLowerCase();
+  mainEl.classList.toggle('searching', !!q);
+  document.querySelectorAll('.nohit').forEach((e) => e.classList.remove('nohit'));
+  $('findNote').hidden = true;
+  if (!q) { document.querySelector('.preview-wrap').hidden = !['wallpaper', 'widgets'].includes(document.querySelector('.side [data-tab].on')?.dataset.tab); return; }
+  const words = q.split(/\s+/);
+  const hit = (text) => words.every((w) => text.includes(w));
+  let any = false;
+  for (const sec of document.querySelectorAll('[data-panel]')) {
+    const whole = hit(sec.dataset.title.toLowerCase());
+    let found = whole;
+    for (const row of sec.children) {
+      // groups of options (dock options, top bar options): their rows one by one
+      if (!whole && (row.id === 'dockOpts' || row.id === 'topOpts')) {
+        let inner = false;
+        for (const r of row.children) { const k = hit(r.textContent.toLowerCase()); r.classList.toggle('nohit', !k); inner ||= k; }
+        row.classList.toggle('nohit', !inner); found ||= inner;
+        continue;
+      }
+      const ok = whole || hit(row.textContent.toLowerCase());
+      row.classList.toggle('nohit', !ok); found ||= ok;
+    }
+    sec.classList.toggle('nohit', !found); any ||= found;
+  }
+  $('findNote').hidden = any; $('findNote').textContent = `Nothing matches “${$('find').value.trim()}”.`;
+  mainEl.scrollTop = 0;
+}
+$('find').addEventListener('input', runFind);
+$('find').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('find').value = ''; runFind(); } });
+document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => { if ($('find').value) { $('find').value = ''; runFind(); } }));
+addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('find').focus(); $('find').select(); } });

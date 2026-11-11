@@ -398,13 +398,16 @@ const ABM_NEW = 0, ABM_REMOVE = 1, ABM_QUERYPOS = 2, ABM_SETPOS = 3, ABM_GETSTAT
 // Explorer's taskbar. Not just the first "Shell_TrayWnd": the app's own tray (tray.js) makes a window of that name
 // too (so programs' tray icons reach it), and hiding / auto-hiding that one would do nothing.
 function explorerTray() {
+  let other = 0;
   for (let h = 0, i = 0; i < 8; i++) {
     h = u.FindWindowExW(0, h, 'Shell_TrayWnd', null);
-    if (isNull(h)) return 0;
+    if (isNull(h)) break;
     const pid = [0]; u.GetWindowThreadProcessId(h, pid);
-    if (/\\explorer\.exe$/i.test(exeOf(pid[0]))) return h;
+    const exe = exeOf(pid[0]);
+    if (/\\explorer\.exe$/i.test(exe)) return h;
+    if (!other && !/\\powershell\.exe$/i.test(exe)) other = h; // its program couldn't be read: still not our helper
   }
-  return 0;
+  return other;
 }
 const appbar = (hwnd, extra = {}) => ({ cbSize: u.koffi.sizeof(u.APPBARDATA), hWnd: hwnd, uCallbackMessage: 0, uEdge: 3, rc: { left: 0, top: 0, right: 0, bottom: 0 }, lParam: 0, ...extra });
 function taskbarAutoHide() {

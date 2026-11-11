@@ -419,16 +419,23 @@ function pictureAccent(file) {
   [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return '#' + [r, g, b].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
 }
+// Worked out once per picture (decoding a 4K photo takes a moment), and never during a desktop slide: a new accent
+// redraws every bar, which would hitch the animation. It lands just after the slide instead.
 let accentT = 0;
+const accentCache = new Map(); // file|mtime -> colour
 function syncWallAccent() {
   clearTimeout(accentT);
-  accentT = setTimeout(() => {
+  accentT = setTimeout(function run() {
+    if (quiet()) { accentT = setTimeout(run, 200); return; }
     const st = store.get();
     if (!st.general.accentFromWallpaper) return;
     const w = wallFor(st.wallpaper, deskId);
     const file = w.scene === 'image' && w.file ? w.file : !(w.scene === 'web' ? w.url : w.file) ? winwallFile(deskId) : '';
-    if (!file || !fs.existsSync(file)) return;
-    let c = ''; try { c = pictureAccent(file); } catch {}
+    let key = '';
+    try { key = file ? `${file}|${fs.statSync(file).mtimeMs}` : ''; } catch {}
+    if (!key) return;
+    if (!accentCache.has(key)) { let c = ''; try { c = pictureAccent(file); } catch {} accentCache.set(key, c); if (accentCache.size > 40) accentCache.delete(accentCache.keys().next().value); }
+    const c = accentCache.get(key);
     if (c && c !== st.accent) applySettings({ accent: c });
   }, 300);
 }

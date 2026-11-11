@@ -10,10 +10,14 @@
 <body>
   <nav class="side">
     <div class="brand"><img src="logo.svg" alt="" width="30" height="30"><b>Syndicates<br><small>Desktop</small></b></div>
+    <input id="find" class="find" type="search" placeholder="Search settings" spellcheck="false">
     <button data-tab="wallpaper" class="on"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>Wallpaper</button>
     <button data-tab="widgets"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>Widgets</button>
     <button data-tab="home"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>Home panel</button>
-    <button data-tab="taskbar"><svg viewBox="0 0 24 24"><rect x="3" y="15" width="18" height="5" rx="1.8"/><path d="M7 17.5h.01M10.5 17.5h.01M14 17.5h.01"/><path d="M6 5h12M6 9h8"/></svg>Taskbar</button>
+    <button data-tab="dock"><svg viewBox="0 0 24 24"><rect x="3" y="14" width="18" height="6" rx="2.2"/><path d="M7 17h.01M11 17h.01M15 17h.01"/><path d="M6 6h12M6 10h7"/></svg>Dock</button>
+    <button data-tab="topbar"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.8"/><path d="M6.5 6.5h.01M17 6.5h.5M6 14h12M6 18h7"/></svg>Top bar</button>
+    <button data-tab="island"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="6" rx="3"/><path d="M8.5 8h.01M12 15v4M9 19h6"/></svg>Island</button>
+    <button data-tab="desktops"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="6.5" rx="1.5"/><rect x="13" y="4" width="8" height="6.5" rx="1.5"/><rect x="3" y="13.5" width="18" height="6.5" rx="1.5"/></svg>Desktops</button>
     <button data-tab="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>Lock screen</button>
     <button data-tab="themes"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.4 1.6-1.4H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="14.5" cy="7" r="1.2"/></svg>Themes</button>
     <button data-tab="general"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>General</button>
@@ -21,6 +25,7 @@
     <button id="openHome" class="ghost">Open Home <kbd id="hk"></kbd></button>
   </nav>
   <main>
+    <p id="findNote" class="muted" hidden></p>
     <div class="preview-wrap">
       <div id="preview" class="preview"></div>
       <p class="tip" id="tip">This is your desktop. Changes apply instantly.</p>
@@ -51,29 +56,10 @@
       <label class="field-row"><span>Web search</span><select class="field" data-k="home.engine"><option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave</option></select></label>
       <div class="row"><button id="clearPins" class="btn ghost">Unpin all apps</button><span class="muted" id="pinCount"></span></div>
     </section>
-    <section data-panel="taskbar">
-      <h2>Windows taskbar</h2>
-      <p class="muted" id="tbNote">The same options as Windows Settings, applied straight away.</p>
-      <label class="field-row"><span>Icons</span><div class="seg" data-tb="align"><button value="left">Left</button><button value="center">Centre</button></div></label>
-      <label class="field-row"><span>Search</span><div class="seg" data-tb="search"><button value="hidden">Hidden</button><button value="icon">Icon</button><button value="box">Search box</button></div></label>
-      <label class="switch"><span><b>Task view button</b></span><input type="checkbox" data-tb="taskView"></label>
-      <label class="switch"><span><b>Hide the taskbar automatically</b><small id="autoHideNote">It slides up when you move the mouse to the bottom.</small></span><input type="checkbox" data-tb="autoHide"></label>
-      <label class="switch"><span><b>Colour the taskbar with your accent</b><small>Uses the accent colour picked in Windows. <a href="#" id="openColors">Choose it in Windows colours</a></small></span><input type="checkbox" data-tb="accentTint"></label>
-      <h2>Syndicates dock</h2>
-      <p class="muted">A dock in your colours replaces the look of the taskbar: Home, pinned apps, open windows and the clock. The Windows taskbar hides itself while the dock is on.</p>
-      <label class="switch"><span><b>Island</b><small>A pill at the top that grows into your timer and what's playing. Hover it to open, click a time to start a timer.</small></span><input type="checkbox" data-k="island.on"></label>
-      <div class="petpick" id="petPick"><span><b>Island pet</b><small>A little friend that lives in the island: it wanders about, naps when you're away, dances to music and cheers when a timer ends. Hover the island and click it to pet it; right-click it to meet the next one.</small></span><div class="pets" id="pets"></div></div>
-      <label class="switch"><span><b>Top bar</b><small>A slim bar along the top like macOS: menu, the app in front, now playing, weather, battery, Wi-Fi & sound, date and time.</small></span><input type="checkbox" data-k="topbar.on"></label>
-      <div id="topOpts">
-        <label class="field-row"><span>Look <small>Glass blurs the desktop behind the bar, like macOS.</small></span><select class="field" data-k="topbar.look"><option value="solid">Solid</option><option value="glass">Glass</option></select></label>
-        <label class="switch"><span><b>Tray icons</b><small>Discord, Steam, OneDrive and other programs' icons, by the clock: click, right-click and double-click them like in Windows' tray (the dock hides Windows' own).</small></span><input type="checkbox" data-k="topbar.tray"></label>
-        <label class="switch"><span><b>Windows' own tray icons too</b><small>Sound, network, battery and Safely Remove Hardware. Off by default: the top bar already shows sound, Wi-Fi and battery.</small></span><input type="checkbox" data-k="topbar.traySystem"></label>
-        <label class="switch"><span><b>Input method</b><small>拼 while Pinyin types Chinese, EN in English (Shift switches); a short note in the island when you switch. Off by default: reading the mode means asking the app in front, which on some PCs stops Shift from switching. Turn it off again if that happens.</small></span><input type="checkbox" data-k="topbar.ime"></label>
-        <label class="switch"><span><b>Now playing</b></span><input type="checkbox" data-k="topbar.media"></label>
-        <label class="switch"><span><b>Weather</b></span><input type="checkbox" data-k="topbar.weather"></label>
-        <label class="switch"><span><b>Battery</b><small>Laptops only.</small></span><input type="checkbox" data-k="topbar.battery"></label>
-      </div>
-      <label class="switch"><span><b>Use the Syndicates dock</b></span><input type="checkbox" data-k="dock.on"></label>
+    <section data-panel="dock">
+      <h2>Dock</h2>
+      <p class="muted">A dock along the bottom, like a Mac's: Home, your pinned apps, open windows, screenshots and the Bin. The Windows taskbar hides itself while the dock is on, and comes back when you turn it off or quit.</p>
+      <label class="switch"><span><b>Use the dock</b><small>Click an app to go to it; with several windows you get live previews. Middle-click opens another window.</small></span><input type="checkbox" data-k="dock.on"></label>
       <div id="dockOpts">
         <label class="field-row"><span>Style</span><div class="seg" data-seg="dock.style"><button value="floating">Floating</button><button value="full">Full width</button></div></label>
         <label class="field-row"><span>Size</span><div class="seg" data-seg="dock.size"><button value="s">Small</button><button value="m">Medium</button><button value="l">Large</button></div></label>
@@ -93,6 +79,32 @@
         <label class="switch"><span><b>Keep windows clear of the dock</b><small>Maximized windows stop above it, like with the taskbar.</small></span><input type="checkbox" data-k="dock.reserve"></label>
         <label class="slider"><span>Opacity</span><input type="range" min="0.8" max="1" step="0.01" data-k="dock.opacity"><em></em></label>
       </div>
+      <h2>Windows taskbar</h2>
+      <p class="muted" id="tbNote">The same options as Windows Settings, applied straight away.</p>
+      <label class="field-row"><span>Icons</span><div class="seg" data-tb="align"><button value="left">Left</button><button value="center">Centre</button></div></label>
+      <label class="field-row"><span>Search</span><div class="seg" data-tb="search"><button value="hidden">Hidden</button><button value="icon">Icon</button><button value="box">Search box</button></div></label>
+      <label class="switch"><span><b>Task view button</b></span><input type="checkbox" data-tb="taskView"></label>
+      <label class="switch"><span><b>Hide the taskbar automatically</b><small id="autoHideNote">It slides up when you move the mouse to the bottom.</small></span><input type="checkbox" data-tb="autoHide"></label>
+      <label class="switch"><span><b>Colour the taskbar with your accent</b><small>Uses the accent colour picked in Windows. <a href="#" id="openColors">Choose it in Windows colours</a></small></span><input type="checkbox" data-tb="accentTint"></label>
+    </section>
+    <section data-panel="topbar">
+      <h2>Top bar</h2>
+      <label class="switch"><span><b>Top bar</b><small>A slim bar along the top like macOS: menu, the app in front, now playing, weather, battery, Wi-Fi & sound, date and time.</small></span><input type="checkbox" data-k="topbar.on"></label>
+      <div id="topOpts">
+        <label class="field-row"><span>Look <small>Glass blurs the desktop behind the bar, like macOS.</small></span><select class="field" data-k="topbar.look"><option value="solid">Solid</option><option value="glass">Glass</option></select></label>
+        <label class="switch"><span><b>Tray icons</b><small>Discord, Steam, OneDrive and other programs' icons, by the clock: click, right-click and double-click them like in Windows' tray (the dock hides Windows' own).</small></span><input type="checkbox" data-k="topbar.tray"></label>
+        <label class="switch"><span><b>Windows' own tray icons too</b><small>Sound, network, battery and Safely Remove Hardware. Off by default: the top bar already shows sound, Wi-Fi and battery.</small></span><input type="checkbox" data-k="topbar.traySystem"></label>
+        <label class="switch"><span><b>Input method</b><small>拼 while Pinyin types Chinese, EN in English (Shift switches); a short note in the island when you switch. Off by default: reading the mode means asking the app in front, which on some PCs stops Shift from switching. Turn it off again if that happens.</small></span><input type="checkbox" data-k="topbar.ime"></label>
+        <label class="switch"><span><b>Now playing</b></span><input type="checkbox" data-k="topbar.media"></label>
+        <label class="switch"><span><b>Weather</b></span><input type="checkbox" data-k="topbar.weather"></label>
+        <label class="switch"><span><b>Battery</b><small>Laptops only.</small></span><input type="checkbox" data-k="topbar.battery"></label>
+      </div>
+    </section>
+    <section data-panel="island">
+      <h2>Island</h2>
+      <label class="switch"><span><b>Island</b><small>A pill at the top that grows into your timer and what's playing. Hover it to open, click a time to start a timer.</small></span><input type="checkbox" data-k="island.on"></label>
+      <div class="petpick" id="petPick"><span><b>Island pet</b><small>A little friend that lives in the island: it wanders about, naps when you're away, dances to music and cheers when a timer ends. Hover the island and click it to pet it; right-click it to meet the next one.</small></span><div class="pets" id="pets"></div></div>
+      <p class="muted">The island also shows volume and brightness changes, Caps Lock and headphones connecting. Ctrl+Alt+T opens its timer from anywhere.</p>
     </section>
     <section data-panel="lock">
       <p class="muted">Windows can't animate the lock screen, so this uses a picture of your wallpaper with its widgets. The sign-in screen shows the same picture when “Show the lock screen background picture on the sign-in screen” is on in <a href="#" id="openLock">Windows lock screen settings</a>.</p>
@@ -132,7 +144,9 @@
       <h2>All themes</h2>
       <div id="thGrid" class="th-grid"></div>
     </section>
-    <section data-panel="general">
+    <section data-panel="desktops">
+      <h2>Desktops</h2>
+      <div class="row"><button id="openOverview" class="btn">Open the desktops overview</button><span class="muted">Every desktop and its windows at a glance: Ctrl+Alt+Up, or the button next to the desktop numbers in the top bar.</span></div>
       <div class="mac-swipe">
         <b>Swipe between desktops like a MacBook</b>
         <p class="muted">Windows has Spaces too: virtual desktops, with the same sliding animation. Three-finger swipe left / right moves between them.</p>
@@ -152,6 +166,9 @@
       <label class="switch"><span><b>Hide Windows' "Desktop 2" label</b><small>The name Windows shows at the bottom when you switch desktops. The top bar shows your desktops already.</small></span><input type="checkbox" data-k="general.hideSwitchLabel"></label>
       <label class="switch"><span><b>Glide the wallpaper when switching desktops</b><small>The wallpaper moves a little the way you swipe, then settles, so the switch feels smooth. Off in low power mode and when Windows' animation effects are off.</small></span><input type="checkbox" data-k="general.deskMotion"></label>
       <label class="switch"><span><b>Drag windows to the next desktop</b><small>Drag a window against the left or right edge of the screen and hold it there: you slide to the desktop next door with the window in your hand, like on a Mac. Keep holding to go further. While on, Windows' snap-to-half doesn't happen at those two edges (dragging to the top, Win+arrows and snap layouts still work). Windows 11.</small></span><input type="checkbox" data-k="general.edgeSwitch"></label>
+    </section>
+    <section data-panel="general">
+      <h2>General</h2>
       <label class="switch"><span><b>Gamer mode in full-screen games</b><small>While a game or video is full screen: wallpaper paused, bars and island hidden, nothing polling in the background. Ctrl+Alt+G turns gamer mode on or off any time.</small></span><input type="checkbox" data-k="general.autoGamer"></label>
       <label class="switch"><span><b>Start with Windows</b><small>Your wallpaper is back after every restart.</small></span><input type="checkbox" data-k="general.startWithWindows"></label>
       <label class="switch"><span><b>Pause during full-screen apps</b><small>Games and full-screen video get all the power.</small></span><input type="checkbox" data-k="general.pauseOnFullscreen"></label>
