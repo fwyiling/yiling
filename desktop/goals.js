@@ -75,6 +75,10 @@ function check() {
       else notify('Time for yourself', `At least ${fmt(goal)} of something you enjoy today: ${have ? `${fmt(have)} so far` : 'none yet'}.`);
     }
   }
+  if (st.running) { // made the day's goal while the stopwatch runs: say so, once
+    const k = st.running, id = `${k}@goal`;
+    if (!st.reminded.includes(id) && c[k] > 0 && done(k) >= c[k] * 60) { st.reminded.push(id); save(); notify(k === 'revision' ? 'Revision goal reached' : 'Hobby time done', `${fmt(c[k] * 60)} today. Nice work.`); }
+  }
   if (st.running) emit(); // the widget's minutes move on
 }
 

@@ -45,10 +45,62 @@ function renderTimer() {
   $('of').textContent = timer.state === 'paused' ? 'paused' : `of ${fmt(timer.duration)}`;
   $('prog').style.width = `${Math.min(100, frac * 100)}%`;
   $('pauseBtn').textContent = timer.state === 'paused' ? 'Resume' : 'Pause';
-  document.querySelector('.mini .t').textContent = fmt(l);
-  document.querySelector('.ring .fg').style.strokeDashoffset = String(50.27 * (1 - frac));
+  if (active() || !goalRun()) {
+    document.querySelector('.mini .t').textContent = fmt(l);
+    document.querySelector('.ring .fg').style.strokeDashoffset = String(50.27 * (1 - frac));
+  }
   setMood();
 }
+
+// ---------- daily goals (revision / hobby): a stopwatch that counts toward today's goal ----------
+let goals = await sd.goals?.().catch(() => null) || null, goalsAt = Date.now(), goalT = 0;
+const goalRun = () => goals?.running || '';
+const goalHave = (k) => (goals ? goals[k] + (goals.running === k ? (Date.now() - goalsAt) / 1000 : 0) : 0);
+const focusMini = () => !active() && !!goalRun(); // a countdown, when there is one, keeps the compact view
+const hms = (sec) => { sec = Math.floor(sec); return `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; };
+const hm2 = (sec) => { const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`; };
+const NAME = { revision: 'revision', hobby: 'hobby' };
+function renderFocus() {
+  const f = document.querySelector('.focus');
+  f.hidden = !goals;
+  if (!goals) return;
+  const k = goalRun();
+  f.classList.toggle('running', !!k);
+  let met = 0;
+  for (const g of f.querySelectorAll('.f-g')) {
+    const key = g.dataset.k, have = goalHave(key), goal = goals.goal[key] || 1;
+    if (have >= goal) met++;
+    g.classList.toggle('done', have >= goal);
+    g.querySelector('.f-l span').textContent = `${hm2(have)} / ${hm2(goal)}`;
+    g.querySelector('.bar b').style.width = `${Math.min(100, (have / goal) * 100)}%`;
+  }
+  f.querySelector('.f-sub').textContent = met === 2 ? 'all done today' : '';
+  if (k) {
+    const have = goalHave(k), goal = goals.goal[k] || 1, rest = goal - have;
+    $('fNow').textContent = hms(have);
+    $('fOf').textContent = rest > 0 ? `${NAME[k]} today · ${hm2(rest)} to ${hm2(goal)}` : `${NAME[k]} today · goal reached`;
+    $('fProg').style.width = `${Math.min(100, (have / goal) * 100)}%`;
+    $('fSwap').textContent = k === 'revision' ? 'Switch to hobby' : 'Switch to revision';
+  }
+  if (focusMini()) {
+    const have = goalHave(k), goal = goals.goal[k] || 1;
+    document.querySelector('.mini .gk').textContent = k === 'revision' ? 'REV' : 'HOB';
+    document.querySelector('.mini .t').textContent = hms(have);
+    document.querySelector('.ring .fg').style.strokeDashoffset = String(50.27 * (1 - Math.min(1, have / goal)));
+  }
+}
+$('fStop').onclick = () => sd.goals('stop');
+$('fSwap').onclick = () => sd.goals('start', goalRun() === 'revision' ? 'hobby' : 'revision');
+document.querySelectorAll('[data-start]').forEach((b) => { b.onclick = () => sd.goals('start', b.dataset.start); });
+function onGoals(g) {
+  const before = goals; goals = g; goalsAt = Date.now();
+  const k = g?.running;
+  if (k && before && before.running === k && before[k] < g.goal[k] && g[k] >= g.goal[k]) react('happy', 1500); // just made the goal
+  else if (k && before?.running !== k) { wake(); react('happy', 900); }
+  clearInterval(goalT); if (k) goalT = setInterval(renderFocus, 1000); // ticks only while one runs
+  renderFocus(); shape();
+}
+sd.onGoals?.(onGoals);
 
 // ---------- media ----------
 function renderMedia() {
@@ -140,8 +192,10 @@ function shape() {
 function applyShape() {
   isl.classList.toggle('osding', !!osdInfo && !open && !alerting);
   isl.classList.toggle('note', !!osdInfo && osdInfo.note);
-  const t = active(), m = np.on;
+  const t = active() || focusMini(), m = np.on;
   isl.dataset.mini = t && m ? 'both' : t ? 'timer' : m ? 'media' : 'none';
+  isl.classList.toggle('focus', focusMini());
+  if (focusMini()) renderFocus();
   isl.classList.toggle('alerting', alerting);
   isl.classList.toggle('open', open && !alerting);
   isl.classList.toggle('compact', !open && !alerting && !osdInfo);
@@ -364,7 +418,7 @@ sd.onMedia((m) => {
 });
 sd.media().then((m) => { np = m; renderMedia(); shape(); }).catch(() => {});
 sd.onSettings((n) => { const lyrBefore = s.island?.lyrics; s = n; look(); if (lyrBefore !== s.island?.lyrics) { lyr.key = '__'; loadLyrics(); lyricLoop(); } });
-look(); setMins(mins); onTimer(timer);
+look(); setMins(mins); onTimer(timer); onGoals(goals);
 
 // switching desktops: endless animations (equaliser, glow) hold still for the slide, so Windows has one
 // window fewer to compose every frame while it animates

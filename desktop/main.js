@@ -730,7 +730,7 @@ function setTopbar(on) {
 
 // ---------- the island (a Dynamic-Island-style pill at the top: timer, now playing) ----------
 // After DynamicWin (Windows) and boring.notch (macOS): a transparent window at the top centre; only the pill takes clicks.
-const ISLAND = { w: 480, h: 320 }, ISLAND_SMALL = { w: 300, h: 50 }; // small while it's just the pill: less for Windows to compose
+const ISLAND = { w: 480, h: 440 }, ISLAND_SMALL = { w: 300, h: 50 }; // small while it's just the pill: less for Windows to compose
 let islandBig = false;
 function islandRect() { const d = screen.getPrimaryDisplay(), z = islandBig ? ISLAND : ISLAND_SMALL; return { x: Math.round(d.bounds.x + (d.bounds.width - z.w) / 2), y: d.bounds.y, width: z.w, height: z.h }; }
 function placeIsland() {
@@ -1437,8 +1437,8 @@ function wireIpc() {
   ipcMain.handle('clip:copy', (e, id) => fromHome(e) && clips.use(String(id))); // only copy
   ipcMain.handle('clip:pin', (e, id, on) => { if (fromHome(e)) clips.pin(String(id), !!on); });
   ipcMain.handle('clip:remove', (e, id) => { if (fromHome(e)) clips.remove(String(id)); });
-  // daily goals: everyone may read them (the widget, Home), Home and Customize change them
-  const goalsWriter = (e) => fromHome(e) || (settingsWin && !settingsWin.isDestroyed() && e.sender === settingsWin.webContents);
+  // daily goals: everyone may read them (the widget, Home), Home, Customize and the island change them
+  const goalsWriter = (e) => fromHome(e) || [settingsWin, islandWin].some((w) => w && !w.isDestroyed() && e.sender === w.webContents);
   ipcMain.handle('goals:get', () => goals.status());
   ipcMain.handle('goals:start', (e, k) => (goalsWriter(e) ? goals.start(String(k)) : goals.status()));
   ipcMain.handle('goals:stop', (e) => (goalsWriter(e) ? goals.stop() : goals.status()));

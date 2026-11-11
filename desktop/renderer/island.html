@@ -17,7 +17,7 @@
       <svg class="idle-ico" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg>
       <div class="pet" id="pet"></div>
       <span class="lyr" hidden></span>
-      <div class="trail"><span class="t"></span><i class="eq"><s></s><s></s><s></s><s></s></i></div>
+      <div class="trail"><span class="gk"></span><span class="t"></span><i class="eq"><s></s><s></s><s></s><s></s></i></div>
     </div>
     <!-- open: media and timer -->
     <div class="panel">
@@ -31,6 +31,18 @@
         </div>
         <div class="prog" hidden><span class="p-now">0:00</span><input type="range" class="seek" min="0" max="100" step="1" value="0" aria-label="Position in the song"><span class="p-dur">0:00</span></div>
         <div class="lyrics" hidden><b class="l-now"></b><span class="l-next"></span></div>
+      </section>
+      <section class="focus" hidden>
+        <div class="row head"><svg viewBox="0 0 24 24" class="ico"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 1 4 17.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg><b>Daily goals</b><span class="f-sub"></span></div>
+        <div class="f-run">
+          <div class="big"><span id="fNow">0:00:00</span><small id="fOf"></small></div>
+          <div class="bar"><b id="fProg"></b></div>
+          <div class="row btns"><button id="fStop" class="pill-b accent">Stop</button><button id="fSwap" class="pill-b"></button></div>
+        </div>
+        <div class="f-idle">
+          <div class="f-g" data-k="revision"><div class="f-l"><b>Revision</b><span></span></div><div class="bar"><b></b></div><button class="pill-b" data-start="revision">Start revising</button></div>
+          <div class="f-g" data-k="hobby"><div class="f-l"><b>Hobby</b><span></span></div><div class="bar"><b></b></div><button class="pill-b" data-start="hobby">Start hobby</button></div>
+        </div>
       </section>
       <section class="timer">
         <button class="perch" id="perch"><div class="pet"></div></button>
