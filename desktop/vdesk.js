@@ -64,6 +64,16 @@ interface IVirtualDesktopW {
   [return: MarshalAs(UnmanagedType.HString)] string GetName();
   [return: MarshalAs(UnmanagedType.HString)] string GetWallpaperPath();
 }
+// Windows' documented wallpaper interface (what Settings uses): on Windows 11 it sets the background of the desktop
+// showing, the one a desktop's own background overrides
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B")]
+interface IDesktopWallpaper {
+  void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+  [return: MarshalAs(UnmanagedType.LPWStr)] string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
+  void a(); void b(); void c(); void d(); void e();
+  void SetPosition(int position);
+}
+[ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")] class DesktopWallpaperClass { }
 [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("4CE81583-1E4C-4632-A621-07A53543148F")]
 interface IVirtualDesktopPinnedApps {
   bool IsAppIdPinned([MarshalAs(UnmanagedType.LPWStr)] string appId);
@@ -170,6 +180,13 @@ public static class SdDesk {
     string now = ((IVirtualDesktopW)d).GetWallpaperPath();
     return string.Equals(now, file, StringComparison.OrdinalIgnoreCase);
   }
+  public static bool CurrentWallpaper(string file) {
+    if (!System.IO.File.Exists(file)) return false;
+    var dw = (IDesktopWallpaper)new DesktopWallpaperClass();
+    dw.SetPosition(4); // fill
+    dw.SetWallpaper(null, file); // every screen of the desktop showing
+    return true;
+  }
   public static bool SwitchTo(int i) { Init(); var d = At(i); if (d == null) return false; mgr.SwitchDesktop(d); return true; }
   // straight to the desktop next door (no slide): only when Windows' own Win+Ctrl+arrow didn't get through
   public static bool Switch(bool right) { Init(); var target = Next(right); if (target == null) return false; mgr.SwitchDesktop(target); return true; }
@@ -193,6 +210,7 @@ while ($true) {
       'switch' { [SdDesk]::Switch($p[2] -eq 'right') }
       'switchto' { [SdDesk]::SwitchTo([int]$p[2]) }
       'moveto' { [SdDesk]::MoveTo([IntPtr][long]$p[2], [int]$p[3]) }
+      'curwall' { [SdDesk]::CurrentWallpaper([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p[2]))) }
       'wallpaper' { [SdDesk]::Wallpaper([int]$p[2], [int]$p[3], [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p[4]))) }
       'count' { [SdDesk]::Count() -gt 0 }
       default { $false }
@@ -257,6 +275,9 @@ module.exports = {
     return r && typeof r.data === 'string' ? r.data.split(',') : list.map(() => '');
   },
   goTo: (i) => ask(`switchto ${Math.trunc(Number(i))}`),
+  /** The background of the desktop showing, through Windows' documented wallpaper interface. */
+  currentWallpaper: (file) => (file ? ask(`curwall ${Buffer.from(String(file), 'utf8').toString('base64')}`, 4000) : Promise.resolve(false)),
+  lastError: () => lastError,
   /** Desktop number i's own Windows background (a picture file). False where this Windows build isn't known. */
   wallpaper(i, file) {
     const build = Number(os.release().split('.')[2]) || 0;

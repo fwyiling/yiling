@@ -967,7 +967,7 @@ function power([exe, args]) {
 // and put back when this is switched off or nothing is picked.
 let stillT = 0, stillBusy = false, stillLast = 0, themeStamp = 0, lastWeatherJson = '';
 const stillApplied = new Map(); // desktop id -> the content key its still shows
-const STILL_VERSION = 3; // a new way of making stills: none made the old way is used again
+const STILL_VERSION = 4; // a new way of making stills: none made the old way is used again
 const STILL_GAP = 30000; // at most one new still every 15 s (songs change, weather loads…)
 const sha = (x) => require('crypto').createHash('sha1').update(x).digest('hex').slice(0, 16);
 const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, !!m.art].join('|') : 'off'; }; // not play / pause: a new still for every pause wasn't worth it
@@ -1024,10 +1024,20 @@ function pruneStills() {
 // The desktop showing gets it both ways: as Windows sets backgrounds (the general one, shown at sign-in, and the fit)
 // and as that desktop's own (a desktop with its own background ignores the general one: it kept Windows' default
 // picture, seen on every slide away from it). Other desktops: their own.
+const stillLog = []; // what each try did, for Copy diagnostics (the last 16)
 async function setDeskBackground(id, i, file, style, cur) {
-  let ok = id === cur ? win32.setWindowsWallpaper(file, style) : false;
-  if (!vdesk.status().ready) vdesk.start();
-  if (vdesk.status().ready && v11()) ok = !!(await vdesk.wallpaper(i, file)) || (id === cur && ok && !win32.regString(DESK_KEY(id), 'Wallpaper'));
+  const r = { at: new Date().toISOString().slice(11, 19), desk: i, current: id === cur, file: path.basename(file) };
+  let ok = false;
+  if (id === cur) { r.spi = !!win32.setWindowsWallpaper(file, style); ok = r.spi; }
+  if (!vdesk.status().ready) { vdesk.start(); for (let t = 0; t < 40 && !vdesk.status().ready; t++) await new Promise((res) => setTimeout(res, 150)); } // it takes a few seconds to start
+  if (vdesk.status().ready && v11()) {
+    if (id === cur) r.settingsWay = !!(await vdesk.currentWallpaper(file)); // as Windows' Settings sets it: the desktop showing
+    r.ownBackground = !!(await vdesk.wallpaper(i, file)); // that desktop's own background
+    ok = r.ownBackground || (id === cur && (r.settingsWay || (ok && !win32.regString(DESK_KEY(id), 'Wallpaper'))));
+  } else r.helper = vdesk.status().error || 'not ready';
+  r.error = vdesk.lastError() || ''; r.ok = ok;
+  r.after = win32.regString(DESK_KEY(id), 'Wallpaper').split('\\').pop() || '(general)';
+  stillLog.push(r); if (stillLog.length > 16) stillLog.shift();
   return ok;
 }
 const v11 = () => vdesk.supported();
@@ -1160,7 +1170,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), update: updater.status(), windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), update: updater.status(), stillLog, windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
