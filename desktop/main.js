@@ -18,7 +18,20 @@ const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
 
-if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+// One copy at a time. Started again from the same folder: the running one shows Customize. Started from another
+// folder (a newer download unzipped somewhere else): the running copy steps aside and this one takes over, so an
+// update never silently keeps the old version running.
+const INSTANCE_FILE = () => path.join(app.getPath('userData'), 'instance.json');
+const sameDir = (a, b) => path.resolve(String(a || '')).toLowerCase() === path.resolve(String(b || '')).toLowerCase();
+if (!app.requestSingleInstanceLock({ appPath: app.getAppPath() })) {
+  let other = null; try { other = JSON.parse(fs.readFileSync(INSTANCE_FILE(), 'utf8')); } catch {}
+  let ok = false;
+  if (other?.appPath && !sameDir(other.appPath, app.getAppPath())) { // wait (up to 10 s) for the other copy to quit
+    const nap = new Int32Array(new SharedArrayBuffer(4));
+    for (let i = 0; i < 40 && !ok; i++) { Atomics.wait(nap, 0, 0, 250); ok = app.requestSingleInstanceLock({ appPath: app.getAppPath() }); }
+  }
+  if (!ok) { app.quit(); process.exit(0); }
+}
 // keep the last warnings and errors for "Copy diagnostics"
 const recentLog = [];
 for (const level of ['warn', 'error']) {
@@ -1576,6 +1589,7 @@ function bringForward(p) {
 // ---------- start ----------
 app.whenReady().then(() => {
   store = new Store(app.getPath('userData'));
+  try { fs.writeFileSync(INSTANCE_FILE(), JSON.stringify({ appPath: app.getAppPath(), pid: process.pid, version: app.getVersion() })); } catch {}
   gallery.init(app.getPath('userData'));
   themes.init(app.getPath('userData'));
   setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on
@@ -1670,7 +1684,10 @@ app.whenReady().then(() => {
     setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
   }
 });
-app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
+app.on('second-instance', (_e, _argv, _cwd, data) => {
+  if (data?.appPath && !sameDir(data.appPath, app.getAppPath())) { if (!app.isQuitting) app.quit(); return; } // another copy (an update) takes over
+  openSettings(); // opening it again while it runs brings Customize to the front
+});
 let workerStopping = false;
 app.on('before-quit', (e) => {
   // the window-drag watcher first: asked to stop, it leaves between two checks (killing it mid-call crashed the app)

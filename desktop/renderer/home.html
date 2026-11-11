@@ -81,10 +81,14 @@
       <span class="muted" id="hint"></span>
       <div class="pwr" id="pwr">
         <button id="customize" class="chip">Customize desktop…</button>
-        <button class="chip ic" data-p="lock" title="Lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
-        <button class="chip ic" data-p="sleep" title="Sleep"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
-        <button class="chip ic" data-p="restart" title="Restart"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg></button>
-        <button class="chip ic" data-p="shutdown" title="Shut down"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg></button>
+        <button id="pwrBtn" class="chip pbtn" title="Lock, sleep, restart, shut down"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg>Power</button>
+        <div id="pwrMenu" class="pmenu" hidden>
+          <button data-p="lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>Lock</span></button>
+          <button data-p="sleep"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><span>Sleep</span></button>
+          <button data-p="restart"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg><span>Restart</span></button>
+          <button data-p="shutdown"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/></svg><span>Shut down</span></button>
+          <button data-p="signout"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/></svg><span>Sign out</span></button>
+        </div>
       </div>
     </footer>
   </main>

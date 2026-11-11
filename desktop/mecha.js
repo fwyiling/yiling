@@ -26,6 +26,7 @@ const F = {
   p: frame({ s: 16, c: 5, fill: 'rgba(214,230,246,.94)', stroke: 'rgba(236,244,252,.95)' }), // on / selected: a light plate
   card: frame({ s: 30, c: 10, fill: 'rgba(10,15,24,.9)', stroke: 'rgba(236,244,252,.4)' }), // a card
   cardSoft: frame({ s: 30, c: 10, fill: 'rgba(236,244,252,.035)', stroke: 'rgba(236,244,252,.26)' }), // a card inside a panel
+  menu: frame({ s: 30, c: 10, fill: 'rgba(8,12,20,.99)', stroke: 'rgba(236,244,252,.5)' }), // a pop-up menu: solid, nothing shows through
   cardSel: frame({ s: 30, c: 10, fill: 'rgba(166,214,242,.08)', stroke: 'rgba(166,214,242,.85)' }), // a chosen card
   big: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.92)', stroke: 'rgba(236,244,252,.5)' }), // the search bar, a big panel
   bigSel: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.94)', stroke: 'rgba(166,214,242,.95)' }), // the search bar while typing
@@ -132,10 +133,11 @@ h2, .sec-h h2 { text-transform: uppercase; letter-spacing: .14em; font-size: 12p
 .np .art { border-radius: 0; ${clip(6)} } .mctl button { border-radius: 0; } .mctl button:hover { ${bev('h')} }
 .bar i { border-radius: 0; height: 4px; } .bar b { background: #d6e6f6; }
 .places button { border-radius: 0; } .places button:hover { ${bev('h')} }
-.ctx { ${bev('card', 10)} } .ctx button { border-radius: 0; } .ctx button:hover { ${bev('h')} }
+.ctx { ${bev('menu', 10)} } .ctx button { border-radius: 0; } .ctx button:hover { ${bev('h')} }
 .rpin { ${bev('f')} }
 body.dropping #panel::after { border-radius: 0; }
-.pwr .ic.armed { ${bev('danger')} }
+.pmenu { ${bev('menu', 10)} filter: drop-shadow(0 12px 24px rgba(0, 0, 0, .5)); } .pmenu button { border-radius: 0; } .pmenu button:hover { ${bev('h')} }
+.pmenu button.armed { ${bev('danger')} color: #fff; }
 `;
 
 // the Customize window

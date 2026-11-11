@@ -328,21 +328,24 @@ const close = () => sd.toggleHome(false);
 $('backdrop').onclick = close;
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('q').value) { $('q').value = ''; renderResults(); } else close(); } });
 $('customize').onclick = () => sd.openSettings();
-// power, as at the bottom of Windows' Start menu: restart and shut down ask for a second click
-for (const b of document.querySelectorAll('#pwr [data-p]')) {
+// power, as at the bottom of Windows' Start menu: one button, a menu above it; restart and shut down ask twice
+$('pwrBtn').onclick = (e) => { e.stopPropagation(); $('pwrMenu').hidden = !$('pwrMenu').hidden; };
+addEventListener('click', (e) => { if (!$('pwrMenu').hidden && !$('pwrMenu').contains(e.target)) $('pwrMenu').hidden = true; });
+for (const b of document.querySelectorAll('#pwrMenu [data-p]')) {
   let armed = 0;
-  b.onclick = () => {
-    const k = b.dataset.p;
+  b.onclick = (e) => {
+    e.stopPropagation();
+    const k = b.dataset.p, label = b.querySelector('span');
     if ((k === 'restart' || k === 'shutdown') && !armed) {
-      b.classList.add('armed'); b.dataset.was = b.title; b.title = 'Click again to ' + b.title.toLowerCase();
-      armed = setTimeout(() => { armed = 0; b.classList.remove('armed'); b.title = b.dataset.was; }, 3000);
+      b.classList.add('armed'); label.dataset.was = label.textContent; label.textContent = `${label.textContent}? Click again`;
+      armed = setTimeout(() => { armed = 0; b.classList.remove('armed'); label.textContent = label.dataset.was; }, 3000);
       return;
     }
+    $('pwrMenu').hidden = true;
     sd.flyoutAction(k);
   };
 }
-// one opening animation each time: hidden, the page is cleared and faded out; shown, it plays the rise once
-function onHidden() { document.body.classList.add('off'); $('q').value = ''; renderResults(); document.querySelector('.ctx')?.remove(); }
+function onHidden() { document.body.classList.add('off'); $('pwrMenu').hidden = true; $('q').value = ''; renderResults(); document.querySelector('.ctx')?.remove(); }
 function onShown(mode) {
   if (document.body.classList.contains('off')) {
     document.body.classList.remove('off');

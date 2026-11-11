@@ -56,9 +56,12 @@ kbd { font: 600 11px system-ui; padding: 4px 8px; border-radius: 6px; background
 .bar i { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; } .bar b { display: block; height: 100%; width: 0; background: var(--a); transition: width .6s; }
 .bar em { font-style: normal; text-align: right; color: var(--m); font-variant-numeric: tabular-nums; }
 .foot { display: flex; justify-content: space-between; align-items: center; }
-.pwr { display: flex; align-items: center; gap: 6px; } .pwr .chip { margin: 0; color: var(--t); }
-.pwr .ic { width: 32px; height: 30px; padding: 0; display: grid; place-items: center; } .pwr .ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.pwr .ic.armed { border-color: #e5534b; background: rgba(229, 83, 75, .22); }
+.pwr { position: relative; display: flex; align-items: center; gap: 6px; } .pwr .chip { margin: 0; color: var(--t); }
+.pbtn { display: flex; align-items: center; gap: 6px; } .pbtn svg, .pmenu svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.pmenu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 190px; z-index: 5; padding: 5px; border-radius: 12px; background: rgba(28, 33, 41, .98); border: 1px solid var(--line); box-shadow: 0 12px 32px rgba(0, 0, 0, .5); display: grid; }
+.pmenu[hidden] { display: none; }
+.pmenu button { text-align: left; padding: 8px 12px; border: 0; border-radius: 8px; background: none; cursor: pointer; font-size: 13px; } .pmenu button:hover { background: rgba(255, 255, 255, .07); }
+.pmenu button { display: flex; align-items: center; gap: 10px; } .pmenu button.armed { color: #ff9b95; background: rgba(229, 83, 75, .18); }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } .side { grid-template-columns: 1fr 1fr; } }
 
 /* now playing */
