@@ -17,6 +17,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 #menu button:hover { background: color-mix(in srgb, var(--a) 30%, transparent); }
 #menu button svg { width: 17px; height: 17px; color: var(--m); flex: none; } #menu button:hover svg { color: var(--t); }
 #menu button kbd { margin-left: auto; font: 600 11px system-ui; color: var(--m); }
+/* power: four buttons in a row at the bottom of the menu */
+#menu .power { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+#menu .power button { flex-direction: column; gap: 4px; padding: 8px 2px 6px; justify-content: center; text-align: center; }
+#menu .power small { font-size: 10.5px; color: var(--m); }
+#menu .power button:hover small { color: var(--t); }
+#menu .power button.armed { background: color-mix(in srgb, #e5484d 35%, transparent); } #menu .power button.armed small, #menu .power button.armed svg { color: #fff; }
 #menu button.on::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--a); }
 #menu hr { border: 0; height: 1px; background: var(--line); margin: 5px 8px; }
 

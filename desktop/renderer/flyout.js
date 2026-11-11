@@ -18,15 +18,42 @@ const I = {
 async function renderMenu() {
   const st = await sd.flyoutState().catch(() => ({}));
   const items = [['home', 'Open Home', st.hotkey || 'Alt+Space'], ['customize', 'Customize…', 'Ctrl+Alt+S'], '-', ['timer', 'Timer', 'Ctrl+Alt+T'], ['gamer', 'Gamer mode', st.gamer ? '' : 'Ctrl+Alt+G', st.gamer],
-    ['overview', 'Desktops overview', 'Ctrl+Alt+Up'], ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L']];
+    ['overview', 'Desktops overview', 'Ctrl+Alt+Up'], ['newdesk', 'New desktop', 'Win+Ctrl+D'], ['showdesk', 'Show desktop', ''], '-', ['settings', 'Windows Settings', ''], ['taskmgr', 'Task Manager', 'Ctrl+Shift+Esc'], '-', ['lock', 'Lock', 'Win+L'], 'power'];
   $('menu').replaceChildren(...items.map((it) => {
     if (it === '-') return document.createElement('hr');
+    if (it === 'power') return powerRow();
     const b = document.createElement('button'); if (it[3]) b.className = 'on';
     b.innerHTML = `<svg viewBox="0 0 24 24">${I[it[0]]}</svg><span></span>${it[2] ? `<kbd>${it[2]}</kbd>` : ''}`;
     b.querySelector('span').textContent = it[1];
     b.onclick = () => sd.flyoutAction(it[0]);
     return b;
   }));
+}
+
+// sleep, restart, shut down, sign out: restart and shut down ask for a second click (nothing is lost by a slip)
+const P = {
+  sleep: ['Sleep', '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'],
+  restart: ['Restart', '<path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/>'],
+  shutdown: ['Shut down', '<path d="M12 3v8M7 6.3a7.5 7.5 0 1 0 10 0"/>'],
+  signout: ['Sign out', '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9"/>'],
+};
+function powerRow() {
+  const row = document.createElement('div'); row.className = 'power';
+  for (const [k, [label, ic]] of Object.entries(P)) {
+    const b = document.createElement('button'); b.title = label;
+    b.innerHTML = `<svg viewBox="0 0 24 24">${ic}</svg><small>${label}</small>`;
+    let armed = 0;
+    b.onclick = () => {
+      if ((k === 'restart' || k === 'shutdown') && !armed) {
+        armed = setTimeout(() => { armed = 0; b.classList.remove('armed'); b.querySelector('small').textContent = label; }, 3000);
+        b.classList.add('armed'); b.querySelector('small').textContent = 'Again?';
+        return;
+      }
+      sd.flyoutAction(k);
+    };
+    row.append(b);
+  }
+  return row;
 }
 
 // ---------- control centre ----------

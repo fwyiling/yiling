@@ -384,6 +384,54 @@ const TIMER_ACTIONS = {
 let deskNow = -1, lastSwitchLabel = [], quietUntil = 0, deskWorker = null, deskWorkerReady = false;
 const QUIET_MS = 750; // Windows' slide, with a little to spare
 const quiet = () => Date.now() < quietUntil;
+// your Windows background's file (that desktop's own, if Windows has one per desktop)
+function winwallFile(id) {
+  if (!win32.isWin) return '';
+  const own = /^\{[0-9A-F-]{36}\}$/.test(id) ? win32.regString(`Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\${id}`, 'Wallpaper') : '';
+  return own || win32.regString('Control Panel\\Desktop', 'WallPaper');
+}
+// ---------- accent colour from the wallpaper ----------
+// The most present vivid colour of the picture showing (photo, or your Windows background), made readable:
+// pixels are grouped by hue, weighted by how colourful they are; the winning group's average, at a usable
+// lightness. Videos and web pages keep the last colour.
+function pictureAccent(file) {
+  const img = nativeImage.createFromPath(file);
+  if (img.isEmpty()) return '';
+  const px = img.resize({ width: 64, quality: 'good' }).toBitmap(); // BGRA
+  const bins = Array.from({ length: 18 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+  for (let i = 0; i + 3 < px.length; i += 4) {
+    const b = px[i] / 255, g = px[i + 1] / 255, r = px[i + 2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (mx < 0.18 || d < 0.12) continue; // too dark or too grey to count
+    let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360;
+    const w = d * d * mx, bin = bins[Math.floor(h / 20)];
+    bin.w += w; bin.r += r * w; bin.g += g * w; bin.b += b * w;
+  }
+  const top = bins.reduce((a, x) => (x.w > a.w ? x : a), { w: 0 });
+  if (!top.w) return '';
+  let r = top.r / top.w, g = top.g / top.w, b = top.b / top.w;
+  // to HSL, then a lightness and saturation that read well as an accent on dark glass
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  let h = !d ? 0 : mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360;
+  const S = Math.min(0.75, Math.max(0.4, s)), L = Math.min(0.62, Math.max(0.48, l));
+  const c = (1 - Math.abs(2 * L - 1)) * S, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = L - c / 2;
+  [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return '#' + [r, g, b].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+}
+let accentT = 0;
+function syncWallAccent() {
+  clearTimeout(accentT);
+  accentT = setTimeout(() => {
+    const st = store.get();
+    if (!st.general.accentFromWallpaper) return;
+    const w = wallFor(st.wallpaper, deskId);
+    const file = w.scene === 'image' && w.file ? w.file : !(w.scene === 'web' ? w.url : w.file) ? winwallFile(deskId) : '';
+    if (!file || !fs.existsSync(file)) return;
+    let c = ''; try { c = pictureAccent(file); } catch {}
+    if (c && c !== st.accent) applySettings({ accent: c });
+  }, 300);
+}
 // ---------- themes ----------
 const themeBundle = () => themes.bundle(store.get().themes?.active);
 function broadcastTheme() { const b = themeBundle(); all().forEach((w) => w.webContents.send('theme', b)); }
@@ -397,7 +445,7 @@ function wallFor(w, id) {
 }
 function onDeskSwitch(from, to, count, id) {
   deskNow = to;
-  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); }
+  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); }
   if (gamer) return;
   quietUntil = Date.now() + QUIET_MS;
   const dir = Math.sign(to - from);
@@ -678,7 +726,7 @@ function startDockExtras() {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { tray: { w: 300, h: 330 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 260, h: 424 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { tray: { w: 300, h: 330 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 280, h: 486 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 // an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
 const WIN_CARD = { w: 212, h: 150, gap: 10 };
 function windowsPanelSize(n) {
@@ -816,7 +864,16 @@ const FLY_ACTIONS = {
   newdesk: () => win32.pressKeys([0x5B, 0x11, 0x44]), showdesk: () => win32.pressKeys([0x5B, 0x44]), overview: () => openOverview(),
   settings: () => shell.openExternal('ms-settings:'), taskmgr: () => win32.pressKeys([0x11, 0x10, 0x1B]), lock: () => win32.lock(),
   notifications: () => win32.pressKeys([0x5B, 0x4E]),
+  // power: Windows' own commands (sleep through the API that doesn't fall into hibernation)
+  sleep: () => power(['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"]]),
+  restart: () => power(['shutdown.exe', ['/r', '/t', '0']]), shutdown: () => power(['shutdown.exe', ['/s', '/t', '0']]), signout: () => power(['shutdown.exe', ['/l']]),
 };
+function power([exe, args]) {
+  if (!win32.isWin) return;
+  const dir = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+  const full = exe === 'powershell.exe' ? path.join(dir, 'WindowsPowerShell', 'v1.0', exe) : path.join(dir, exe);
+  require('child_process').execFile(full, args, { windowsHide: true }, () => {});
+}
 
 // ---------- lock screen ----------
 let lockTimer = null;
@@ -874,6 +931,11 @@ function applySettings(patch) {
   if (patch.topbar?.look !== undefined) applyTopbarLook();
   if (patch.topbar?.tray !== undefined) syncTray();
   if (patch.themes !== undefined) broadcastTheme();
+  if (patch.general?.accentFromWallpaper !== undefined) { // on: remember the colour you picked; off: put it back
+    if (next.general.accentFromWallpaper) { store.set({ general: { accentManual: before.accent } }); syncWallAccent(); }
+    else if (next.general.accentManual) { const back = next.general.accentManual; store.set({ general: { accentManual: '' } }); setTimeout(() => applySettings({ accent: back }), 0); }
+  }
+  if (patch.wallpaper !== undefined) syncWallAccent();
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
@@ -1111,6 +1173,7 @@ function wireIpc() {
   // the picture chosen for the app's wallpaper, as the Windows background too
   ipcMain.handle('desktops', () => { const v = win32.isWin ? win32.virtualDesktops(true) : { count: 1, current: 0, ids: [], names: [] }; if (v.ids[v.current]) deskId = v.ids[v.current]; return { ...v, ids: v.ids.length ? v.ids : ['local'], current: v.ids.length ? v.current : 0 }; });
   ipcMain.handle('desk:current', () => readDeskId() || 'local');
+  ipcMain.handle('wall:winkey', (_e, id) => winwallFile(String(id || '')) || 'none'); // which file the Windows background is, to reload only when it changes
   ipcMain.handle('wallpaper:toWindows', () => {
     const f = store.get().wallpaper.file;
     if (!win32.isWin || !f || !/\.(jpe?g|png|bmp)$/i.test(f) || !fs.existsSync(f)) return false;
@@ -1335,7 +1398,8 @@ app.whenReady().then(() => {
   const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
   store = new Store(app.getPath('userData'));
   gallery.init(app.getPath('userData'));
-  themes.init(app.getPath('userData')); themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
+  themes.init(app.getPath('userData'));
+  setTimeout(() => { readDeskId(); syncWallAccent(); }, 2500); // the accent from the wallpaper, if that's on themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
   if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
   if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating
@@ -1362,9 +1426,7 @@ app.whenReady().then(() => {
       return net.fetch(pathToFileURL(f).href);
     }
     if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
-      const id = u.searchParams.get('desk') || '';
-      const own = win32.isWin && /^\{[0-9A-F-]{36}\}$/.test(id) ? win32.regString(`Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\${id}`, 'Wallpaper') : '';
-      const f = own || (win32.isWin ? win32.regString('Control Panel\\Desktop', 'WallPaper') : '');
+      const f = winwallFile(u.searchParams.get('desk') || '');
       if (!f || !/\.(jpe?g|png|bmp|gif|webp|jfif)$/i.test(f) || !fs.existsSync(f)) return new Response('no picture', { status: 404 });
       return net.fetch(pathToFileURL(f).href);
     }

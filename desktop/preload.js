@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('sd', {
   ov: (what, ...args) => ipcRenderer.invoke(`ov:${what}`, ...args),
   desktops: () => ipcRenderer.invoke('desktops'),
   deskCurrent: () => ipcRenderer.invoke('desk:current'),
+  winwallKey: (id) => ipcRenderer.invoke('wall:winkey', id),
   wallpaperToWindows: () => ipcRenderer.invoke('wallpaper:toWindows'),
   onSwitching: on('switching'),
   onCursor: on('cursor'),

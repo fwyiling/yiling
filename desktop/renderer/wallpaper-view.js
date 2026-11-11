@@ -32,7 +32,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'today', 'reminders', 'media', 'stats', 'quote'];
   layer.append(groups.hero, groups.cards, groups.foot, groups.tl, groups.bl, hidden);
   root.append(media, dim, layer);
-  let s = settings, mediaKey = '', deskId = desk;
+  let s = settings, mediaKey = '', deskId = desk, winToken = 0;
   // the preview in Customize shows a sample so the widget can be placed while nothing plays
   let nowPlaying = preview ? { on: true, title: 'Song title', artist: 'Artist', playing: true, art: '' } : { on: false };
   const widgets = {};
@@ -53,14 +53,27 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     root.style.setProperty('--dim', Math.min(0.85, w.dim ?? 0.15));
     root.classList.toggle('still', w.parallax === false);
     const src = (w.scene === 'image' || w.scene === 'video') && w.file ? w.scene : w.scene === 'web' && /^https?:\/\//i.test(w.url) ? 'web' : 'windows';
-    const key = `${deskId}|${src}|${src === 'web' ? w.url : w.file}|${w.fileStamp || ''}`;
+    // what's actually shown, not which desktop: switching desktops with the same wallpaper changes nothing (it used
+    // to reload and fade in the same picture on every switch, a visible flash). Windows' own background: its file.
+    if (src === 'windows') {
+      const token = ++winToken;
+      (sd.winwallKey ? sd.winwallKey(deskId) : Promise.resolve(deskId)).catch(() => deskId).then((file) => {
+        if (token !== winToken) return; // a newer change came in meanwhile
+        const key = `windows|${file}`;
+        if (key === mediaKey) return;
+        mediaKey = key;
+        const img = el('img'); img.alt = ''; img.src = `sd://media/winwall?desk=${encodeURIComponent(deskId)}&v=${encodeURIComponent(file)}`; show(img);
+      });
+      return;
+    }
+    winToken++;
+    const key = `${src}|${src === 'web' ? w.url : w.file}|${w.fileStamp || ''}`;
     if (key === mediaKey) return;
     mediaKey = key;
     const q = `desk=${encodeURIComponent(deskId)}&v=${encodeURIComponent(w.fileStamp || w.file || Date.now())}`;
     if (src === 'image') { const img = el('img'); img.alt = ''; img.src = `sd://media/wallpaper?${q}`; show(img); }
     else if (src === 'video') { const v = el('video'); Object.assign(v, { src: `sd://media/wallpaper?${q}`, muted: true, loop: true, autoplay: true, playsInline: true }); if (root.classList.contains('paused')) v.autoplay = false; show(v); }
     else if (src === 'web') { const f = el('iframe'); f.src = w.url; f.setAttribute('sandbox', 'allow-scripts allow-same-origin'); f.referrerPolicy = 'no-referrer'; show(f); }
-    else { const img = el('img'); img.alt = ''; img.src = `sd://media/winwall?desk=${encodeURIComponent(deskId)}&v=${Date.now()}`; show(img); } // nothing picked: your Windows background
   }
 
   // ---------- widgets ----------
