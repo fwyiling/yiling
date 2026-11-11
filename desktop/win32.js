@@ -831,14 +831,14 @@ function watchTaskbar(onShow) {
   unwatchTaskbar(true);
   tbCb ||= u.koffi.register((hook, event, hwnd, idObject) => {
     try {
-      if (idObject !== 0 || isNull(hwnd)) return; // OBJID_WINDOW only
+      if (idObject !== 0 || isNull(hwnd) || event === 0x8001) return; // OBJID_WINDOW only; not EVENT_OBJECT_DESTROY
       const root = u.GetAncestor(hwnd, 2); // GA_ROOT
       const buf = new Uint16Array(64), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(root, buf, 64)));
       if (TASKBAR_CLASSES.has(cls)) tbOnShow?.(Number(root), 'taskbar');
       else if (TASKVIEW_CLASSES.has(cls)) tbOnShow?.(Number(root), 'taskview');
     } catch {}
   }, u.koffi.pointer(u.WinEventProc));
-  tbHook = Number(u.SetWinEventHook(0x8002, 0x8002, 0, tbCb, pid[0], 0, 0x0000 | 0x0002)); // EVENT_OBJECT_SHOW; out of context, skip our own process
+  tbHook = Number(u.SetWinEventHook(0x8000, 0x8002, 0, tbCb, pid[0], 0, 0x0000 | 0x0002)); // EVENT_OBJECT_CREATE .. SHOW (as Seelen UI); out of context, skip our own process
   tbPid = tbHook ? pid[0] : 0;
   return !!tbHook;
 }
@@ -910,6 +910,17 @@ module.exports = {
   unwatchTaskbar: safe('unwatchTaskbar', unwatchTaskbar),
   foregroundKind: safe('foregroundKind', foregroundKind, 'app'),
   hideNow: safe('hideNow', hideNow, false),
+  /** Windows' Task View, made invisible the moment it appears (an empty window region, and its content hidden), so
+   *  it never shows while it's closed and the app's overview opens. Returns what restoreIsland puts back. */
+  hideIsland: safe('hideIsland', (hwnd) => {
+    if (!load()) return 0;
+    u.SetWindowRgn(hwnd, u.CreateRectRgn(0, 0, 0, 0), true);
+    const content = u.FindWindowExW(hwnd, 0, 'Windows.UI.Composition.DesktopWindowContentBridge', null);
+    if (!isNull(content)) u.ShowWindowAsync(content, 0); // SW_HIDE
+    return isNull(content) ? 0 : Number(content);
+  }, 0),
+  restoreIsland: safe('restoreIsland', (hwnd, content) => { if (!load()) return false; if (content) u.ShowWindowAsync(content, 8); u.SetWindowRgn(hwnd, 0, true); return true; }, false), // SW_SHOWNA
+  isVisible: safe('isVisible', (hwnd) => !!(load() && u.IsWindowVisible(hwnd)), false),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),

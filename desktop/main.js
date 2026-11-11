@@ -347,11 +347,16 @@ function onTaskView(hwnd) {
   if (!TASK_VIEW_TITLES.has(title)) return;
   if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) return;
   lastTaskView.taken++;
+  // invisible this very moment (before it has drawn), so only the overview is ever seen; then closed properly with
+  // Esc once it has the keyboard, and put back as it was once it's gone (Alt+Tab uses the same window)
+  const content = win32.hideIsland(hwnd);
   let tries = 0;
-  (function closeIt() { // Esc once Task View has the keyboard (it takes it a moment after appearing)
-    if (win32.isForeground(hwnd) || ++tries > 12) { win32.pressKeys([0x1B]); setTimeout(() => openOverview(), 80); }
-    else setTimeout(closeIt, 25);
+  (function closeIt() {
+    if (win32.isForeground(hwnd) || ++tries > 12) { win32.pressKeys([0x1B]); setTimeout(() => openOverview({ instant: true }), 50); } // after the Esc has reached Task View, not ours
+    else setTimeout(closeIt, 15);
   })();
+  const t0 = Date.now();
+  (function putBack() { if (!win32.isVisible(hwnd) || Date.now() - t0 > 2500) setTimeout(() => win32.restoreIsland(hwnd, content), 120); else setTimeout(putBack, 50); })();
 }
 function onTaskbarShown(hwnd, what = 'taskbar') {
   if (what === 'taskview') { onTaskView(hwnd); return; }
@@ -359,8 +364,19 @@ function onTaskbarShown(hwnd, what = 'taskbar') {
   if (!dockWin || dockWin.isDestroyed() || gamer || app.isQuitting) return;
   tbHookStats.hidden++;
   const kind = win32.foregroundKind();
-  if (kind === 'none' || kind === 'switch') { win32.hideNow(hwnd); win32.showTaskbar(false); return; }
+  if (kind === 'none' || kind === 'switch') { win32.hideNow(hwnd); win32.showTaskbar(false); enforceHidden(hwnd); return; }
   if (kind === 'app') setTimeout(() => { if (dockWin && !gamer && !app.isQuitting && win32.foregroundKind() === 'app') { win32.hideNow(hwnd); win32.showTaskbar(false); } }, 40);
+}
+// as Seelen UI does: once Explorer has shown it, hidden again every 50 ms for half a second (Explorer shows it more
+// than once at the start of a desktop switch)
+let enforceT = 0;
+function enforceHidden(hwnd) {
+  clearInterval(enforceT); let n = 0;
+  enforceT = setInterval(() => {
+    if (++n > 10 || !dockWin || gamer || app.isQuitting) { clearInterval(enforceT); return; }
+    const kind = win32.foregroundKind();
+    if (kind === 'none' || kind === 'switch' || kind === 'app') { win32.hideNow(hwnd); win32.showTaskbar(false); }
+  }, 50);
 }
 let tbWatchTimer = null;
 function syncTaskbarWatch(on) {
@@ -940,16 +956,29 @@ async function overviewData() {
       return { hwnd: w.hwnd, title: w.title, exe: w.exe, desk: w.desk, active: w.active, minimized: w.minimized, at }; }),
   };
 }
-async function refreshOverview() { if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) ovWin.webContents.send('overview', await overviewData()); }
+async function refreshOverview() { if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) ovWin.webContents.send('overview', ovLast = await overviewData()); }
 function closeOverview() {
   if (!ovWin || ovWin.isDestroyed() || !ovWin.isVisible()) return;
   clearThumbs(ovWin);
   ovWin.webContents.send('overview-close');
   setTimeout(() => { if (ovWin && !ovWin.isDestroyed()) ovWin.hide(); }, 140); // after its fade
 }
-async function openOverview() {
+let ovLast = null;
+async function openOverview({ instant = false } = {}) {
   if (gamer) return;
-  if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) { closeOverview(); return; }
+  if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) { if (!instant) closeOverview(); return; }
+  const d = screen.getPrimaryDisplay();
+  await prepareOverview();
+  ovWin.setBounds(d.bounds);
+  // straight away with what it showed last time (no waiting for the window scan), then the fresh list
+  const fresh = overviewData().then((data) => { ovLast = data; return data; });
+  const first = ovLast || await fresh;
+  ovWin.webContents.send('overview', { ...first, instant });
+  ovShownAt = Date.now(); ovWin.show(); ovWin.focus();
+  if (first !== await fresh) refreshOverview();
+}
+/** The overview window, made once and kept (hidden), so opening it is instant. */
+async function prepareOverview() {
   const d = screen.getPrimaryDisplay();
   if (!ovWin || ovWin.isDestroyed()) {
     ovWin = new BrowserWindow({ ...d.bounds, frame: false, transparent: true, resizable: false, movable: false, skipTaskbar: true, show: false,
@@ -962,9 +991,6 @@ async function openOverview() {
     await new Promise((r) => ovWin.webContents.once('did-finish-load', r));
     win32.makeToolWindow(ovWin); // on every desktop: it stays open while desktops are added / switched
   }
-  ovWin.setBounds(d.bounds);
-  ovWin.webContents.send('overview', await overviewData());
-  ovShownAt = Date.now(); ovWin.show(); ovWin.focus();
 }
 
 const FLY_ACTIONS = {
@@ -1651,6 +1677,7 @@ app.whenReady().then(() => {
   themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
   syncWinKey();
   syncTaskbarWatch(false); // Task View -> the desktops overview (the dock adds its taskbar hiding once it's up)
+  if (taskViewOn()) setTimeout(() => prepareOverview().catch(() => {}), 6000); // ready before the first swipe
   // it keeps running across restarts by default (like Lively), started from start.bat too: once, for everyone who
   // hasn't chosen yet; switch it off in the tray menu or Customize > General and it stays off
   if (!store.get().general.autostartChosen && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true, autostartChosen: true } });

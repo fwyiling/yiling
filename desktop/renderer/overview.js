@@ -141,12 +141,16 @@ function render(d) {
   const bg = !cur ? '' : cur.wall.has && cur.wall.scene === 'image' ? `sd://media/wallpaper?${q}` : !cur.wall.has ? `sd://media/winwall?${q}` : '';
   $('bg').style.backgroundImage = bg ? `url("${bg}")` : '';
   renderDesks(); renderWins();
-  requestAnimationFrame(() => $('ov').classList.add('on'));
+  if (d.instant) shownAt = Date.now();
+  if (d.instant) { // opened in place of Windows' Task View: there at once, no fade over it
+    $('ov').style.transition = 'none'; $('ov').classList.add('on');
+    requestAnimationFrame(() => requestAnimationFrame(() => { $('ov').style.transition = ''; }));
+  } else requestAnimationFrame(() => $('ov').classList.add('on'));
 }
 sd.onOverview(render);
 sd.onOverviewClose(() => { $('ov').classList.remove('on'); clearTimeout(thumbT); });
 // arrow keys (or Tab) pick a window, Enter goes to it, Delete closes it; 1-9 switch desktop
-let sel = -1;
+let sel = -1, shownAt = 0;
 function select(i) {
   const wins = [...document.querySelectorAll('.win:not(.gone)')];
   if (!wins.length) { sel = -1; return; }
@@ -161,7 +165,7 @@ addEventListener('keydown', (e) => {
   if (step && wins.length) { e.preventDefault(); select(sel < 0 ? 0 : e.key === 'Tab' ? (sel + step + wins.length) % wins.length : sel + step); return; }
   if (e.key === 'Enter' && wins[sel]) { sd.ov('focus', +wins[sel].dataset.hwnd); return; }
   if (e.key === 'Delete' && wins[sel]) { wins[sel].classList.add('gone'); sd.ov('close-window', +wins[sel].dataset.hwnd); select(sel); return; }
-  if (e.key === 'Escape') sd.ov('hide');
+  if (e.key === 'Escape' && Date.now() - shownAt > 300) sd.ov('hide'); // not the Esc that closed Task View
   if (/^[1-9]$/.test(e.key) && data && +e.key <= data.desks.length) sd.ov('desk', +e.key - 1);
 });
 // a click on the empty background closes it, like Mission Control
