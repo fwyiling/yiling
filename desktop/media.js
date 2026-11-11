@@ -5,6 +5,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const win32 = require('./win32');
+const { psArgs } = require('./ps-script');
 
 const PS = `
 $ErrorActionPreference = 'Stop'
@@ -50,7 +51,7 @@ function Read-Art($p) {
 $in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 512
 $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
-$last = ''; $lastKey = ''; $art = ''; $artTries = 0; $artError = ''; $cmdResult = ''; $tick = 0; $all = @()
+$last = ''; $lastKey = ''; $art = ''; $artTries = 0; $artError = ''; $cmdResult = ''; $tick = 0; $all = @(); $watchAll = $false
 while ($true) {
   $poll = ($tick % 2) -eq 0 # about twice a second
   if ($rd.IsCompleted) {
@@ -58,6 +59,7 @@ while ($true) {
     if ($n -le 0) { exit 0 } # the app closed
     foreach ($c in ([Text.Encoding]::ASCII.GetString($buf, 0, $n) -split [char]10)) {
       $c = $c.Trim(); if (-not $c -or $c -eq 'poll') { continue } # 'poll': just read the state again (below)
+      if ($c -match '^sessions ([01])$') { $watchAll = $Matches[1] -eq '1'; if (-not $watchAll) { $all = @() }; $tick = 0; continue } # every player: only while the sound panel shows them
       try {
         $s = $mgr.GetCurrentSession(); $op = $null
         if ($c -match '^(toggle|next|prev) ([A-Za-z0-9+/=]+)$') { # one particular player (the sound panel lists them all)
@@ -76,7 +78,7 @@ while ($true) {
     $rd = $in.ReadAsync($buf, 0, $buf.Length); $poll = $true
   }
   if (($tick % 40) -eq 0 -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit 0 }
-  if ($poll -and ($tick % 4) -eq 0) { # every player Windows knows (several can play at once), about once a second
+  if ($watchAll -and $poll -and ($tick % 4) -eq 0) { # every player Windows knows (several can play at once), about once a second
     $all = @(); try { foreach ($x in $mgr.GetSessions()) { try {
       $xp = Await ($x.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
       $all += [ordered]@{ app = $x.SourceAppUserModelId; title = $xp.Title; artist = $xp.Artist; playing = ($x.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing') }
@@ -117,8 +119,8 @@ function emit(next) { state = next; for (const fn of listeners) fn(state); }
 function start() {
   if (!win32.isWin || child || stopped) return;
   const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(PS, 'utf16le').toString('base64')],
-    { windowsHide: true, env: { ...process.env, SD_PARENT_PID: String(process.pid) } });
+  child = spawn(ps, psArgs(PS, 'media'), { windowsHide: true, env: { ...process.env, SD_PARENT_PID: String(process.pid) } }); // from a file: Windows caps command lines
+  if (sessionsOn) child.stdin.write('sessions 1\n'); // restarted while the sound panel is open
   let buf = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (d) => {
@@ -145,6 +147,9 @@ function start() {
 }
 
 function stop() { stopped = true; child?.kill(); child = null; }
+let sessionsOn = false;
+/** Every player is listed only while the sound panel shows them (one more Windows call per player each second). */
+function watchSessions(on) { on = !!on; if (on === sessionsOn) return; sessionsOn = on; if (child?.stdin.writable) child.stdin.write(`sessions ${on ? 1 : 0}\n`); }
 // gamer mode: no PowerShell polling in the background while you play
 function pause() { stop(); emit({ on: false }); }
 function resume() { stopped = false; restarts = 0; start(); }
@@ -167,7 +172,7 @@ function control(cmd, app) {
 }
 
 module.exports = {
-  PS, start, stop, pause, resume, control,
+  PS, start, stop, pause, resume, control, watchSessions,
   get: () => state,
   onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
 };

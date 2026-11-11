@@ -921,6 +921,8 @@ module.exports = {
   }, 0),
   restoreIsland: safe('restoreIsland', (hwnd, content) => { if (!load()) return false; if (content) u.ShowWindowAsync(content, 8); u.SetWindowRgn(hwnd, 0, true); return true; }, false), // SW_SHOWNA
   isVisible: safe('isVisible', (hwnd) => !!(load() && u.IsWindowVisible(hwnd)), false),
+  /** Shown and not cloaked (Windows' shell windows are often cloaked rather than hidden when they close). */
+  isShown: safe('isShown', (hwnd) => { if (!load() || !u.IsWindowVisible(hwnd)) return false; const c = [0]; return !(u.DwmGetWindowAttribute(hwnd, 14, c, 4) === 0 && c[0]); }, false),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),

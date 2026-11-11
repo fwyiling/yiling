@@ -67,7 +67,7 @@ if (!win32.isWin || !st.ready) {
   parentPort.postMessage({ type: 'ready' });
   let current = -1, hunt = 0, sinceFound = -1;
   win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
-  timers.push(setInterval(() => watchEdge(Date.now()), 25));
+  timers.push(setInterval(() => watchEdge(Date.now()), 40)); // 25 frames a second is enough to feel a drag at the edge
   timers.push(setInterval(watchIme, 50)); // often: snapping has to be paused before the pointer reaches the edge
   timers.push(setInterval(() => {
     const vd = win32.virtualDesktops(); // two small registry reads

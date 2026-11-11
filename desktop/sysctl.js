@@ -210,7 +210,7 @@ function Wifi() {
 $in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 1024
 $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
-$last = ''; $tick = 0; $bright = Brightness; $wifi = Wifi; $apps = @()
+$last = ''; $tick = 0; $bright = Brightness; $wifi = Wifi; $apps = @(); $watchApps = $false; $outs = @(); $out = ''
 while ($true) {
   if ($rd.IsCompleted) {
     $n = 0; try { $n = $rd.Result } catch {}
@@ -222,6 +222,7 @@ while ($true) {
           'volume' { [SdAudio]::Set([float]$p[1] / 100); if ([SdAudio]::Muted() -and [float]$p[1] -gt 0) { [SdAudio]::Mute($false) } }
           'mute' { [SdAudio]::Mute($p[1] -eq '1') }
           'output' { [SdAudio]::SetDefault($p[1]) }
+          'apps' { $watchApps = ($p[1] -eq '1'); if (-not $watchApps) { $apps = @() }; $tick = 1 }
           'appvol' { [SdMixer]::Set([uint32]$p[1], [int]$p[2], -1); $tick = 1 } # report the new level at once
           'appmute' { [SdMixer]::Set([uint32]$p[1], -1, [int]$p[2]); $tick = 1 }
           'brightness' { Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Select-Object -First 1 | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{ Timeout = 1; Brightness = [byte]$p[1] } | Out-Null; $bright = [int]$p[1] }
@@ -234,13 +235,15 @@ while ($true) {
     $rd = $in.ReadAsync($buf, 0, $buf.Length)
   }
   if (($tick % 20) -eq 0 -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit 0 }
-  if (($tick % 4) -eq 2) { $bright = Brightness }      # every 2 s (laptop screens only; $null elsewhere)
+  if (($tick % 20) -eq 2) { $bright = Brightness }     # every 10 s (WMI is slow)
   if (($tick % $(if ($netRt) { 2 } else { 12 })) -eq 0) { $wifi = Wifi } # every second (every 6 s with netsh)
   $vol = -1; $muted = $false
   try { $vol = [math]::Round([SdAudio]::Get() * 100); $muted = [SdAudio]::Muted() } catch {}
-  $outs = @(); try { $outs = @([SdAudio]::Outputs() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ id = $q[0]; name = $q[1] } }) } catch {}
-  $out = ''; try { $out = [SdAudio]::Default() } catch {}
-  if (($tick % 2) -eq 1) { $apps = @(); try { $apps = @([SdMixer]::Apps() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ pid = [int]$q[0]; playing = $q[1] -eq '1'; volume = [int]$q[2]; muted = $q[3] -eq '1'; name = $q[4]; exe = $q[5] } }) } catch {} } # every second
+  if (($tick % 4) -eq 0 -or $outs.Count -eq 0) { # the outputs every 2 s
+    $outs = @(); try { $outs = @([SdAudio]::Outputs() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ id = $q[0]; name = $q[1] } }) } catch {}
+    $out = ''; try { $out = [SdAudio]::Default() } catch {}
+  }
+  if ($watchApps -and ($tick % 2) -eq 1) { $apps = @(); try { $apps = @([SdMixer]::Apps() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ pid = [int]$q[0]; playing = $q[1] -eq '1'; volume = [int]$q[2]; muted = $q[3] -eq '1'; name = $q[4]; exe = $q[5] } }) } catch {} } # every second
   $w = Radio 'WiFi'; $b = Radio 'Bluetooth'
   $o = [ordered]@{
     volume = $vol; muted = $muted; brightness = $bright
@@ -261,6 +264,7 @@ function start() {
   if (!win32.isWin || child || stopped) return;
   const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   child = spawn(ps, psArgs(PS, 'sysctl'), { windowsHide: true, env: { ...process.env, SD_PARENT_PID: String(process.pid) } }); // from a file: too long for a command line
+  if (appsOn) child.stdin.write('apps 1\n'); // restarted while the sound panel is open
   let buf = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (d) => {
@@ -292,4 +296,7 @@ function set(what, value) {
   if (!COMMANDS[what]) throw new Error('unknown control');
   if (child?.stdin.writable) child.stdin.write(`${what} ${COMMANDS[what](value)}\n`);
 }
-module.exports = { PS, start, stop, set, get: () => state, onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); } };
+let appsOn = false;
+/** Each app's volume is read (every second) only while the sound panel shows it. */
+function watchApps(on) { on = !!on; if (on === appsOn) return; appsOn = on; if (child?.stdin.writable) child.stdin.write(`apps ${on ? 1 : 0}\n`); }
+module.exports = { PS, start, stop, set, watchApps, get: () => state, onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); } };

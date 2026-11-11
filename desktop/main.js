@@ -42,6 +42,9 @@ const attachResults = new Map(); // display id -> result of joining the desktop 
 // Chromium stops drawing windows it thinks are covered and shows them white. A window behind the
 // desktop icons always looks covered, so that check has to be off for the wallpaper to render.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+// memory: about ten windows of the app's own pages share four renderer processes instead of one each (hundreds of MB);
+// not all in one, so a busy page (Home filling in, the overview) never stalls the bars and the island
+app.commandLine.appendSwitch('renderer-process-limit', '4');
 
 // sd://ui/<file> serves the app's own pages; sd://media/wallpaper serves only the wallpaper file you picked.
 protocol.registerSchemesAsPrivileged([{ scheme: 'sd', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -92,7 +95,7 @@ function buildWallpapers() {
     wallpapers.set(d.id, w);
   }
 }
-const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); deskWorker?.postMessage(deskWatchSettings()); }, 800); };
+const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); syncEdgeMask(); deskWorker?.postMessage(deskWatchSettings()); }, 800); };
 
 // pause when a full-screen app is in front, or on battery
 // Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
@@ -347,20 +350,30 @@ function onTaskView(hwnd) {
   if (!TASK_VIEW_TITLES.has(title)) return;
   if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) return;
   lastTaskView.taken++;
-  // invisible this very moment (before it has drawn), so only the overview is ever seen; then closed properly with
-  // Esc once it has the keyboard, and put back as it was once it's gone (Alt+Tab uses the same window)
-  const content = win32.hideIsland(hwnd);
-  let tries = 0;
+  // invisible this very moment (before it has drawn), and the overview up at once, without waiting for anything.
+  // Task View then gets Esc whenever it has the keyboard (a slow swipe is still tracking the fingers and ignores the
+  // first ones), until it's really gone; then the overview takes the keyboard and Task View is put back as it was
+  // (Alt+Tab uses the same window).
+  const content = win32.hideIsland(hwnd), t0 = Date.now();
+  ovHoldUntil = t0 + 3000; // Task View closing must not count as clicking away from the overview
+  openOverview({ instant: true, inactive: true });
+  let lastEsc = 0, escs = 0;
   (function closeIt() {
-    if (win32.isForeground(hwnd) || ++tries > 12) { win32.pressKeys([0x1B]); setTimeout(() => openOverview({ instant: true }), 50); } // after the Esc has reached Task View, not ours
-    else setTimeout(closeIt, 15);
+    const fg = win32.isForeground(hwnd);
+    const gone = !win32.isShown(hwnd) || (escs > 0 && !fg && Date.now() - lastEsc > 150);
+    if (gone || Date.now() - t0 > 3000) {
+      setTimeout(() => win32.restoreIsland(hwnd, content), 150);
+      if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) { ovWin.focus(); if (!ovWin.isFocused()) win32.focusOwn(ovWin); }
+      return;
+    }
+    if (fg && Date.now() - lastEsc > 120) { win32.pressKeys([0x1B]); lastEsc = Date.now(); escs++; }
+    setTimeout(closeIt, 10);
   })();
-  const t0 = Date.now();
-  (function putBack() { if (!win32.isVisible(hwnd) || Date.now() - t0 > 2500) setTimeout(() => win32.restoreIsland(hwnd, content), 120); else setTimeout(putBack, 50); })();
 }
 function onTaskbarShown(hwnd, what = 'taskbar') {
   if (what === 'taskview') { onTaskView(hwnd); return; }
   tbHookStats.heard++;
+  if (edgeWin && !edgeWin.isDestroyed()) edgeWin.moveTop(); // above the taskbar's edge line again
   if (!dockWin || dockWin.isDestroyed() || gamer || app.isQuitting) return;
   tbHookStats.hidden++;
   const kind = win32.foregroundKind();
@@ -377,6 +390,27 @@ function enforceHidden(hwnd) {
     const kind = win32.foregroundKind();
     if (kind === 'none' || kind === 'switch' || kind === 'app') { win32.hideNow(hwnd); win32.showTaskbar(false); }
   }, 50);
+}
+// The line an auto-hidden Windows taskbar leaves along the bottom edge (a pixel or two in its colour): covered by a
+// strip a few pixels tall that shows exactly the bottom of the wallpaper (the still Windows also uses), kept above it.
+let edgeWin = null;
+function syncEdgeMask() {
+  const want = win32.isWin && dockWin && !dockWin.isDestroyed() && store.get().dock.edgeMask !== false && store.get().dock.reserve !== false && !gamer; // with the edge reserved nothing of yours sits there
+  if (!want) { if (edgeWin && !edgeWin.isDestroyed()) edgeWin.destroy(); edgeWin = null; return; }
+  const d = screen.getPrimaryDisplay(), b = { x: d.bounds.x, y: d.bounds.y + d.bounds.height - 3, width: d.bounds.width, height: 3 };
+  if (!edgeWin || edgeWin.isDestroyed()) {
+    edgeWin = new BrowserWindow({ ...b, frame: false, resizable: false, movable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false,
+      backgroundColor: '#000000', title: 'Syndicates Edge', webPreferences: webPrefs });
+    edgeWin.setAlwaysOnTop(true, 'screen-saver');
+    edgeWin.loadURL(ui('mask.html'));
+    edgeWin.once('ready-to-show', () => { win32.makeToolWindow(edgeWin); edgeWin.setBounds(b); edgeWin.showInactive(); paintEdge(); });
+    edgeWin.on('closed', () => { edgeWin = null; });
+  } else { edgeWin.setBounds(b); paintEdge(); }
+}
+function paintEdge() {
+  if (!edgeWin || edgeWin.isDestroyed()) return;
+  const key = stillApplied.get(deskId) || [...stillApplied.values()][0] || '';
+  edgeWin.webContents.executeJavaScript(`document.body.style.backgroundImage = ${JSON.stringify(key ? `url("sd://media/still?k=${key}")` : '')}`).catch(() => {});
 }
 let tbWatchTimer = null;
 function syncTaskbarWatch(on) {
@@ -397,7 +431,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); syncTaskbarWatch(true); }); // tool window: on every virtual desktop
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); syncTaskbarWatch(true); syncEdgeMask(); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -410,7 +444,7 @@ async function setDock(on) {
     store.set({ dock: { prevAutoHide: null } });
     if (shellMsg) { win32.unhookShell(dockWin); shellMsg = 0; }
     syncTaskbarWatch(false);
-    dockWin.destroy(); dockWin = null;
+    dockWin.destroy(); dockWin = null; syncEdgeMask();
   }
 }
 
@@ -424,7 +458,7 @@ function setGamer(on, auto = false) {
   winkey.pause(on); // in a game the Windows key does what Windows does
   // cheap on purpose: windows are only hidden (screen edges stay reserved, so nothing on screen has to move),
   // and the music reader keeps running (restarting PowerShell is the expensive part)
-  for (const w of [dockWin, topWin, islandWin]) {
+  for (const w of [dockWin, topWin, islandWin, edgeWin]) {
     if (!w || w.isDestroyed()) continue;
     if (on) w.hide(); else w.showInactive();
   }
@@ -561,7 +595,7 @@ function wallFor(w, id) {
 }
 function onDeskSwitch(from, to, count, id) {
   deskNow = to;
-  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); syncWindowsWallpaper(900); }
+  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); syncWindowsWallpaper(900); paintEdge(); }
   if (gamer) return;
   quietUntil = Date.now() + QUIET_MS;
   const dir = Math.sign(to - from);
@@ -875,16 +909,18 @@ function openFlyout(panel, anchorX, data = null) {
     // the click that opened it can blur it a moment later (the top bar takes focus): only a real click away closes it
     flyWin.on('blur', () => { if (Date.now() - flyShownAt < 300) return; flyWin?.hide(); flyHiddenAt = Date.now(); });
     flyWin.once('ready-to-show', () => win32.makeToolWindow(flyWin));
-    flyWin.on('hide', () => clearThumbs(flyWin)); // previews belong to the panel: gone with it
+    flyWin.on('hide', () => { clearThumbs(flyWin); soundWatch(false); }); // previews belong to the panel: gone with it; the sound data stops
     flyWin.loadURL(ui('flyout.html'));
-    flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey;
+    flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey; soundWatch(panel === 'sound');
     flyReveal(1500);
     return;
   }
-  flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey;
+  flyWin.panel = panel; flyWin.data = data; flyWin.dataKey = dataKey; soundWatch(panel === 'sound');
   flyWin.setBounds(bounds); flyWin.webContents.send('flyout', panel);
   flyReveal(400);
 }
+// each app's volume and every player: read only while the sound panel is open (it costs PowerShell time every second)
+function soundWatch(on) { sysctl.watchApps(on); media.watchSessions(on); }
 // shown only once the page has drawn the asked-for panel, so the previous one never flashes first
 // (that flash, then the real panel, looked like it popped up twice)
 let flyPending = null;
@@ -964,7 +1000,7 @@ function closeOverview() {
   setTimeout(() => { if (ovWin && !ovWin.isDestroyed()) ovWin.hide(); }, 140); // after its fade
 }
 let ovLast = null;
-async function openOverview({ instant = false } = {}) {
+async function openOverview({ instant = false, inactive = false } = {}) {
   if (gamer) return;
   if (ovWin && !ovWin.isDestroyed() && ovWin.isVisible()) { if (!instant) closeOverview(); return; }
   const d = screen.getPrimaryDisplay();
@@ -974,7 +1010,8 @@ async function openOverview({ instant = false } = {}) {
   const fresh = overviewData().then((data) => { ovLast = data; return data; });
   const first = ovLast || await fresh;
   ovWin.webContents.send('overview', { ...first, instant });
-  ovShownAt = Date.now(); ovWin.show(); ovWin.focus();
+  ovShownAt = Date.now();
+  if (inactive) ovWin.showInactive(); else { ovWin.show(); ovWin.focus(); }
   if (first !== await fresh) refreshOverview();
 }
 /** The overview window, made once and kept (hidden), so opening it is instant. */
@@ -1021,9 +1058,9 @@ function power([exe, args]) {
 let stillT = 0, stillBusy = false, stillLast = 0, themeStamp = 0, lastWeatherJson = '';
 const stillApplied = new Map(); // desktop id -> the content key its still shows
 const STILL_VERSION = 3; // a new way of making stills: none made the old way is used again
-const STILL_GAP = 15000; // at most one new still every 15 s (songs change, weather loads…)
+const STILL_GAP = 30000; // at most one new still every 15 s (songs change, weather loads…)
 const sha = (x) => require('crypto').createHash('sha1').update(x).digest('hex').slice(0, 16);
-const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, m.playing, !!m.art].join('|') : 'off'; };
+const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, !!m.art].join('|') : 'off'; }; // not play / pause: a new still for every pause wasn't worth it
 function stillKey(desk) {
   const st = store.get(), w = wallFor(st.wallpaper, desk), d = screen.getPrimaryDisplay(), now = new Date();
   return sha(JSON.stringify([STILL_VERSION, w.scene, w.file, w.url, w.fileStamp, w.dim, d.size, d.scaleFactor, st.widgets, st.home?.todos, st.home?.timetable, st.name, st.accent,
@@ -1121,7 +1158,7 @@ function syncWindowsWallpaper(delay = 1500) {
         if (quiet()) { stillBusy = false; stillT = setTimeout(run, 600); return; } // a slide started: finish after it
         if (await setDeskBackground(id, ids.indexOf(id), files.get(key), 10, cur)) stillApplied.set(id, key);
       }
-      saveApplied(); pruneStills();
+      saveApplied(); pruneStills(); paintEdge();
     } catch (e) { console.warn('[still]', e.message); }
     finally { stillBusy = false; }
   }, delay);
@@ -1197,7 +1234,7 @@ function applySettings(patch) {
   if (patch.widgets || patch.home?.todos || patch.home?.timetable || patch.name !== undefined || patch.accent !== undefined || patch.dock?.on !== undefined) syncWindowsWallpaper(3000); // the still shows the widgets
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
-  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
+  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); syncEdgeMask(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
   updateTray();
@@ -1703,6 +1740,12 @@ app.whenReady().then(() => {
       const f = gallery.fileOf(u.searchParams.get('f') || '');
       if (!f || !fs.existsSync(f)) return new Response('not found', { status: 404 });
       return net.fetch(pathToFileURL(f).href);
+    }
+    if (u.host === 'media' && u.pathname === '/still') { // a still of the wallpaper (the bottom edge strip), by its key
+      const k = u.searchParams.get('k') || '';
+      if (!/^[0-9a-f]{16}$/.test(k)) return new Response('not found', { status: 404 });
+      const f = path.join(STILL_DIR(), `still-${k}.jpg`);
+      return fs.existsSync(f) ? net.fetch(pathToFileURL(f).href) : new Response('not found', { status: 404 });
     }
     if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
       const f = userWinwall(u.searchParams.get('desk') || '');

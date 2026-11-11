@@ -30,7 +30,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .mini-art { border-radius: 6px; background: center / cover no-repeat, color-mix(in srgb, var(--a) 50%, #222); }
 .trail { display: flex; align-items: center; gap: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; } .eq s { width: 2.5px; height: 30%; border-radius: 1px; background: var(--a); }
-.playing .eq s { animation: eq 1s ease-in-out infinite; } .playing .eq s:nth-child(2) { animation-delay: -.3s; } .playing .eq s:nth-child(3) { animation-delay: -.6s; } .playing .eq s:nth-child(4) { animation-delay: -.15s; }
+.playing .eq s { animation: eq 1s ease-in-out 8; } .playing .eq s:nth-child(2) { animation-delay: -.3s; } .playing .eq s:nth-child(3) { animation-delay: -.6s; } .playing .eq s:nth-child(4) { animation-delay: -.15s; }
 @keyframes eq { 0%, 100% { height: 25%; } 50% { height: 100%; } }
 .mini .ring, .mini .mini-art, .mini .t, .mini .eq { display: none; }
 #island[data-mini="timer"] .mini .ring, #island[data-mini="timer"] .mini .t { display: block; }
@@ -132,15 +132,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .pet[data-mood="walk"] .pet-bod { animation: hop .32s ease-in-out infinite alternate; }
 .pet[data-kind="blob"][data-mood="walk"] .pet-bod { animation: squish .4s ease-in-out infinite alternate; }
 .pet[data-kind="bird"][data-mood="walk"] .pet-bod { animation: waddle .3s ease-in-out infinite alternate; }
-.pet[data-kind="ghost"] .pet-bod { animation: float 2.6s ease-in-out infinite; }
+.pet[data-kind="ghost"] .pet-bod { animation: float 2.6s ease-in-out 3; } /* a few times, then still: an endless animation in a see-through window costs CPU every frame */
 .pet[data-mood="watch"] .pet-bod { transform: rotate(-7deg); } /* looking at the timer ring */
 .pet[data-mood="antsy"] .pet-bod { animation: hop .2s ease-in-out infinite alternate; }
-.pet[data-mood="dance"] .pet-bod { animation: dance .5s ease-in-out infinite alternate; }
-.pet[data-mood="dance"] .tail, .pet[data-mood="cheer"] .tail { animation: wag .25s ease-in-out infinite alternate; }
-.pet[data-mood="dance"] .wing, .pet[data-mood="cheer"] .wing, .pet[data-mood="happy"] .wing { animation: flap .2s ease-in-out infinite alternate; }
-.pet[data-mood="dance"] .ear.l { animation: flop .5s ease-in-out infinite alternate; } .pet[data-mood="dance"] .ear.r { animation: flop .5s ease-in-out infinite alternate-reverse; }
+.pet[data-mood="dance"] .pet-bod { animation: dance .5s ease-in-out 16 alternate; }
+.pet[data-mood="dance"] .tail, .pet[data-mood="cheer"] .tail { animation: wag .25s ease-in-out 16 alternate; }
+.pet[data-mood="dance"] .wing, .pet[data-mood="cheer"] .wing, .pet[data-mood="happy"] .wing { animation: flap .2s ease-in-out 16 alternate; }
+.pet[data-mood="dance"] .ear.l { animation: flop .5s ease-in-out 16 alternate; } .pet[data-mood="dance"] .ear.r { animation: flop .5s ease-in-out 16 alternate-reverse; }
 .pet[data-mood="happy"] .pet-bod, .pet[data-mood="love"] .pet-bod { animation: jump .48s ease-out 2; }
-.pet[data-mood="cheer"] .pet-bod { animation: jump .55s ease-out infinite; }
+.pet[data-mood="cheer"] .pet-bod { animation: jump .55s ease-out 6; }
 .pet[data-mood="wow"] .pet-bod { animation: pop .5s ease-out; }
 .pet[data-mood="look"] .pet-bod { animation: look 1.3s ease-in-out; }
 .pet[data-mood="dizzy"] .pet-bod { animation: dizzy .6s ease-in-out 3; }
@@ -148,7 +148,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .pet[data-mood="sleep"] .pet-bod { transform: rotate(7deg) scale(1.05, .9); }
 .pet.twitch .ear.l { animation: twitch .32s ease-in-out; } .pet.twitch .tail { animation: wag .16s ease-in-out 2 alternate; }
 .zz { display: none; position: absolute; right: -5px; top: -2px; font: italic 700 8px/1 "Segoe UI", sans-serif; color: rgba(255, 255, 255, .75); pointer-events: none; }
-.pet[data-mood="sleep"] .zz { display: block; animation: zz 2.6s ease-out infinite; }
+.pet[data-mood="sleep"] .zz { display: block; animation: zz 2.6s ease-out 3 forwards; }
 .heart { position: absolute; left: 60%; top: 0; font-style: normal; font-size: 9px; line-height: 1; color: #ff6b8a; pointer-events: none; animation: heart 1.1s ease-out forwards; }
 @keyframes hop { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-12%) rotate(4deg); } }
 @keyframes squish { from { transform: scale(1.1, .88); } to { transform: scale(.94, 1.06) translateY(-6%); } }
