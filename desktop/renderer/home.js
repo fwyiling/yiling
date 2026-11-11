@@ -328,6 +328,19 @@ const close = () => sd.toggleHome(false);
 $('backdrop').onclick = close;
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { if ($('q').value) { $('q').value = ''; renderResults(); } else close(); } });
 $('customize').onclick = () => sd.openSettings();
+// power, as at the bottom of Windows' Start menu: restart and shut down ask for a second click
+for (const b of document.querySelectorAll('#pwr [data-p]')) {
+  let armed = 0;
+  b.onclick = () => {
+    const k = b.dataset.p;
+    if ((k === 'restart' || k === 'shutdown') && !armed) {
+      b.classList.add('armed'); b.dataset.was = b.title; b.title = 'Click again to ' + b.title.toLowerCase();
+      armed = setTimeout(() => { armed = 0; b.classList.remove('armed'); b.title = b.dataset.was; }, 3000);
+      return;
+    }
+    sd.flyoutAction(k);
+  };
+}
 function onShown(mode) {
   $('q').value = ''; renderResults(); $('q').focus();
   $('q').placeholder = mode === 'pin' ? 'Type an app’s name, then press Pin (or Ctrl+Enter)' : 'Search apps, files, folders or the web'; tick(); renderTimetable(); renderIconsBtn();

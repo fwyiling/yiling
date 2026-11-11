@@ -18,8 +18,9 @@ island, a desktops overview and themes, in the same grey-blue style as the Syndi
   short notes (Caps Lock, headphones), with an **island pet** to keep you company.
 - **Desktops**: three-finger swipes like a MacBook, drag a window against the screen edge to take it to the
   next desktop, and an **overview** of every desktop and its windows (`Ctrl+Alt+Up`).
-- **Home panel** (`Alt+Space`, changeable): search apps, files and the web, pinned apps, to-dos, notes,
-  timetable, books.
+- **Home panel** (`Alt+Space`, changeable, or the **Windows key** like a Start menu): search apps, files and
+  the web, pinned apps, to-dos, notes, timetable, books, lock / sleep / restart / shut down. Win+E and other
+  shortcuts still work; Ctrl+Esc opens Windows' own Start menu. Customize > Home switches the Windows key off.
 - **Themes**: restyle everything with variables and CSS, turn on several at once, share them as
   `.sdtheme` files. Built in: Frosted, Bubbles, Mecha. See [THEMES.md](THEMES.md).
 - **Lock screen**: one click turns your wallpaper and widgets into the lock screen picture.
@@ -42,6 +43,8 @@ Windows may say "Windows protected your PC" because the app isn't code-signed: *
 1. Install **Node.js LTS** from <https://nodejs.org> (once).
 2. Double-click **`start.bat`** in this folder. The first start downloads what it needs (a minute or two),
    then the app starts on its own and the window closes; closing it doesn't stop the app.
+   It starts with Windows from then on, so you only do this once (Customize > General > Start with Windows
+   turns that off).
 
 To build the installer yourself: `npm run dist` (files appear in `dist/`).
 

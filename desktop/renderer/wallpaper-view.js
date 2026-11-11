@@ -240,7 +240,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
         // eased per half: glide out with the slide, then settle back softly (one curve over the whole thing jerked)
         [{ transform: 'translateX(0)', easing: 'cubic-bezier(.33,0,.2,1)' }, { transform: `translateX(${dir > 0 ? "-" : ""}${dist})`, offset: 0.38, easing: 'cubic-bezier(.4,0,.2,1)' }, { transform: 'translateX(0)' }],
         { duration: 800, composite: 'add' });
-      go(media, '1.1%'); go(layer, '2.2cqw');
+      go(media, '1.1%'); // the picture only: the widgets stay put, like a Mac's desktop widgets
     },
     pointer(x, y) { root.style.setProperty('--px', (x - 0.5).toFixed(3)); root.style.setProperty('--py', (y - 0.5).toFixed(3)); },
     destroy() { clearInterval(clockT); clearInterval(todayT); clearInterval(statsT); clearInterval(weatherT); root.replaceChildren(); },

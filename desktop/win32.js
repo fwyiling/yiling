@@ -351,6 +351,12 @@ function regString(sub, name) {
   if (u.RegGetValueW(-2147483647, sub, name, 0x2, null, buf, size) !== 0) return ''; // RRF_RT_REG_SZ
   return buf.toString('utf16le', 0, size[0]).replace(/\0+$/, '');
 }
+/** Write a text value under HKEY_CURRENT_USER. */
+function regSetString(sub, name, value) {
+  if (!load()) return false;
+  const v = String(value);
+  return u.RegSetKeyValueW(-2147483647, sub, name, 1, v, (v.length + 1) * 2) === 0; // REG_SZ
+}
 /** What's in the Recycle Bin (all drives): { items, bytes }. */
 function recycleBin() {
   if (!load()) return { items: 0, bytes: 0 };
@@ -844,11 +850,13 @@ module.exports = {
   fullscreenAppRunning: safe('fullscreenAppRunning', fullscreenAppRunning, false),
   setDesktopIcons: safe('setDesktopIcons', setDesktopIcons, false),
   setWindowsWallpaper: safe('setWindowsWallpaper', setWindowsWallpaper, false),
+  focusOwn: safe('focusOwn', (win) => focusWindow(hwndOf(win), false), false),
   repaintDesktop: safe('repaintDesktop', repaintDesktop, false),
   setBlur: safe('setBlur', setBlur, false),
   dragState: safe('dragState', dragState, null),
   edgeSnap: safe('edgeSnap', edgeSnap, false),
   regString: safe('regString', regString, ''),
+  regSetString: safe('regSetString', regSetString, false),
   inputMode: safe('inputMode', inputMode, null),
   keyDown: safe('keyDown', (vk) => !!(load() && (u.GetAsyncKeyState(vk) & 0x8000)), false),
   foregroundId: safe('foregroundId', () => (load() ? Number(u.GetForegroundWindow()) : 0), 0),

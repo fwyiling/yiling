@@ -1,7 +1,7 @@
 // Customize window: live preview (drag widgets to move them) + wallpaper / widget / Home / general settings.
 import { mountWallpaper } from './wallpaper-view.js';
 import { PETS, petSvg } from './pets.js';
-import { applyAccent, wallFor, esc } from './common.js';
+import { applyAccent, wallFor, esc, useTheme } from './common.js';
 
 const sd = window.sd;
 const $ = (id) => document.getElementById(id);
@@ -465,3 +465,4 @@ $('find').addEventListener('input', runFind);
 $('find').addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('find').value = ''; runFind(); } });
 document.querySelectorAll('.side [data-tab]').forEach((b) => b.addEventListener('click', () => { if ($('find').value) { $('find').value = ''; runFind(); } }));
 addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('find').focus(); $('find').select(); } });
+useTheme('settings'); // Customize > Themes: this window too

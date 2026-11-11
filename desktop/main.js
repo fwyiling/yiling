@@ -13,6 +13,7 @@ const vdesk = require('./vdesk');
 const themes = require('./themes');
 const gallery = require('./gallery');
 const systray = require('./tray'); // other programs' tray icons, for the top bar
+const winkey = require('./winkey'); // the Windows key opens Home
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -128,6 +129,7 @@ function sendCursor() {
 let homeRelease = null;
 function scheduleHomeRelease() {
   clearTimeout(homeRelease);
+  if (winKeyOn()) return; // it's the Start menu now: kept ready, so the Windows key opens it at once
   homeRelease = setTimeout(() => { if (homeWin && !homeWin.isDestroyed() && !homeWin.isVisible()) { homeWin.destroy(); homeWin = null; } }, 15 * 60e3);
 }
 function toggleHome(force, mode = '') {
@@ -146,15 +148,19 @@ function toggleHome(force, mode = '') {
     homeWin.on('closed', () => { homeWin = null; });
     // shown once the page has drawn its content (not on the first empty paint, which looked like loading twice)
     let shown = false;
-    const reveal = () => { if (shown || !homeWin || homeWin.isDestroyed()) return; shown = true; homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (mode) homeWin.webContents.send('home-shown', mode); };
+    const reveal = () => { if (shown || !homeWin || homeWin.isDestroyed()) return; shown = true; homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (win32.isWin && !homeWin.isFocused()) win32.focusOwn(homeWin); if (mode) homeWin.webContents.send('home-shown', mode); };
     ipcMain.once('home:ready', reveal);
     setTimeout(reveal, 2500); // in case the page is slow
     return;
   }
   homeWin.setBounds(d.bounds);
   homeWin.show(); homeWin.focus();
+  if (win32.isWin && !homeWin.isFocused()) win32.focusOwn(homeWin); // opened by the Windows key: the key went to another program
   homeWin.webContents.send('home-shown', mode);
 }
+// the Windows key (alone) opens Home, as Seelen UI's Start menu takes it over; Customize > Home switches it off
+const winKeyOn = () => win32.isWin && store.get().home.winKey !== false && !process.argv.includes('--smoke');
+function syncWinKey() { winkey.use(winKeyOn() ? () => toggleHome() : null); }
 
 const hotkeyStatus = { switchKeys: false };
 let lastSwitch = null;
@@ -354,6 +360,7 @@ async function setDock(on) {
 function setGamer(on, auto = false) {
   if (on === gamer) return;
   gamer = on; gamerAuto = on && auto;
+  winkey.pause(on); // in a game the Windows key does what Windows does
   // cheap on purpose: windows are only hidden (screen edges stay reserved, so nothing on screen has to move),
   // and the music reader keeps running (restarting PowerShell is the expensive part)
   for (const w of [dockWin, topWin, islandWin]) {
@@ -408,11 +415,29 @@ let deskNow = -1, lastSwitchLabel = [], quietUntil = 0, deskWorker = null, deskW
 const QUIET_MS = 750; // Windows' slide, with a little to spare
 const quiet = () => Date.now() < quietUntil;
 // your Windows background's file (that desktop's own, if Windows has one per desktop)
+const DESK_KEY = (id) => `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\${id}`;
 function winwallFile(id) {
   if (!win32.isWin) return '';
-  const own = /^\{[0-9A-F-]{36}\}$/.test(id) ? win32.regString(`Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VirtualDesktops\\Desktops\\${id}`, 'Wallpaper') : '';
+  const own = /^\{[0-9A-F-]{36}\}$/.test(id) ? win32.regString(DESK_KEY(id), 'Wallpaper') : '';
   return own || win32.regString('Control Panel\\Desktop', 'WallPaper');
 }
+// Pictures this app made: the stills (below) and lock screen pictures, which have the widgets drawn in. Neither is
+// ever "your" Windows background: an old version set the lock picture as Windows' background, and Windows then
+// showed those frozen widgets (an hour-old forecast, another town) for a moment on every desktop slide.
+const STILL_DIR = () => path.join(app.getPath('userData'), 'still');
+const LOCK_DIR = () => path.join(app.getPath('userData'), 'lock');
+const inDir = (f, d) => !!f && path.dirname(path.resolve(f)).toLowerCase() === d.toLowerCase();
+const isOurStill = (f) => inDir(f, STILL_DIR());
+const isOurPicture = (f) => isOurStill(f) || inDir(f, LOCK_DIR());
+const WIN_DEFAULT = () => path.join(process.env.SystemRoot || 'C:\\Windows', 'Web', 'Wallpaper', 'Windows', 'img0.jpg');
+/** Your own Windows background: the one from before this app changed it, or Windows' default picture. */
+function ownWindowsBackground() {
+  const p = store.get().wallpaper.prevWindows;
+  if (p && !isOurPicture(p) && fs.existsSync(p)) return p;
+  return fs.existsSync(WIN_DEFAULT()) ? WIN_DEFAULT() : '';
+}
+/** The Windows background to show when nothing's picked: never one of ours. */
+function userWinwall(id) { const f = winwallFile(id); return isOurPicture(f) ? ownWindowsBackground() || f : f; }
 // ---------- accent colour from the wallpaper ----------
 // The most present vivid colour of the picture showing (photo, or your Windows background), made readable:
 // pixels are grouped by hue, weighted by how colourful they are; the winning group's average, at a usable
@@ -453,7 +478,7 @@ function syncWallAccent() {
     const st = store.get();
     if (!st.general.accentFromWallpaper) return;
     const w = wallFor(st.wallpaper, deskId);
-    const file = w.scene === 'image' && w.file ? w.file : !(w.scene === 'web' ? w.url : w.file) ? winwallFile(deskId) : '';
+    const file = w.scene === 'image' && w.file ? w.file : !(w.scene === 'web' ? w.url : w.file) ? userWinwall(deskId) : '';
     let key = '';
     try { key = file ? `${file}|${fs.statSync(file).mtimeMs}` : ''; } catch {}
     if (!key) return;
@@ -914,12 +939,20 @@ function power([exe, args]) {
 // different picture, or the same one cropped differently, every switch shows a jump. So Windows' background is set
 // to a still of this wallpaper, rendered by the same page at the screen's real size: the picture and its darkening,
 // no widgets. What Windows had before is remembered and put back when this is switched off or nothing is picked.
-const STILL_DIR = () => path.join(app.getPath('userData'), 'still');
-const isOurStill = (f) => !!f && path.dirname(path.resolve(f)).toLowerCase() === STILL_DIR().toLowerCase();
 // Windows 11 keeps a background per desktop, and setting it reaches the desktop showing: so each desktop gets its
 // still when you're on it (once per picture), which also covers a different wallpaper on each desktop.
 let stillT = 0, stillBusy = false;
 const stillSet = new Map(); // desktop id -> the still it was given this run
+// Windows 11 can keep a background per desktop (and shows it while sliding to that desktop). A desktop whose own
+// background is an old picture of ours gets the right one, so a slide never shows yesterday's still or frozen widgets.
+function fixOtherDesks(file) {
+  if (!file || !win32.isWin) return;
+  for (const id of win32.virtualDesktops().ids) {
+    if (id === deskId) continue;
+    const own = win32.regString(DESK_KEY(id), 'Wallpaper');
+    if (own && isOurPicture(own) && path.resolve(own).toLowerCase() !== path.resolve(file).toLowerCase()) win32.regSetString(DESK_KEY(id), 'Wallpaper', file);
+  }
+}
 function syncWindowsWallpaper(delay = 1500) {
   clearTimeout(stillT);
   stillT = setTimeout(async function run() {
@@ -928,7 +961,9 @@ function syncWindowsWallpaper(delay = 1500) {
     const st = store.get(), desk = deskId, w = wallFor(st.wallpaper, desk), now = winwallFile(desk);
     const picked = !!(w.scene === 'web' ? w.url : w.file);
     if (!st.wallpaper.matchWindows || !picked) { // off, or nothing picked (Windows' background is the wallpaper): the user's own back
-      if (isOurStill(now) && st.wallpaper.prevWindows && fs.existsSync(st.wallpaper.prevWindows)) win32.setWindowsWallpaper(st.wallpaper.prevWindows, st.wallpaper.prevStyle || null);
+      const own = ownWindowsBackground();
+      if (isOurPicture(now) && own) win32.setWindowsWallpaper(own, own === st.wallpaper.prevWindows ? st.wallpaper.prevStyle || null : 10);
+      fixOtherDesks(own);
       stillSet.delete(desk);
       return;
     }
@@ -936,7 +971,7 @@ function syncWindowsWallpaper(delay = 1500) {
     const key = require('crypto').createHash('sha1').update([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size.width, d.size.height, d.scaleFactor].join('|')).digest('hex').slice(0, 16);
     const want = path.join(STILL_DIR(), `still-${key}.jpg`);
     const filled = win32.regString('Control Panel\\Desktop', 'WallpaperStyle') === '10'; // a still from an earlier version may have another fit
-    if (filled && (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want)))) { stillSet.set(desk, want); return; }
+    if (filled && (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want)))) { stillSet.set(desk, want); if (!st.wallpaper.perDesk) fixOtherDesks(want); return; }
     stillBusy = true;
     try {
       if (!fs.existsSync(want)) {
@@ -950,8 +985,11 @@ function syncWindowsWallpaper(delay = 1500) {
         const old = fs.readdirSync(STILL_DIR()).filter((f) => /^still-[0-9a-f]+\.jpg$/.test(f)).map((f) => ({ f, t: fs.statSync(path.join(STILL_DIR(), f)).mtimeMs })).sort((x, y) => y.t - x.t).slice(12);
         for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true }); // a dozen is plenty
       }
-      if (now && !isOurStill(now) && !st.wallpaper.prevWindows) store.set({ wallpaper: { prevWindows: now, prevStyle: win32.regString('Control Panel\\Desktop', 'WallpaperStyle') || '10' } });
+      const prev = st.wallpaper.prevWindows;
+      if (now && !isOurPicture(now) && (!prev || isOurPicture(prev))) store.set({ wallpaper: { prevWindows: now, prevStyle: win32.regString('Control Panel\\Desktop', 'WallpaperStyle') || '10' } });
+      else if (prev && isOurPicture(prev)) store.set({ wallpaper: { prevWindows: '', prevStyle: '' } }); // a lock picture kept by an old version
       if (win32.setWindowsWallpaper(want, 10)) stillSet.set(desk, want); // fill: a screen-sized picture lands 1:1
+      if (!st.wallpaper.perDesk) fixOtherDesks(want); // the same wallpaper everywhere: no desktop keeps an old picture
     } catch (e) { console.warn('[still]', e.message); }
     stillBusy = false;
   }, delay);
@@ -1009,7 +1047,8 @@ function applySettings(patch) {
     deskWorker?.postMessage(deskWatchSettings());
   }
   if (patch.home?.hotkey !== undefined && patch.home.hotkey !== before.home.hotkey) registerHotkey();
-  if (patch.general?.startWithWindows !== undefined) setAutostart(next.general.startWithWindows);
+  if (patch.home?.winKey !== undefined) syncWinKey();
+  if (patch.general?.startWithWindows !== undefined) { setAutostart(next.general.startWithWindows); if (!next.general.autostartChosen) store.set({ general: { autostartChosen: true } }); }
   if (patch.general?.hideDesktopIcons !== undefined) win32.setDesktopIcons(!next.general.hideDesktopIcons);
   if (patch.topbar?.on !== undefined) setTopbar(next.topbar.on);
   if (patch.topbar?.look !== undefined) applyTopbarLook();
@@ -1037,7 +1076,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), winKey: winkey.status(), windowsBackground: win32.isWin ? { global: win32.regString('Control Panel\\Desktop', 'WallPaper'), style: win32.regString('Control Panel\\Desktop', 'WallpaperStyle'), desks: Object.fromEntries(win32.virtualDesktops().ids.map((id) => [id, win32.regString(DESK_KEY(id), 'Wallpaper')])), prev: store.get().wallpaper.prevWindows, match: store.get().wallpaper.matchWindows } : null, taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -1258,7 +1297,7 @@ function wireIpc() {
   // the picture chosen for the app's wallpaper, as the Windows background too
   ipcMain.handle('desktops', () => { const v = win32.isWin ? win32.virtualDesktops(true) : { count: 1, current: 0, ids: [], names: [] }; if (v.ids[v.current]) deskId = v.ids[v.current]; return { ...v, ids: v.ids.length ? v.ids : ['local'], current: v.ids.length ? v.current : 0 }; });
   ipcMain.handle('desk:current', () => readDeskId() || 'local');
-  ipcMain.handle('wall:winkey', (_e, id) => winwallFile(String(id || '')) || 'none'); // which file the Windows background is, to reload only when it changes
+  ipcMain.handle('wall:winkey', (_e, id) => userWinwall(String(id || '')) || 'none'); // which file the Windows background is, to reload only when it changes
   ipcMain.handle('wallpaper:toWindows', () => {
     const f = store.get().wallpaper.file;
     if (!win32.isWin || !f || !/\.(jpe?g|png|bmp)$/i.test(f) || !fs.existsSync(f)) return false;
@@ -1375,7 +1414,7 @@ function wireIpc() {
     return { battery: win32.battery(), mode: await netpower.powerMode(), display: win32.refreshRates(), low: !!store.get().general.lowPower };
   });
   ipcMain.handle('sys:set', (_e, what, value) => sysctl.set(what, value));
-  ipcMain.handle('dock:keys', (e, what) => { if (dockWin && e.sender === dockWin.webContents && DOCK_KEYS[what]) win32.pressKeys(DOCK_KEYS[what]); });
+  ipcMain.handle('dock:keys', (e, what) => { if (!dockWin || e.sender !== dockWin.webContents || !DOCK_KEYS[what]) return; if (what === 'start' && winKeyOn()) toggleHome(); else win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
   ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
   // pin what you dropped on Home (a file you chose by dragging it there)
@@ -1480,13 +1519,15 @@ function bringForward(p) {
 
 // ---------- start ----------
 app.whenReady().then(() => {
-  const firstRun = !fs.existsSync(path.join(app.getPath('userData'), 'settings.json'));
   store = new Store(app.getPath('userData'));
   gallery.init(app.getPath('userData'));
   themes.init(app.getPath('userData'));
-  setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
-  // installed apps keep running across restarts by default (like Lively); switch it off in the tray menu
-  if (firstRun && app.isPackaged && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true } });
+  setTimeout(() => { readDeskId(); syncWallAccent(); syncWindowsWallpaper(1500); }, 2500); // the accent from the wallpaper, if that's on
+  themes.watch(broadcastTheme); // a theme dropped into (or edited in) the themes folder applies at once
+  syncWinKey();
+  // it keeps running across restarts by default (like Lively), started from start.bat too: once, for everyone who
+  // hasn't chosen yet; switch it off in the tray menu or Customize > General and it stays off
+  if (!store.get().general.autostartChosen && !process.argv.includes('--smoke')) store.set({ general: { startWithWindows: true, autostartChosen: true } });
   if (win32.isWin && !process.argv.includes('--smoke')) setAutostart(store.get().general.startWithWindows); // keeps the path current after moving/updating
   const sdHandler = (req) => {
     const u = new URL(req.url);
@@ -1511,7 +1552,7 @@ app.whenReady().then(() => {
       return net.fetch(pathToFileURL(f).href);
     }
     if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
-      const f = winwallFile(u.searchParams.get('desk') || '');
+      const f = userWinwall(u.searchParams.get('desk') || '');
       if (!f || !/\.(jpe?g|png|bmp|gif|webp|jfif)$/i.test(f) || !fs.existsSync(f)) return new Response('no picture', { status: 404 });
       return net.fetch(pathToFileURL(f).href);
     }
@@ -1578,6 +1619,7 @@ app.on('before-quit', () => {
   for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
   syncTaskbarWatch(false);
   media.stop(); sysctl.stop(); systray.stop(); // Explorer has every icon too: its tray carries on
+  winkey.use(null); // the Windows key opens Start again
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back
   if (topWin && win32.isWin) win32.releaseEdge(topWin);

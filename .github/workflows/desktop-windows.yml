@@ -38,6 +38,8 @@ jobs:
         run: node test/vdesk.smoke.js
       - name: System tray helper (hears tray icons, clicks reach them)
         run: node test/tray.smoke.js
+      - name: Windows key helper (real Windows)
+        run: node test/winkey.smoke.js
       - name: Now-playing reader works
         run: node test/media.smoke.js
       - name: Song title, cover and play/pause with a real media session

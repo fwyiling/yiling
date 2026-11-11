@@ -1,6 +1,6 @@
 # Syndicates Desktop themes
 
-A theme restyles the dock, top bar, island, panels, Home, the desktops overview and the desktop widgets.
+A theme restyles the dock, top bar, island, panels, Home, the desktops overview, the desktop widgets and the Customize window.
 Several can be on at once (Customize > Themes); where they overlap, the later one wins.
 
 The easiest way to make one is **Customize > Themes > New theme** (or **Make a copy to edit** on a built-in one):
@@ -31,7 +31,8 @@ A `.sdtheme` file is JSON:
     "panels": "",
     "home": "",
     "overview": "",
-    "wallpaper": ""
+    "wallpaper": "",
+    "settings": ""
   }
 }
 ```
