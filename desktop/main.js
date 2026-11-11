@@ -946,13 +946,13 @@ function power([exe, args]) {
 let stillT = 0, stillBusy = false, stillLast = 0, themeStamp = 0, lastWeatherJson = '';
 const stillApplied = new Map(); // desktop id -> the content key its still shows
 const STILL_VERSION = 4; // a new way of making stills: none made the old way is used again
-const STILL_GAP = 30000; // at most one new still every 15 s (songs change, weather loads…)
+const STILL_GAP = 20000; // at most one new still every 20 s (songs change, weather loads…)
 const sha = (x) => require('crypto').createHash('sha1').update(x).digest('hex').slice(0, 16);
 const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, !!m.art].join('|') : 'off'; }; // not play / pause: a new still for every pause wasn't worth it
 function stillKey(desk) {
   const st = store.get(), w = wallFor(st.wallpaper, desk), d = screen.getPrimaryDisplay(), now = new Date();
   return sha(JSON.stringify([STILL_VERSION, w.scene, w.file, w.url, w.fileStamp, w.dim, d.size, d.scaleFactor, st.widgets, st.home?.todos, st.home?.timetable, st.name, st.accent,
-    st.themes?.active, themeStamp, lastWeatherJson, mediaKey(), now.toDateString(), now.getHours(), st.dock?.on]));
+    st.themes?.active, themeStamp, lastWeatherJson, mediaKey(), now.toDateString(), now.getHours(), st.dock?.on, clockShown() ? now.getMinutes() : 0]));
 }
 function loadApplied() { // across restarts of the app, for as long as Explorer keeps running
   const saved = store.get().wallpaper.stillApplied2, pid = win32.explorerPid();
@@ -968,12 +968,10 @@ async function captureLive(want, px) {
     const ready = await w.webContents.executeJavaScript(`(async () => {
       const wt = document.querySelector('.w-weather'), pic = document.querySelector('.wp-media .wp-layer.in, .wp-media .wp-empty');
       if (!pic || (wt && !wt.hidden && !wt.dataset.done)) return false;
-      document.documentElement.classList.add('still-cap');
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       return true; })()`);
     if (!ready) return false;
     const img = await Promise.race([w.webContents.capturePage(), new Promise((r) => setTimeout(() => r(null), 2500))]);
-    w.webContents.executeJavaScript("document.documentElement.classList.remove('still-cap')").catch(() => {});
     if (!img || img.isEmpty()) return false;
     const sz = img.getSize();
     fs.mkdirSync(STILL_DIR(), { recursive: true });
@@ -1062,6 +1060,13 @@ function syncWindowsWallpaper(delay = 1500) {
   }, delay);
 }
 setInterval(() => syncWindowsWallpaper(0), 10 * 60e3); // the date, the hour's greeting, the weather: only re-made if something changed
+// A clock on the desktop is in the still too (otherwise a slide showed the time panel empty until the desktop was back),
+// so while one shows, the still is made again as each minute starts. Not with the Mac layout, which has no clock.
+const clockShown = () => { const w = store?.get().widgets; return !!w?.clock?.on && (w.layout === 'syn' || w.layout === 'free'); };
+(function minuteStill() {
+  const now = new Date(), wait = (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 400;
+  setTimeout(() => { if (store && clockShown() && store.get().wallpaper.matchWindows && !paused) syncWindowsWallpaper(0); minuteStill(); }, wait);
+})();
 
 // ---------- lock screen ----------
 let lockTimer = null;
