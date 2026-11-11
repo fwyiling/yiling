@@ -10,7 +10,11 @@ let screenRect = workerData?.screen || null;
 let hideLabel = workerData?.hideLabel !== false;
 let edgeSwitch = workerData?.edgeSwitch !== false;
 let imeOn = workerData?.ime === true; // off unless switched on in Customize
+const timers = [];
 parentPort.on('message', (m) => {
+  // the app is quitting: stop between two checks and leave by itself. Killed in the middle of a Windows call, the
+  // thread took the whole app down with it (a native error that can't be caught).
+  if (m && m.stop) { for (const t of timers) clearInterval(t); if (snapPaused) { try { win32.edgeSnap(true); } catch {} } process.exit(0); }
   if (m && m.screen) screenRect = m.screen;
   if (m && typeof m.hideLabel === 'boolean') hideLabel = m.hideLabel;
   if (m && typeof m.ime === 'boolean') imeOn = m.ime;
@@ -63,9 +67,9 @@ if (!win32.isWin || !st.ready) {
   parentPort.postMessage({ type: 'ready' });
   let current = -1, hunt = 0, sinceFound = -1;
   win32.edgeSnap(true); // the user's own snap setting, in case an earlier run ended while it was paused
-  setInterval(() => watchEdge(Date.now()), 25);
-  setInterval(watchIme, 50); // often: snapping has to be paused before the pointer reaches the edge
-  setInterval(() => {
+  timers.push(setInterval(() => watchEdge(Date.now()), 25));
+  timers.push(setInterval(watchIme, 50)); // often: snapping has to be paused before the pointer reaches the edge
+  timers.push(setInterval(() => {
     const vd = win32.virtualDesktops(); // two small registry reads
     if (vd.current !== current) {
       const from = current;
@@ -81,5 +85,5 @@ if (!win32.isWin || !st.ready) {
       if (found.length) { sinceFound = 0; parentPort.postMessage({ type: 'label', found }); }
       else if (sinceFound >= 0 && ++sinceFound > 4) hunt = 0; // gone for good: stop looking
     }
-  }, 50);
+  }, 50));
 }

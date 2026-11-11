@@ -1671,7 +1671,15 @@ app.whenReady().then(() => {
   }
 });
 app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
-app.on('before-quit', () => {
+let workerStopping = false;
+app.on('before-quit', (e) => {
+  // the window-drag watcher first: asked to stop, it leaves between two checks (killing it mid-call crashed the app)
+  if (deskWorker && !workerStopping) {
+    workerStopping = true; e.preventDefault();
+    let gone = false; const go = () => { if (gone) return; gone = true; app.quit(); };
+    deskWorker.once('exit', go); deskWorker.postMessage({ stop: true }); setTimeout(go, 500);
+    return;
+  }
   app.isQuitting = true;
   for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
   syncTaskbarWatch(false);
