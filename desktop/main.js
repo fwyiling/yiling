@@ -97,7 +97,7 @@ function buildWallpapers() {
     wallpapers.set(d.id, w);
   }
 }
-const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); syncEdgeMask(); deskWorker?.postMessage(deskWatchSettings()); }, 800); };
+const displaysChanged = () => { clearTimeout(displayTimer); displayTimer = setTimeout(() => { buildWallpapers(); placeTopbar(); placeDock(); placeIsland(); deskWorker?.postMessage(deskWatchSettings()); }, 800); };
 
 // pause when a full-screen app is in front, or on battery
 // Lively's default: nobody sees the wallpaper behind a maximized window, so don't spend CPU/GPU drawing it
@@ -342,7 +342,6 @@ const tbHookStats = { heard: 0, hidden: 0 };
 function onTaskbarShown(hwnd, what = 'taskbar') {
   if (what !== 'taskbar') return;
   tbHookStats.heard++;
-  if (edgeWin && !edgeWin.isDestroyed()) edgeWin.moveTop(); // above the taskbar's edge line again
   if (!dockWin || dockWin.isDestroyed() || gamer || app.isQuitting) return;
   tbHookStats.hidden++;
   const kind = win32.foregroundKind();
@@ -359,27 +358,6 @@ function enforceHidden(hwnd) {
     const kind = win32.foregroundKind();
     if (kind === 'none' || kind === 'switch' || kind === 'app') { win32.hideNow(hwnd); win32.showTaskbar(false); }
   }, 50);
-}
-// The line an auto-hidden Windows taskbar leaves along the bottom edge (a pixel or two in its colour): covered by a
-// strip a few pixels tall that shows exactly the bottom of the wallpaper (the still Windows also uses), kept above it.
-let edgeWin = null;
-function syncEdgeMask() {
-  const want = win32.isWin && dockWin && !dockWin.isDestroyed() && store.get().dock.edgeMask !== false && store.get().dock.reserve !== false && !gamer; // with the edge reserved nothing of yours sits there
-  if (!want) { if (edgeWin && !edgeWin.isDestroyed()) edgeWin.destroy(); edgeWin = null; return; }
-  const d = screen.getPrimaryDisplay(), b = { x: d.bounds.x, y: d.bounds.y + d.bounds.height - 3, width: d.bounds.width, height: 3 };
-  if (!edgeWin || edgeWin.isDestroyed()) {
-    edgeWin = new BrowserWindow({ ...b, frame: false, resizable: false, movable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false,
-      backgroundColor: '#000000', title: 'Syndicates Edge', webPreferences: webPrefs });
-    edgeWin.setAlwaysOnTop(true, 'screen-saver');
-    edgeWin.loadURL(ui('mask.html'));
-    edgeWin.once('ready-to-show', () => { win32.makeToolWindow(edgeWin); edgeWin.setBounds(b); edgeWin.showInactive(); paintEdge(); });
-    edgeWin.on('closed', () => { edgeWin = null; });
-  } else { edgeWin.setBounds(b); paintEdge(); }
-}
-function paintEdge() {
-  if (!edgeWin || edgeWin.isDestroyed()) return;
-  const key = stillApplied.get(deskId) || [...stillApplied.values()][0] || '';
-  edgeWin.webContents.executeJavaScript(`document.body.style.backgroundImage = ${JSON.stringify(key ? `url("sd://media/still?k=${key}")` : '')}`).catch(() => {});
 }
 let tbWatchTimer = null;
 function syncTaskbarWatch(on) {
@@ -400,7 +378,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); syncTaskbarWatch(true); syncEdgeMask(); }); // tool window: on every virtual desktop
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); syncTaskbarWatch(true); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -413,7 +391,7 @@ async function setDock(on) {
     store.set({ dock: { prevAutoHide: null } });
     if (shellMsg) { win32.unhookShell(dockWin); shellMsg = 0; }
     syncTaskbarWatch(false);
-    dockWin.destroy(); dockWin = null; syncEdgeMask();
+    dockWin.destroy(); dockWin = null;
   }
 }
 
@@ -427,7 +405,7 @@ function setGamer(on, auto = false) {
   winkey.pause(on); // in a game the Windows key does what Windows does
   // cheap on purpose: windows are only hidden (screen edges stay reserved, so nothing on screen has to move),
   // and the music reader keeps running (restarting PowerShell is the expensive part)
-  for (const w of [dockWin, topWin, islandWin, edgeWin]) {
+  for (const w of [dockWin, topWin, islandWin]) {
     if (!w || w.isDestroyed()) continue;
     if (on) w.hide(); else w.showInactive();
   }
@@ -564,7 +542,7 @@ function wallFor(w, id) {
 }
 function onDeskSwitch(from, to, count, id) {
   deskNow = to;
-  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); syncWindowsWallpaper(900); paintEdge(); }
+  if (id && id !== deskId) { deskId = id; for (const w of wallpapers.values()) if (!w.isDestroyed()) w.webContents.send('wp-desk', id); syncWallAccent(); syncWindowsWallpaper(900); }
   if (gamer) return;
   quietUntil = Date.now() + QUIET_MS;
   const dir = Math.sign(to - from);
@@ -1078,7 +1056,7 @@ function syncWindowsWallpaper(delay = 1500) {
         if (quiet()) { stillBusy = false; stillT = setTimeout(run, 600); return; } // a slide started: finish after it
         if (await setDeskBackground(id, ids.indexOf(id), files.get(key), 10, cur)) stillApplied.set(id, key);
       }
-      saveApplied(); pruneStills(); paintEdge();
+      saveApplied(); pruneStills();
     } catch (e) { console.warn('[still]', e.message); }
     finally { stillBusy = false; }
   }, delay);
@@ -1156,7 +1134,7 @@ function applySettings(patch) {
   if (patch.widgets || patch.home?.todos || patch.home?.timetable || patch.name !== undefined || patch.accent !== undefined || patch.dock?.on !== undefined) syncWindowsWallpaper(3000); // the still shows the widgets
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
-  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); syncEdgeMask(); } }
+  if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
   if (next.lock.auto && (patch.wallpaper || patch.widgets || patch.accent || patch.name)) lockSoon(); // keep the lock screen matching
   broadcast('settings', next);
   updateTray();
@@ -1695,12 +1673,6 @@ app.whenReady().then(() => {
     if (u.host === 'media' && u.pathname === '/clip') { // a picture from the clipboard history (by name, only from its folder)
       const f = clips.imageFile(u.searchParams.get('f') || '');
       return f && fs.existsSync(f) ? net.fetch(pathToFileURL(f).href) : new Response('not found', { status: 404 });
-    }
-    if (u.host === 'media' && u.pathname === '/still') { // a still of the wallpaper (the bottom edge strip), by its key
-      const k = u.searchParams.get('k') || '';
-      if (!/^[0-9a-f]{16}$/.test(k)) return new Response('not found', { status: 404 });
-      const f = path.join(STILL_DIR(), `still-${k}.jpg`);
-      return fs.existsSync(f) ? net.fetch(pathToFileURL(f).href) : new Response('not found', { status: 404 });
     }
     if (u.host === 'media' && u.pathname === '/winwall') { // nothing picked: your Windows background (that desktop's own, if Windows has one)
       const f = userWinwall(u.searchParams.get('desk') || '');

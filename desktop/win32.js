@@ -267,6 +267,8 @@ function fullscreenAppRunning(displays, ownPids = []) {
   if (systemOverlayActive()) return false; // nor anything else Windows' shell puts in front
   const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
   if (ownPids.includes(pid[0])) return false; // our own Home panel covers the screen too
+  // a maximized window can fill the screen too (with the taskbar hidden nothing is reserved), but it isn't full screen
+  if (Number(u.GetWindowLongPtrW(fg, -16)) & 0x01000000) return false; // GWL_STYLE, WS_MAXIMIZE
   const r = {};
   if (!u.GetWindowRect(fg, r)) return false;
   return displays.some((d) => r.left <= d.x && r.top <= d.y && r.right >= d.x + d.width && r.bottom >= d.y + d.height);
