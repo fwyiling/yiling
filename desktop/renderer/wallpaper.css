@@ -172,3 +172,49 @@
 /* right rail: CPU / memory as readouts, the quote small under it */
 [data-layout="syn"] .w-stats { padding-left: 2cqmin; padding-right: 2cqmin; }
 [data-layout="syn"] .w-quote { width: 24cqmin; text-align: right; } [data-layout="syn"] .w-quote blockquote { font-size: 1.4cqmin; } [data-layout="syn"] .w-quote figcaption { font-size: 1cqmin; }
+
+/* Syndicates: the time in LED dots, CPU / memory as pixel health bars */
+.w-clock .dm { display: block; height: 7.4cqmin; width: auto; overflow: visible; }
+.w-clock .dm .on circle { fill: color-mix(in srgb, var(--a) 25%, #fff); }
+.w-clock .dm .off circle { fill: rgba(232, 246, 255, .07); }
+.w-clock .dm .on { filter: drop-shadow(0 0 .35cqmin var(--a)) drop-shadow(0 0 1.2cqmin color-mix(in srgb, var(--a) 60%, transparent)); }
+[data-layout="syn"] .w-clock { align-items: flex-end; gap: 1.2cqmin; }
+[data-layout="syn"] .w-clock .ap { font: 700 1.3cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .2em; margin-bottom: .3cqmin; opacity: .8; }
+.w-stats .hbars { display: none; }
+[data-layout="syn"] .w-stats .ring { display: none; }
+[data-layout="syn"] .w-stats .hbars { display: grid; gap: 1.1cqmin; }
+.hb { display: grid; grid-template-columns: 4.2cqmin auto 4.6cqmin; align-items: center; gap: 1cqmin; }
+.hb b { font: 700 1.05cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .2em; opacity: .85; }
+.hb em { font: 700 1.25cqmin/1 ui-monospace, Consolas, monospace; font-style: normal; text-align: right; letter-spacing: .05em; }
+.hb .cells { display: flex; gap: .22cqmin; padding: .3cqmin; background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .18); }
+.hb .cells s { display: block; width: .78cqmin; height: 1.5cqmin; background: rgba(232, 246, 255, .07); }
+/* lit cells: a pixel highlight on top, a darker band at the bottom, like an old game's health bar */
+.hb .cells s.on { --c: color-mix(in srgb, var(--a) 70%, #fff); background: linear-gradient(var(--c) 0 30%, color-mix(in srgb, var(--c) 80%, #000) 30% 75%, color-mix(in srgb, var(--c) 58%, #000) 75%); box-shadow: inset .12cqmin .12cqmin rgba(255, 255, 255, .5), 0 0 .5cqmin color-mix(in srgb, var(--c) 45%, transparent); }
+/* one colour, the accent (it follows the wallpaper when that's on in Customize > General) */
+
+/* Syndicates: the greeting and the quote as terminal lines, in the same digital spirit as the clock */
+[data-layout="syn"] .w-greeting { font: 600 1.3cqmin/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; opacity: 1;
+  color: color-mix(in srgb, var(--a) 30%, #fff); padding: .7cqmin 1.2cqmin; background: rgba(8, 12, 20, .45); border-left: .25cqmin solid var(--a); backdrop-filter: blur(12px); text-shadow: 0 0 .8cqmin color-mix(in srgb, var(--a) 50%, transparent); }
+[data-layout="syn"] .w-greeting::before { content: "> "; color: var(--a); }
+[data-layout="syn"] .w-greeting::after { content: ""; display: inline-block; width: .7em; height: 1em; margin-left: .35em; vertical-align: -.15em; background: var(--a); box-shadow: 0 0 .6cqmin var(--a); }
+[data-layout="syn"] .w-quote { width: 26cqmin; padding: 1cqmin 1.3cqmin; text-align: left; background: rgba(8, 12, 20, .45); border-right: .25cqmin solid var(--a); backdrop-filter: blur(12px); }
+[data-layout="syn"] .w-quote::before { content: "// LOG · QUOTE OF THE HOUR"; margin-bottom: .8cqmin; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .16em; }
+[data-layout="syn"] .w-quote blockquote { font: 400 1.25cqmin/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; font-style: normal; opacity: .9; }
+[data-layout="syn"] .w-quote blockquote::before { content: "$ echo "; color: var(--a); opacity: .9; }
+[data-layout="syn"] .w-quote figcaption { margin-top: .9cqmin; font: 700 .95cqmin/1 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .2em; color: color-mix(in srgb, var(--a) 40%, #fff); opacity: .85; }
+
+/* Syndicates, tuned: dark glass everywhere (the dots and bars read on a bright wallpaper too), one monospace readout font */
+[data-layout="syn"] { --syn-mono: ui-monospace, "Cascadia Mono", Consolas, monospace; --syn-glass: rgba(6, 10, 18, .7); }
+[data-layout="syn"] .w-card { background: var(--syn-glass); }
+[data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-clock)::before { font-family: var(--syn-mono); letter-spacing: .18em; }
+[data-layout="syn"] .w-clock { background: var(--syn-glass); padding-top: 3cqmin; padding-bottom: .9cqmin; }
+[data-layout="syn"] .w-clock .dm { height: 8.2cqmin; }
+[data-layout="syn"] .w-clock .dm .on circle { fill: #fff; }
+[data-layout="syn"] .w-clock .dm .off circle { fill: rgba(232, 246, 255, .045); }
+[data-layout="syn"] .w-clock .dm .on { filter: drop-shadow(0 0 .25cqmin color-mix(in srgb, var(--a) 80%, #fff)) drop-shadow(0 0 1cqmin color-mix(in srgb, var(--a) 70%, transparent)); }
+[data-layout="syn"] .w-clock .ap { font-family: var(--syn-mono); color: color-mix(in srgb, var(--a) 40%, #fff); }
+[data-layout="syn"] .w-date { font: 600 1.15cqmin/1 var(--syn-mono); letter-spacing: .22em; background-color: var(--syn-glass); color: color-mix(in srgb, var(--a) 25%, #fff); padding-top: .9cqmin; }
+[data-layout="syn"] .w-greeting { background: var(--syn-glass); }
+[data-layout="syn"] .w-quote { background: var(--syn-glass); }
+[data-layout="syn"] .w-calendar .grid, [data-layout="syn"] .w-weather .hours, [data-layout="syn"] .w-today b { font-family: var(--syn-mono); }
+[data-layout="syn"] .w-calendar .mo, [data-layout="syn"] .w-reminders .rh b { font-family: var(--syn-mono); letter-spacing: .18em; }

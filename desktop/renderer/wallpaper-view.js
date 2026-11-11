@@ -16,6 +16,29 @@ function weatherIcon(code, day = true) {
   return `<svg viewBox="0 0 24 24">${g}</svg>`;
 }
 
+// a 5×7 dot-matrix font for the Syndicates clock (like an LED board): lit dots and faint unlit ones
+const DOTS = {
+  0: ['01110', '10001', '10011', '10101', '11001', '10001', '01110'], 1: ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  2: ['01110', '10001', '00001', '00010', '00100', '01000', '11111'], 3: ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
+  4: ['00010', '00110', '01010', '10010', '11111', '00010', '00010'], 5: ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+  6: ['00110', '01000', '10000', '11110', '10001', '10001', '01110'], 7: ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+  8: ['01110', '10001', '10001', '01110', '10001', '10001', '01110'], 9: ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+  ':': ['0', '0', '1', '0', '1', '0', '0'],
+};
+function dotMatrix(text) {
+  let x = 0; const lit = [], dim = [];
+  for (const ch of text) {
+    const g = DOTS[ch]; if (!g) continue;
+    g.forEach((row, y) => [...row].forEach((b, i) => (b === '1' ? lit : dim).push(`<circle cx="${x + i + 0.5}" cy="${y + 0.5}" r="0.38"/>`)));
+    x += g[0].length + 1;
+  }
+  const w = Math.max(1, x - 1);
+  return `<svg class="dm" viewBox="0 0 ${w} 7" style="aspect-ratio:${w}/7"><g class="off">${dim.join('')}</g><g class="on">${lit.join('')}</g></svg>`;
+}
+// a pixel health bar: so many square cells, lit up to the value (green, then amber, then red as it climbs)
+const CELLS = 20;
+const healthBar = () => `<i class="cells">${'<s></s>'.repeat(CELLS)}</i>`;
+
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
 export function mountWallpaper(root, settings, { preview = false, sd = window.sd, desk = '' } = {}) {
@@ -82,7 +105,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     clock: () => el('div', 'w-clock'),
     greeting: () => el('div', 'w-greeting'),
     date: () => el('div', 'w-date'),
-    stats: () => el('div', 'w-stats w-card', '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
+    stats: () => el('div', 'w-stats w-card', `<div class="hbars"><div class="hb" data-k="cpu"><b>CPU</b>${healthBar()}<em></em></div><div class="hb" data-k="mem"><b>RAM</b>${healthBar()}<em></em></div></div>` + '<div class="ring" data-k="cpu"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>CPU</small></div><div class="ring" data-k="mem"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.5"/><circle class="fg" cx="18" cy="18" r="15.5"/></svg><b></b><small>RAM</small></div>'),
     weather: () => el('div', 'w-weather w-card', '<div class="wh"><span class="place"></span><b class="t">–</b></div><div class="wr"><i class="wi"></i><span class="d">Loading…</span><span class="hl"></span></div><div class="hours"></div>'),
     calendar: () => el('div', 'w-calendar w-card'),
     reminders: () => el('div', 'w-reminders w-card', '<div class="rh"><b>Reminders</b><em></em></div><ul></ul>'),
@@ -140,7 +163,8 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
         c.querySelector('.s').setAttribute('transform', `rotate(${sec * 6} 50 50)`);
       } else {
         const { hm, ampm } = fmtTime(now);
-        const html = `<span class="hm">${hm}</span>${ampm ? `<span class="ap">${ampm}</span>` : ''}`;
+        const html = layout() === 'syn' ? `${dotMatrix(hm)}${ampm ? `<span class="ap">${ampm}</span>` : ''}` // Syndicates: LED dots
+          : `<span class="hm">${hm}</span>${ampm ? `<span class="ap">${ampm}</span>` : ''}`;
         if (c.innerHTML !== html) c.innerHTML = html;
       }
     }
@@ -153,9 +177,12 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const st = await sd.stats().catch(() => null);
     if (!st) return;
     for (const k of ['cpu', 'mem']) {
-      const r = widgets.stats.querySelector(`[data-k="${k}"]`);
+      const r = widgets.stats.querySelector(`.ring[data-k="${k}"]`);
       r.querySelector('b').textContent = `${st[k]}%`;
       r.querySelector('.fg').style.strokeDasharray = `${(st[k] / 100) * 97.4} 97.4`;
+      const hb = widgets.stats.querySelector(`.hb[data-k="${k}"]`), n = Math.round((st[k] / 100) * CELLS);
+      hb.querySelector('em').textContent = `${String(st[k]).padStart(2, '0')}%`;
+      hb.querySelectorAll('.cells s').forEach((c, i) => c.classList.toggle('on', i < n));
     }
   }
   async function refreshWeather() {

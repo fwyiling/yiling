@@ -30,8 +30,9 @@ const F = {
   cardSel: frame({ s: 30, c: 10, fill: 'rgba(166,214,242,.08)', stroke: 'rgba(166,214,242,.85)' }), // a chosen card
   big: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.92)', stroke: 'rgba(236,244,252,.5)' }), // the search bar, a big panel
   bigSel: frame({ s: 36, c: 12, fill: 'rgba(8,12,20,.94)', stroke: 'rgba(166,214,242,.95)' }), // the search bar while typing
-  hudTop: frame({ s: 30, c: 10, corners: 'tl', fill: 'rgba(8,12,20,.62)', stroke: 'rgba(236,244,252,.5)' }), // the Syndicates layout's time panel, top half
-  hudBot: frame({ s: 30, c: 10, corners: 'br', fill: 'rgba(8,12,20,.62)', stroke: 'rgba(236,244,252,.5)' }), // and its bottom half
+  hudTop: frame({ s: 30, c: 10, corners: 'tl', fill: 'rgba(6,10,18,.74)', stroke: 'rgba(236,244,252,.5)' }),
+  hud: frame({ s: 30, c: 10, fill: 'rgba(6,10,18,.7)', stroke: 'rgba(236,244,252,.45)' }), // the Syndicates layout's cards: dark glass // the Syndicates layout's time panel, top half
+  hudBot: frame({ s: 30, c: 10, corners: 'br', fill: 'rgba(6,10,18,.74)', stroke: 'rgba(236,244,252,.5)' }), // and its bottom half
   danger: frame({ s: 16, c: 5, fill: 'rgba(229,72,77,.3)', stroke: 'rgba(255,140,140,.9)' }),
 };
 const bev = (v, c = 5) => `border: 1px solid transparent; border-radius: 0; border-image: var(--mx-${v}) ${c} fill / ${c}px stretch; background: none; box-shadow: none;`;
@@ -192,6 +193,8 @@ const wallpaper = `
 [data-layout="syn"] .w-date { border: 0; background: repeating-linear-gradient(90deg, rgba(166, 214, 242, .55) 0 1px, transparent 1px 1.2cqmin) 1.8cqmin bottom .6cqmin / calc(100% - 3.6cqmin) .6cqmin no-repeat; border-image: var(--mx-hudBot) 10 fill / 0 10px 10px 10px stretch; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%); }
 [data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-clock)::before, [data-layout="syn"] .w-quote::before { color: #a6d6f2; }
 [data-layout="syn"] .w-clock .hm { text-shadow: 0 0 2cqmin rgba(166, 214, 242, .35); }
+.macish[data-layout="syn"] .w-card { border-image-source: var(--mx-hud); background: none; }
+[data-layout="syn"] .w-clock, [data-layout="syn"] .w-date { background-color: transparent; }
 /* the card's background blur is a rectangle: cut it like the frame, or it showed as square corners */
 .w-card, .macish .w-card { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); box-shadow: none; }
 .w-calendar .grid .today { border-radius: 0; background: #d6e6f6; color: ${INK}; ${clip(3)} }
