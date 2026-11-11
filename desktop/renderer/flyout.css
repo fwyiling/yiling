@@ -158,3 +158,11 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .traygrid button { height: 40px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, .05); border: 0; cursor: pointer; }
 .traygrid button:hover { background: rgba(255, 255, 255, .12); }
 .traygrid img { width: 20px; height: 20px; object-fit: contain; }
+
+/* where sound plays: speakers, headphones, a Bluetooth speaker… (shown when there's more than one) */
+.outs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 2px 0 0 36px; max-height: 136px; overflow: hidden auto; }
+.outs button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left; font-size: 12.5px; color: var(--m); }
+.outs button:hover { background: rgba(255, 255, 255, .07); color: var(--t); }
+.outs button i { width: 14px; height: 14px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--m); }
+.outs button.on { color: var(--t); } .outs button.on i { box-shadow: inset 0 0 0 4.5px var(--a); }
+.outs button { min-width: 0; } .outs button span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

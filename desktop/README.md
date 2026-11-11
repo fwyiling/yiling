@@ -1,26 +1,32 @@
 # Syndicates Desktop
 
-Animated wallpapers, desktop widgets and a Home panel for Windows 10 and 11, in the same
-grey-blue style as the Syndicates Client.
+A desktop shell for Windows 10 and 11: wallpaper and widgets, a dock, a top bar with your tray icons, an
+island, a desktops overview and themes, in the same grey-blue style as the Syndicates Client.
 
-- **Animated wallpaper** behind your desktop icons: Aurora, Particles, Waves, Starfield or a music
-  Visualizer, or your own image, video or web page. Colour presets, speed, intensity, darkening, a
-  gentle follow-the-mouse effect, colours that **follow the time of day**, and an option to **react
-  to music** (system sound only, never the microphone).
-- **Desktop widgets** on the wallpaper: clock (big, minimal or analog), greeting with your name,
-  date, CPU and memory, weather, quote, now playing. Drag them anywhere in the Customize preview.
-- **Home panel** (`Alt+Space`, changeable): search your apps or the web, pinned apps, all apps,
-  to-dos, notes, system stats, and **now playing** with play / pause / skip for whatever app is
-  playing (Spotify, a browser, Media Player…).
-- **Taskbar**: the Windows taskbar options in one place (icons left or centre, search hidden / icon /
-  box, Task view, auto-hide, accent colour), or switch on the **Syndicates dock**: a floating or
-  full-width dock with Home, pinned apps, your open windows, now playing and a clock. The Windows taskbar hides
+- **Wallpaper** behind your desktop icons: a photo, a video or a web page, or your Windows background if
+  you pick nothing. Each virtual desktop can have its own. A built-in **anime gallery** (from Wallhaven,
+  safe-for-work only) downloads the ones you pick.
+- **Desktop widgets** on the wallpaper: clock, greeting, date, calendar, reminders, weather, CPU and
+  memory, quote, now playing. Mac-style corners, centred, or dragged anywhere in the Customize preview.
+- **Dock**: pinned apps, open windows (live previews when an app has several, a glow when one wants your
+  attention, middle-click for another window), a Screenshots stack and the Bin. The Windows taskbar hides
   itself while the dock is on and comes back when you turn it off or quit.
-- **Lock screen and sign-in screen**: Windows can't animate them, so one click turns your wallpaper
-  and widgets into the lock screen picture (and, if you like, the regular Windows wallpaper, which
-  is what you see right after signing in). It can keep itself updated as you change things.
-- Pauses itself during games and full-screen video, and on battery. Optional: hide desktop icons,
-  start with Windows. Lives in the system tray.
+- **Top bar**: the app in front, your desktops, **tray icons** (Discord, Steam, OneDrive…; hide the ones you
+  don't want), weather, battery, Wi-Fi, sound, and panels for each. Its menu has Sleep, Restart, Shut down
+  and Sign out.
+- **Island**: a pill at the top for the timer, what's playing (with a seek bar), volume / brightness and
+  short notes (Caps Lock, headphones), with an **island pet** to keep you company.
+- **Desktops**: three-finger swipes like a MacBook, drag a window against the screen edge to take it to the
+  next desktop, and an **overview** of every desktop and its windows (`Ctrl+Alt+Up`).
+- **Home panel** (`Alt+Space`, changeable): search apps, files and the web, pinned apps, to-dos, notes,
+  timetable, books.
+- **Themes**: restyle everything with variables and CSS, turn on several at once, share them as
+  `.sdtheme` files. Built in: Frosted, Bubbles, Mecha. See [THEMES.md](THEMES.md).
+- **Lock screen**: one click turns your wallpaper and widgets into the lock screen picture.
+- Pauses itself during games and full-screen video (**gamer mode**, `Ctrl+Alt+G`) and on battery. Starts
+  with Windows if you like. Lives in the system tray.
+
+Everything is set in **Customize** (`Ctrl+Alt+S`, or the tray icon), which has a search box (`Ctrl+F`).
 
 ## Install it (recommended)
 
@@ -49,11 +55,14 @@ a screenshot along with your Windows version (Settings > System > About).
 
 ## Tests
 
-`node test/win32-bindings.test.js` checks every Win32 declaration on any OS. On Windows,
-`node test/win32-real.smoke.js`, `node test/media.smoke.js` and `npx electron test/electron-smoke.js`
-check the real thing; the last one screenshots the desktop to prove the wallpaper shows behind the
-icons. The GitHub Actions workflow `desktop-windows.yml` runs all of them on Windows and builds the
-installer and portable `.exe` as a download.
+On any OS: `node test/win32-bindings.test.js` checks every Win32 declaration, and `node test/units.test.js`
+checks settings (including upgrades from older versions), themes and the helper-script launcher.
+
+On Windows: `node test/win32-real.smoke.js`, and the smoke tests for each helper (`apps`, `sysctl`, `vdesk`,
+`tray`, `media`), check the real thing; `npx electron test/electron-smoke.js` screenshots the desktop to
+prove the wallpaper shows behind the icons. The GitHub Actions workflow `desktop-windows.yml` runs all of
+them on Windows, builds the installer and portable `.exe`, starts the built app, and publishes the release
+only if everything passed.
 
 ## How it works
 
@@ -62,13 +71,23 @@ desktop layer, between the wallpaper and the icons. Explorer creates that layer 
 the undocumented `0x052C` message. Windows 11 24H2 moved the layer, so `win32.js` detects which
 layout it's on from the window tree and handles both.
 
+The dock, top bar, island and panels are transparent always-on-top windows. System things Windows only
+offers through COM or WinRT (volume, Wi-Fi, now playing, virtual desktops, tray icons) run in long-lived
+Windows PowerShell helpers that talk JSON over stdin / stdout; simple Win32 calls go through
+[koffi](https://koffi.dev). Tray icons are heard by a hidden window named like the taskbar's, which passes
+every message on to Explorer, so nothing is injected into Explorer.
+
 References:
 - [Lively Wallpaper](https://github.com/rocksdanister/lively): the desktop-layer technique and
   pausing during full-screen apps.
 - [C0uki/beautiful-wallpaper#83](https://github.com/C0uki/beautiful-wallpaper/pull/83) and
   [youllook/VibingWrapper#7](https://github.com/youllook/VibingWrapper/pull/7): the Windows 11 24H2 changes.
 - [Rainmeter](https://github.com/rainmeter/rainmeter) and [Seelen UI](https://github.com/eythaann/Seelen-UI):
-  desktop widgets and a web-based desktop shell with its own dock.
+  desktop widgets and a web-based desktop shell with its own dock, tray, overview and themes (ideas only:
+  Seelen UI is AGPL, none of its code is used).
+- [MScholtes/VirtualDesktop](https://github.com/MScholtes/VirtualDesktop) (MIT): the virtual-desktop
+  interfaces used to move windows between desktops.
+- [Wallhaven](https://wallhaven.cc): the anime wallpaper gallery (its public API).
 - [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB): restyling the Windows 11 taskbar
   itself needs code injected into Explorer, which breaks on new Windows builds, so this app uses
   Windows' own taskbar settings plus its own dock instead.

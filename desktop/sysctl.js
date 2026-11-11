@@ -4,6 +4,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const win32 = require('./win32');
+const { psArgs } = require('./ps-script');
 
 const PS = `
 $ErrorActionPreference = 'Stop'
@@ -38,6 +39,13 @@ interface IMMDeviceCollection { int GetCount(out int n); int Item(int i, out IMM
 [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IMMDeviceEnumerator { int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection devices); int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint); }
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumeratorComObject { }
+// choosing where sound plays: the interface Windows' own sound settings use (ten methods come before the one needed)
+[Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPolicyConfig {
+  int a(); int b(); int c(); int d(); int e(); int f(); int g(); int h(); int i(); int j();
+  [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int role);
+}
+[ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")] class PolicyConfigClient { }
 public static class SdAudio {
   static IAudioEndpointVolume Vol() {
     var e = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
@@ -60,6 +68,19 @@ public static class SdAudio {
       string s = v.vt == 31 ? Marshal.PtrToStringUni(v.p) : ""; // VT_LPWSTR
       PropVariantClear(ref v); return s ?? "";
     } catch { return ""; }
+  }
+  // the output in use (its id), and making another one the default for everything (system sounds, media, calls)
+  public static string Default() {
+    var e = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+    IMMDevice dev; if (e.GetDefaultAudioEndpoint(0, 1, out dev) != 0 || dev == null) return "";
+    string id; return dev.GetId(out id) == 0 && id != null ? id : "";
+  }
+  public static void SetDefault(string id) {
+    bool known = false;
+    foreach (var o in Outputs()) if (o.Split((char)9)[0] == id) known = true; // only an output Windows lists right now
+    if (!known) return;
+    var pc = (IPolicyConfig)(new PolicyConfigClient());
+    for (int role = 0; role < 3; role++) Marshal.ThrowExceptionForHR(pc.SetDefaultEndpoint(id, role));
   }
   public static string[] Outputs() {
     var e = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
@@ -107,7 +128,7 @@ function Wifi() {
     @{ ssid = $ssid; signal = $sig }
   } catch { @{ ssid = ''; signal = 0 } }
 }
-$in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 512
+$in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 1024
 $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
 $last = ''; $tick = 0; $bright = Brightness; $wifi = Wifi
@@ -121,6 +142,7 @@ while ($true) {
         switch ($p[0]) {
           'volume' { [SdAudio]::Set([float]$p[1] / 100); if ([SdAudio]::Muted() -and [float]$p[1] -gt 0) { [SdAudio]::Mute($false) } }
           'mute' { [SdAudio]::Mute($p[1] -eq '1') }
+          'output' { [SdAudio]::SetDefault($p[1]) }
           'brightness' { Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Select-Object -First 1 | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{ Timeout = 1; Brightness = [byte]$p[1] } | Out-Null; $bright = [int]$p[1] }
           'wifi' { SetRadio 'WiFi' ($p[1] -eq '1'); $wifi = Wifi }
           'bluetooth' { SetRadio 'Bluetooth' ($p[1] -eq '1') }
@@ -136,12 +158,13 @@ while ($true) {
   $vol = -1; $muted = $false
   try { $vol = [math]::Round([SdAudio]::Get() * 100); $muted = [SdAudio]::Muted() } catch {}
   $outs = @(); try { $outs = @([SdAudio]::Outputs() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ id = $q[0]; name = $q[1] } }) } catch {}
+  $out = ''; try { $out = [SdAudio]::Default() } catch {}
   $w = Radio 'WiFi'; $b = Radio 'Bluetooth'
   $o = [ordered]@{
     volume = $vol; muted = $muted; brightness = $bright
     wifi = [ordered]@{ on = $(if ($w) { $w.State.ToString() -eq 'On' } else { [bool]$wifi.ssid }); has = [bool]$w; ssid = $wifi.ssid; signal = $wifi.signal }
     bluetooth = [ordered]@{ on = $(if ($b) { $b.State.ToString() -eq 'On' } else { $false }); has = [bool]$b }
-    outputs = $outs
+    outputs = $outs; output = $out
     airplane = $(if ($radios.Count) { -not ($radios | Where-Object { $_.State.ToString() -eq 'On' }) } else { $false })
   }
   $j = [regex]::Replace(($o | ConvertTo-Json -Compress -Depth 4), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
@@ -155,8 +178,7 @@ let child = null, state = null, listeners = new Set(), restarts = 0, stopped = f
 function start() {
   if (!win32.isWin || child || stopped) return;
   const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  child = spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(PS, 'utf16le').toString('base64')],
-    { windowsHide: true, env: { ...process.env, SD_PARENT_PID: String(process.pid) } });
+  child = spawn(ps, psArgs(PS, 'sysctl'), { windowsHide: true, env: { ...process.env, SD_PARENT_PID: String(process.pid) } }); // from a file: too long for a command line
   let buf = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (d) => {
@@ -173,6 +195,11 @@ function start() {
 function stop() { stopped = true; child?.kill(); child = null; }
 const COMMANDS = { volume: (v) => Math.round(Math.max(0, Math.min(100, Number(v) || 0))), mute: (v) => (v ? 1 : 0), brightness: (v) => Math.round(Math.max(0, Math.min(100, Number(v) || 0))), wifi: (v) => (v ? 1 : 0), bluetooth: (v) => (v ? 1 : 0), airplane: (v) => (v ? 1 : 0) };
 function set(what, value) {
+  if (what === 'output') { // a sound output by its Windows id: {0.0.0.00000000}.{guid}
+    if (!/^\{[0-9.]+\}\.\{[0-9a-fA-F-]{36}\}$/.test(String(value)) || !state?.outputs?.some((o) => o.id === value)) throw new Error('unknown sound output');
+    if (child?.stdin.writable) child.stdin.write(`output ${value}\n`);
+    return;
+  }
   if (!COMMANDS[what]) throw new Error('unknown control');
   if (child?.stdin.writable) child.stdin.write(`${what} ${COMMANDS[what](value)}\n`);
 }

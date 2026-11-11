@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 let s = await sd.get();
 const TRAY_MAX = 7; // tray icons shown in the bar; the rest open in a panel
 let trayIcons = [];
+let deskNames = [];
 
 function look() {
   applyAccent(s.accent);
@@ -20,9 +21,10 @@ sd.onTopbar?.((st) => {
   $('app').textContent = st.app || 'Desktop';
   // virtual desktops, like macOS Spaces: only shown once there is more than one
   const d = st.desks || { count: 1, current: 0 };
+  if (d.names) deskNames = d.names; else d.names = deskNames; // the quick update on a switch carries no names: keep the last
   $('desks').hidden = d.count < 2;
   $('desks').replaceChildren(...Array.from({ length: d.count }, (_, i) => {
-    const b = Object.assign(document.createElement('button'), { textContent: String(i + 1), className: i === d.current ? 'on' : '' });
+    const b = Object.assign(document.createElement('button'), { textContent: String(i + 1), className: i === d.current ? 'on' : '', title: d.names?.[i] || `Desktop ${i + 1}` });
     b.onclick = () => sd.topbarDesk(i);
     return b;
   }));

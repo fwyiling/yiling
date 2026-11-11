@@ -8,8 +8,8 @@ sysctl.onChange((st) => {
   console.log('system state:', JSON.stringify(st));
   sysctl.stop();
   // the sound outputs (headphones notes) come from the same helper's Core Audio code
-  const ok = typeof st.volume === 'number' && Array.isArray(st.outputs);
-  console.log(ok ? `PASS: the system-controls helper works (${st.outputs.length} sound output(s))` : `FAIL: ${typeof st.volume !== 'number' ? 'no volume field' : 'no outputs list'}`);
+  const ok = typeof st.volume === 'number' && Array.isArray(st.outputs) && typeof st.output === 'string'; // output: the one in use ('' on a PC without sound)
+  console.log(ok ? `PASS: the system-controls helper works (${st.outputs.length} sound output(s))` : `FAIL: ${typeof st.volume !== 'number' ? 'no volume field' : 'no outputs list / output in use'}`);
   process.exit(ok ? 0 : 1);
 });
 sysctl.start();

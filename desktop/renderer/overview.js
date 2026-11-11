@@ -88,7 +88,7 @@ async function placeThumbs() {
   for (const el of boxes) el.classList.toggle('live', shown.includes(+el.dataset.hwnd));
 }
 function render(d) {
-  data = d;
+  data = d; sel = -1;
   const cur = data.desks[data.current];
   // behind it all: this desktop's wallpaper (a photo, or the Windows background), blurred
   const q = cur ? `desk=${encodeURIComponent(cur.id)}&v=${encodeURIComponent(cur.wall.stamp || 0)}` : '';
@@ -99,9 +99,24 @@ function render(d) {
 }
 sd.onOverview(render);
 sd.onOverviewClose(() => { $('ov').classList.remove('on'); clearTimeout(thumbT); });
+// arrow keys (or Tab) pick a window, Enter goes to it, Delete closes it; 1-9 switch desktop
+let sel = -1;
+function select(i) {
+  const wins = [...document.querySelectorAll('.win:not(.gone)')];
+  if (!wins.length) { sel = -1; return; }
+  sel = Math.max(0, Math.min(wins.length - 1, i));
+  wins.forEach((w, k) => w.classList.toggle('sel', k === sel));
+}
 addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.activeElement?.contentEditable !== 'true') sd.ov('hide');
-  if (/^[1-9]$/.test(e.key) && document.activeElement?.contentEditable !== 'true' && data && +e.key <= data.desks.length) sd.ov('desk', +e.key - 1);
+  if (document.activeElement?.contentEditable === 'true') return; // renaming a desktop
+  const wins = [...document.querySelectorAll('.win:not(.gone)')];
+  const cols = Math.max(1, getComputedStyle($('wins')).gridTemplateColumns.split(' ').length);
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key] ?? (e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : 0);
+  if (step && wins.length) { e.preventDefault(); select(sel < 0 ? 0 : e.key === 'Tab' ? (sel + step + wins.length) % wins.length : sel + step); return; }
+  if (e.key === 'Enter' && wins[sel]) { sd.ov('focus', +wins[sel].dataset.hwnd); return; }
+  if (e.key === 'Delete' && wins[sel]) { wins[sel].classList.add('gone'); sd.ov('close-window', +wins[sel].dataset.hwnd); select(sel); return; }
+  if (e.key === 'Escape') sd.ov('hide');
+  if (/^[1-9]$/.test(e.key) && data && +e.key <= data.desks.length) sd.ov('desk', +e.key - 1);
 });
 // a click on the empty background closes it, like Mission Control
 $('ov').addEventListener('click', (e) => { if (e.target === $('ov') || e.target.classList.contains('wins') || e.target.classList.contains('strip') || e.target.classList.contains('hint')) sd.ov('hide'); });

@@ -26,6 +26,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Win32 bindings parse (fake DLLs)
         run: node test/win32-bindings.test.js
+      - name: Settings, themes and helper-script checks
+        run: node test/units.test.js
       - name: Win32 bindings on real Windows
         run: node test/win32-real.smoke.js
       - name: App search knows every Start menu app (Store apps too)

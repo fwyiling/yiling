@@ -69,6 +69,21 @@ function renderSys() {
   if (dragging !== 'bright' && sys.brightness != null) { $('bright').value = sys.brightness; $('brightV').textContent = sys.brightness; fill($('bright')); }
   if (dragging !== 'vol' && sys.volume >= 0) { $('vol').value = sys.muted ? 0 : sys.volume; $('volV').textContent = sys.muted ? 'Off' : sys.volume; fill($('vol')); }
   $('sVol').classList.toggle('muted', !!sys.muted);
+  // where sound plays: pick another output (headphones, speakers…); Windows moves everything over
+  const outs = Array.isArray(sys.outputs) ? sys.outputs.filter((o) => o.id && o.name) : [];
+  $('outs').hidden = outs.length < 2;
+  if (outs.length >= 2) {
+    const key = outs.map((o) => o.id).join('|') + '>' + sys.output;
+    if ($('outs').dataset.key !== key) { // only when the list or the choice changed (this runs twice a second)
+      $('outs').dataset.key = key;
+      $('outs').replaceChildren(...outs.map((o) => {
+        const b = document.createElement('button'); b.className = o.id === sys.output ? 'on' : ''; b.title = o.name;
+        b.innerHTML = '<i></i><span></span>'; b.querySelector('span').textContent = o.name;
+        b.onclick = () => { $('outs').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); sd.setSys('output', o.id).catch(() => {}); };
+        return b;
+      }));
+    }
+  }
 }
 function renderMedia() {
   $('cMedia').hidden = !np?.on;

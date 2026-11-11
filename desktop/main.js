@@ -602,7 +602,11 @@ function topbarTick() {
   const name = fg ? (apps || []).find((a) => a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase())?.name || prettyExe(fg.exe) : 'Desktop';
   const vd = win32.isWin ? win32.virtualDesktops() : { count: 1, current: 0 }, key = `${name}|${vd.count}|${vd.current}`;
   if (vd.current !== lastDesk) { lastDesk = vd.current; checkPause(); } // a new desktop: resume the wallpaper at once if nothing covers it
-  if (key !== topApp) { topApp = key; topWin.webContents.send('topbar', { app: name, desks: vd }); }
+  if (key !== topApp) {
+    topApp = key;
+    const full = win32.isWin ? win32.virtualDesktops(true) : vd, mine = store.get().desktops?.names || {}; // names: only when something changed
+    topWin.webContents.send('topbar', { app: name, desks: { count: vd.count, current: vd.current, names: (full.ids || []).map((id, i) => mine[id] || full.names?.[i] || '') } });
+  }
 }
 // the system tray's icons in the top bar (tray.js): only while the top bar is there to show them
 // Windows' own tray icons (sound, network, battery…) belong to Explorer: the top bar shows those itself, so they're
@@ -938,6 +942,7 @@ function applySettings(patch) {
   if (patch.topbar?.look !== undefined) applyTopbarLook();
   if (patch.topbar?.tray !== undefined) syncTray();
   if (patch.themes !== undefined) broadcastTheme();
+  if (patch.desktops !== undefined) topApp = ''; // a desktop renamed: the top bar's tooltips
   if (patch.general?.accentFromWallpaper !== undefined) { // on: remember the colour you picked; off: put it back
     if (next.general.accentFromWallpaper) { store.set({ general: { accentManual: before.accent } }); syncWallAccent(); }
     else if (next.general.accentManual) { const back = next.general.accentManual; store.set({ general: { accentManual: '' } }); setTimeout(() => applySettings({ accent: back }), 0); }
