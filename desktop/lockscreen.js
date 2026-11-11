@@ -13,10 +13,12 @@ const win32 = require('./win32');
  *  page up to the screen's scale in the normal session zoomed every page of the app (top bar, dock, Customize). */
 async function snapshot(dir, url, preload, partition = 'sd-snapshot') {
   const d = screen.getPrimaryDisplay();
-  const sf = d.scaleFactor || 1;
+  // exactly the screen's size, unzoomed, as the wallpaper window itself: the page lays out the same. (It used to be the
+  // pixel size zoomed back down, but Windows caps a window at the screen's size, so the page came out smaller, and
+  // Windows' minimum font size made the widgets' text too big for their cards.) Scaled to real pixels by the caller.
   const w = new BrowserWindow({
-    width: Math.round(d.size.width * sf), height: Math.round(d.size.height * sf), show: false, frame: false,
-    webPreferences: { offscreen: true, preload, contextIsolation: true, sandbox: true, zoomFactor: sf, partition },
+    width: d.size.width, height: d.size.height, show: false, frame: false, useContentSize: true,
+    webPreferences: { offscreen: true, preload, contextIsolation: true, sandbox: true, partition },
   });
   try {
     let last = null;
@@ -31,7 +33,8 @@ async function snapshot(dir, url, preload, partition = 'sd-snapshot') {
     for (const f of fs.readdirSync(dir)) if (/^lock-\d+\.jpg$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
     // a new name each time: Windows caches lock screen images by path
     const file = path.join(dir, `lock-${Date.now()}.jpg`);
-    fs.writeFileSync(file, img.toJPEG(92));
+    const px = { width: Math.round(d.size.width * (d.scaleFactor || 1)), height: Math.round(d.size.height * (d.scaleFactor || 1)) }, sz = img.getSize();
+    fs.writeFileSync(file, (sz.width !== px.width || sz.height !== px.height ? img.resize({ ...px, quality: 'best' }) : img).toJPEG(92)); // the screen's real pixels
     return file;
   } finally { w.destroy(); }
 }

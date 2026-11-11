@@ -994,12 +994,13 @@ function power([exe, args]) {
 // and put back when this is switched off or nothing is picked.
 let stillT = 0, stillBusy = false, stillLast = 0, themeStamp = 0, lastWeatherJson = '';
 const stillApplied = new Map(); // desktop id -> the content key its still shows
+const STILL_VERSION = 3; // a new way of making stills: none made the old way is used again
 const STILL_GAP = 15000; // at most one new still every 15 s (songs change, weather loads…)
 const sha = (x) => require('crypto').createHash('sha1').update(x).digest('hex').slice(0, 16);
 const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, m.playing, !!m.art].join('|') : 'off'; };
 function stillKey(desk) {
   const st = store.get(), w = wallFor(st.wallpaper, desk), d = screen.getPrimaryDisplay(), now = new Date();
-  return sha(JSON.stringify([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size, d.scaleFactor, st.widgets, st.home?.todos, st.home?.timetable, st.name, st.accent,
+  return sha(JSON.stringify([STILL_VERSION, w.scene, w.file, w.url, w.fileStamp, w.dim, d.size, d.scaleFactor, st.widgets, st.home?.todos, st.home?.timetable, st.name, st.accent,
     st.themes?.active, themeStamp, lastWeatherJson, mediaKey(), now.toDateString(), now.getHours(), st.dock?.on]));
 }
 function loadApplied() { // across restarts of the app, for as long as Explorer keeps running
