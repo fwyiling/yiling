@@ -298,6 +298,28 @@ function hookShell() {
   });
   clearInterval(dockTimer); dockTimer = setInterval(pollWindows, 3000); // only a safety net now
 }
+// the taskbar, the moment Explorer shows it again (as Seelen UI does): during a desktop slide (nothing or Windows'
+// switching window in front) it goes at once. The timer-based hiding above skips "nothing in front" on purpose
+// (Start or Task View may be opening), which is exactly what a slide looks like, so the taskbar stayed up for it.
+// Start, search and flyouts sit on the taskbar: left alone. With an app in front, one frame later, in case Start
+// is just taking the front (pressing Win shows the taskbar a moment before Start appears).
+const tbHookStats = { heard: 0, hidden: 0 };
+function onTaskbarShown(hwnd) {
+  tbHookStats.heard++;
+  if (!dockWin || dockWin.isDestroyed() || gamer || app.isQuitting) return;
+  tbHookStats.hidden++;
+  const kind = win32.foregroundKind();
+  if (kind === 'none' || kind === 'switch') { win32.hideNow(hwnd); win32.showTaskbar(false); return; }
+  if (kind === 'app') setTimeout(() => { if (dockWin && !gamer && !app.isQuitting && win32.foregroundKind() === 'app') { win32.hideNow(hwnd); win32.showTaskbar(false); } }, 40);
+}
+let tbWatchTimer = null;
+function syncTaskbarWatch(on) {
+  clearInterval(tbWatchTimer);
+  if (!win32.isWin) return;
+  if (!on) { win32.unwatchTaskbar(); return; }
+  win32.watchTaskbar(onTaskbarShown);
+  tbWatchTimer = setInterval(() => win32.watchTaskbar(onTaskbarShown), 10000); // Explorer restarted: listen to the new one
+}
 async function setDock(on) {
   const st = store.get();
   if (on && (!dockWin || dockWin.isDestroyed())) {
@@ -308,7 +330,7 @@ async function setDock(on) {
       alwaysOnTop: true, show: false, backgroundColor: '#00000000', title: 'Syndicates Dock', webPreferences: webPrefs });
     dockWin.setAlwaysOnTop(true, 'pop-up-menu');
     dockWin.loadURL(ui('dock.html'));
-    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); }); // tool window: on every virtual desktop
+    dockWin.once('ready-to-show', () => { win32.makeToolWindow(dockWin); placeDock(); dockWin.showInactive(); pollWindows(); startDockExtras(); hookShell(); syncTaskbarWatch(true); }); // tool window: on every virtual desktop
     // clicks pass through the transparent strip around the floating pill to the windows behind it
     dockWin.setIgnoreMouseEvents(true, { forward: true });
     dockWin.on('closed', () => { dockWin = null; });
@@ -320,6 +342,7 @@ async function setDock(on) {
     if (win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!st.dock.prevAutoHide); }
     store.set({ dock: { prevAutoHide: null } });
     if (shellMsg) { win32.unhookShell(dockWin); shellMsg = 0; }
+    syncTaskbarWatch(false);
     dockWin.destroy(); dockWin = null;
   }
 }
@@ -1009,7 +1032,7 @@ function diagnostics() {
     app: app.getVersion(), electron: process.versions.electron, os: `${os.type()} ${os.release()} ${os.arch()}`,
     win32: win32.status(),
     displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, scale: d.scaleFactor, wallpaper: attachResults.get(d.id) || null })),
-    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
+    paused, gamer, deskWorker: deskWorkerReady, vdesk: vdesk.status(), tray: systray.status(), taskbarHook: { active: !!tbWatchTimer, ...tbHookStats }, lastEdgeMove, lastSwitchLabel, lastOverlay: win32.isWin ? win32.lastOverlay() : null, switchKeys: hotkeyStatus.switchKeys, lastSwitch, dock: !!dockWin, topbar: !!topWin, island: !!islandWin, taskbarVisible: win32.taskbarVisible(), media: { ...media.get(), art: media.get().art ? '(image)' : '' }, log: recentLog.slice(-20),
   };
 }
 
@@ -1538,12 +1561,17 @@ app.whenReady().then(() => {
   // started by you (shortcut, Start menu): open Customize, like Lively; started with Windows: stay in the tray
   if (!process.argv.includes('--smoke') && !process.argv.includes('--autostart')) openSettings(); // first run: show what can be customized
   // --smoke: start, run for a while, print diagnostics and quit (used by the Windows test run)
-  if (process.argv.includes('--smoke')) setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
+  if (process.argv.includes('--smoke')) {
+    // the taskbar hook: show the taskbar the way Explorer would, and it must be heard (and hidden again, the dock is on)
+    setTimeout(() => { if (win32.isWin && dockWin) win32.showTaskbar(true); }, 11000);
+    setTimeout(() => { console.log('SMOKE ' + JSON.stringify(diagnostics())); app.quit(); }, 15000);
+  }
 });
 app.on('second-instance', () => openSettings()); // opening it again while it runs brings Customize to the front
 app.on('before-quit', () => {
   app.isQuitting = true;
   for (const t of [dockTimer, dockEdgeTimer, topTimer, taskbarTimer]) clearInterval(t); // nothing may hide the taskbar after this
+  syncTaskbarWatch(false);
   media.stop(); sysctl.stop(); systray.stop(); // Explorer has every icon too: its tray carries on
   try { store?.flush(); } catch {}
   if (store?.get().general.hideDesktopIcons) win32.setDesktopIcons(true); // give the icons back

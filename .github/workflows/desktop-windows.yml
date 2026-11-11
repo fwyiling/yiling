@@ -73,6 +73,7 @@ jobs:
           Remove-Item (Join-Path $dir 'settings.json')
           if ($out -notmatch '"dock":true') { throw 'the dock did not start' }
           if ($out -notmatch '"taskbarVisible":false') { throw 'the Windows taskbar stayed visible next to the dock' }
+          if ($out -notmatch '"taskbarHook":\{"active":true,"heard":[1-9]') { throw 'the taskbar hook did not hear the taskbar being shown' }
           node -e "const w = require('./win32'), v = w.taskbarVisible(), o = w.taskbarOpacity(); console.log('taskbar after quitting: visible', v, 'opacity', o); process.exit(v && o === 255 ? 0 : 1)"
       - name: Upload the Windows build
         uses: actions/upload-artifact@v4

@@ -132,6 +132,12 @@ function bind() {
   // the dock: Windows tells a "shell hook" window when windows open, close, come forward or flash for attention
   // (what the taskbar listens to), instead of the dock looking every second
   u.RegisterWindowMessageW = user32.func('uint32 __stdcall RegisterWindowMessageW(str16 name)');
+  // the moment Explorer shows its taskbar again (a WinEvent, as Seelen UI does it), not up to 300 ms later
+  u.WinEventProc = koffi.proto('void __stdcall WinEventProc(intptr_t hook, uint32 event, intptr_t hwnd, long idObject, long idChild, uint32 thread, uint32 time)');
+  u.SetWinEventHook = user32.func('intptr_t __stdcall SetWinEventHook(uint32 eventMin, uint32 eventMax, intptr_t hmod, WinEventProc *cb, uint32 pid, uint32 tid, uint32 flags)');
+  u.UnhookWinEvent = user32.func('bool __stdcall UnhookWinEvent(intptr_t hook)');
+  u.GetAncestor = user32.func('intptr_t __stdcall GetAncestor(intptr_t hwnd, uint32 flags)');
+  u.ShowWindowAsync = user32.func('bool __stdcall ShowWindowAsync(intptr_t hwnd, int cmd)');
   u.RegisterShellHookWindow = user32.func('bool __stdcall RegisterShellHookWindow(intptr_t hwnd)');
   u.DeregisterShellHookWindow = user32.func('bool __stdcall DeregisterShellHookWindow(intptr_t hwnd)');
   // live window previews: DWM draws another window, scaled, into one of ours (how the taskbar's previews work: no screenshots)
@@ -775,6 +781,54 @@ const thumbUnregister = (thumb) => load() && u.DwmUnregisterThumbnail(thumb) ===
 /** Ask a window to close, like its X button (the app can still ask to save first). */
 const closeWindow = (hwnd) => load() && u.PostMessageW(hwnd, 0x0010, 0, 0); // WM_CLOSE
 
+// ---------- the taskbar, the moment Explorer shows it ----------
+// Explorer shows its taskbar again by itself (switching desktops, Start, display changes). A WinEvent hook on
+// Explorer's process hears it at once; onShow(hwnd) decides. The callback runs on the thread that set the hook,
+// from its message loop (the app's main thread).
+let tbHook = 0, tbCb = null, tbPid = 0, tbOnShow = null;
+const TASKBAR_CLASSES = new Set(['Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+function watchTaskbar(onShow) {
+  if (!load()) return false;
+  tbOnShow = onShow;
+  const tray = explorerTray();
+  if (isNull(tray)) return false;
+  const pid = [0]; u.GetWindowThreadProcessId(tray, pid);
+  if (tbHook && pid[0] === tbPid) return true; // already listening to this Explorer
+  unwatchTaskbar(true);
+  tbCb ||= u.koffi.register((hook, event, hwnd, idObject) => {
+    try {
+      if (idObject !== 0 || isNull(hwnd)) return; // OBJID_WINDOW only
+      const root = u.GetAncestor(hwnd, 2); // GA_ROOT
+      const buf = new Uint16Array(64), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(root, buf, 64)));
+      if (TASKBAR_CLASSES.has(cls)) tbOnShow?.(Number(root));
+    } catch {}
+  }, u.koffi.pointer(u.WinEventProc));
+  tbHook = Number(u.SetWinEventHook(0x8002, 0x8002, 0, tbCb, pid[0], 0, 0x0000 | 0x0002)); // EVENT_OBJECT_SHOW; out of context, skip our own process
+  tbPid = tbHook ? pid[0] : 0;
+  return !!tbHook;
+}
+function unwatchTaskbar(keepHandler = false) {
+  if (tbHook && load()) u.UnhookWinEvent(tbHook);
+  tbHook = 0; tbPid = 0;
+  if (!keepHandler) tbOnShow = null;
+}
+/** What's in front right now, for the taskbar's sake: 'none' (in between, e.g. a desktop sliding), 'switch'
+ *  (Windows' own switching windows), 'shell' (Start, search, flyouts: they sit on the taskbar), or 'app'. */
+const ANCHORED = new Set(['Windows.UI.Core.CoreWindow', 'ControlCenterWindow', 'Xaml_WindowedPopupClass', '#32768', 'NotifyIconOverflowWindow', 'TopLevelWindowForOverflowXamlIsland', 'Shell_InputSwitchTopLevelWindow', 'TaskListThumbnailWnd', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+function foregroundKind() {
+  if (!load()) return 'app';
+  const fg = u.GetForegroundWindow();
+  if (isNull(fg)) return 'none';
+  const buf = new Uint16Array(128), cls = String.fromCharCode(...buf.slice(0, u.GetClassNameW(fg, buf, 128)));
+  if (cls === 'ForegroundStaging' || cls === 'MultitaskingViewFrame' || cls === 'XamlExplorerHostIslandWindow') return 'switch';
+  if (ANCHORED.has(cls)) return 'shell';
+  const pid = [0]; u.GetWindowThreadProcessId(fg, pid);
+  const exe = (exeOf(pid[0]).split('\\').pop() || '').toLowerCase();
+  if (['startmenuexperiencehost.exe', 'searchhost.exe', 'searchapp.exe', 'shellexperiencehost.exe', 'shellhost.exe'].includes(exe)) return 'shell';
+  return 'app';
+}
+const hideNow = (hwnd) => load() && u.ShowWindowAsync(hwnd, 0); // SW_HIDE, without waiting on Explorer
+
 module.exports = {
   isWin,
   RAISED_STRATEGIES,
@@ -811,6 +865,10 @@ module.exports = {
   lastOverlay: () => lastOverlay,
   taskbarVisible: safe('taskbarVisible', taskbarVisible, true),
   taskbarOpacity: safe('taskbarOpacity', taskbarOpacity, 255),
+  watchTaskbar: safe('watchTaskbar', watchTaskbar, false),
+  unwatchTaskbar: safe('unwatchTaskbar', unwatchTaskbar),
+  foregroundKind: safe('foregroundKind', foregroundKind, 'app'),
+  hideNow: safe('hideNow', hideNow, false),
   iconPixels: safe('iconPixels', iconPixels, null),
   placeWindow: safe('placeWindow', placeWindow),
   battery: safe('battery', battery, { present: false }),
