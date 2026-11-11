@@ -174,9 +174,6 @@
 
 /* Syndicates: the time in LED dots, CPU / memory as pixel health bars */
 .w-clock .dm { display: block; height: 7.4cqmin; width: auto; overflow: visible; }
-.w-clock .dm .on circle { fill: color-mix(in srgb, var(--a) 25%, #fff); }
-.w-clock .dm .off circle { fill: rgba(232, 246, 255, .07); }
-.w-clock .dm .on { filter: drop-shadow(0 0 .35cqmin var(--a)) drop-shadow(0 0 1.2cqmin color-mix(in srgb, var(--a) 60%, transparent)); }
 [data-layout="syn"] .w-clock { align-items: flex-end; gap: 1.2cqmin; }
 [data-layout="syn"] .w-clock .ap { font: 700 1.3cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .2em; margin-bottom: .3cqmin; opacity: .8; }
 .w-stats .hbars { display: none; }
@@ -185,10 +182,19 @@
 .hb { display: grid; grid-template-columns: 4.2cqmin auto 4.6cqmin; align-items: center; gap: 1cqmin; }
 .hb b { font: 700 1.05cqmin/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .2em; opacity: .85; }
 .hb em { font: 700 1.25cqmin/1 ui-monospace, Consolas, monospace; font-style: normal; text-align: right; letter-spacing: .05em; }
-.hb .cells { display: flex; gap: .22cqmin; padding: .3cqmin; background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .18); }
-.hb .cells s { display: block; width: .78cqmin; height: 1.5cqmin; background: rgba(232, 246, 255, .07); }
-/* lit cells: a pixel highlight on top, a darker band at the bottom, like an old game's health bar */
-.hb .cells s.on { --c: color-mix(in srgb, var(--a) 70%, #fff); background: linear-gradient(var(--c) 0 30%, color-mix(in srgb, var(--c) 80%, #000) 30% 75%, color-mix(in srgb, var(--c) 58%, #000) 75%); box-shadow: inset .12cqmin .12cqmin rgba(255, 255, 255, .5), 0 0 .5cqmin color-mix(in srgb, var(--c) 45%, transparent); }
+/* the bars: slanted segments like a mech's HUD gauge, fading up toward the end of the fill, the lead segment glowing a
+   little taller, the empty ones only a faint outline; segments light one after another when the value moves */
+.hb .cells { --c: color-mix(in srgb, var(--a) 60%, #fff); position: relative; display: flex; align-items: center; gap: .2cqmin; height: 1.9cqmin; padding: 0 .5cqmin; }
+.hb .cells::after { content: ""; position: absolute; left: 0; right: 0; bottom: -.35cqmin; height: 1px;
+  background: linear-gradient(90deg, var(--c) 0 calc(var(--fill, 0) * 100%), rgba(232, 246, 255, .14) calc(var(--fill, 0) * 100%)); opacity: .7; }
+.hb .cells s { display: block; width: .72cqmin; height: 1.3cqmin; transform: skewX(-22deg); background: transparent; box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .13);
+  transition: background .25s, box-shadow .25s, height .25s, opacity .25s; transition-delay: calc(var(--i) * 14ms); }
+.hb .cells s.on { box-shadow: none; opacity: calc(.38 + var(--i) / 19 * .62);
+  background: linear-gradient(color-mix(in srgb, var(--c) 40%, #fff), var(--c) 45%, color-mix(in srgb, var(--c) 70%, #000)); }
+.hb .cells s.head { opacity: 1; height: 1.75cqmin; background: linear-gradient(#fff, var(--c)); box-shadow: 0 0 .6cqmin var(--c), 0 0 1.4cqmin color-mix(in srgb, var(--a) 55%, transparent); }
+.hb.run .cells s.head { animation: hbPulse 1.6s ease-in-out infinite; }
+@keyframes hbPulse { 50% { box-shadow: 0 0 .25cqmin var(--c); filter: brightness(.8); } }
+.hb.done .cells s.on { opacity: 1; }
 /* one colour, the accent (it follows the wallpaper when that's on in Customize > General) */
 
 /* Syndicates: the greeting and the quote as terminal lines, in the same digital spirit as the clock */
@@ -208,12 +214,50 @@
 [data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-clock)::before { font-family: var(--syn-mono); letter-spacing: .18em; }
 [data-layout="syn"] .w-clock { background: var(--syn-glass); padding-top: 3cqmin; padding-bottom: .9cqmin; }
 [data-layout="syn"] .w-clock .dm { height: 8.2cqmin; }
-[data-layout="syn"] .w-clock .dm .on circle { fill: #fff; }
-[data-layout="syn"] .w-clock .dm .off circle { fill: rgba(232, 246, 255, .045); }
-[data-layout="syn"] .w-clock .dm .on { filter: drop-shadow(0 0 .25cqmin color-mix(in srgb, var(--a) 80%, #fff)) drop-shadow(0 0 1cqmin color-mix(in srgb, var(--a) 70%, transparent)); }
 [data-layout="syn"] .w-clock .ap { font-family: var(--syn-mono); color: color-mix(in srgb, var(--a) 40%, #fff); }
 [data-layout="syn"] .w-date { font: 600 1.15cqmin/1 var(--syn-mono); letter-spacing: .22em; background-color: var(--syn-glass); color: color-mix(in srgb, var(--a) 25%, #fff); padding-top: .9cqmin; }
 [data-layout="syn"] .w-greeting { background: var(--syn-glass); }
 [data-layout="syn"] .w-quote { background: var(--syn-glass); }
 [data-layout="syn"] .w-calendar .grid, [data-layout="syn"] .w-weather .hours, [data-layout="syn"] .w-today b { font-family: var(--syn-mono); }
 [data-layout="syn"] .w-calendar .mo, [data-layout="syn"] .w-reminders .rh b { font-family: var(--syn-mono); letter-spacing: .18em; }
+
+/* Syndicates clock, Mecha: hard chamfered pixels leaning forward, lit in the accent with a bright top edge and a dark
+   foot (like the health bars), barely any glow, the unlit grid dark, and CRT scanlines over the panel */
+.w-clock .dm { --c: color-mix(in srgb, var(--a) 45%, #fff); transform: skewX(-8deg); transform-origin: bottom left; }
+.w-clock .dm .g0 { stop-color: #fff; } .w-clock .dm .g1 { stop-color: var(--c); } .w-clock .dm .g2 { stop-color: color-mix(in srgb, var(--c) 72%, #000); }
+.w-clock .dm .on { fill: url(#dmLit); filter: drop-shadow(0 0 .18cqmin color-mix(in srgb, var(--a) 70%, transparent)); }
+.w-clock .dm .off { fill: rgba(150, 175, 200, .06); }
+[data-layout="syn"] .w-clock { overflow: hidden; }
+[data-layout="syn"] .w-clock::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .2) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, transparent 0 calc(100% - 1.4cqmin), color-mix(in srgb, var(--a) 70%, transparent) calc(100% - 1.4cqmin) calc(100% - 1.1cqmin), transparent calc(100% - 1.1cqmin)) right 0 bottom .9cqmin / 100% 40% no-repeat; }
+[data-layout="syn"] .w-clock .ap { color: var(--a); text-shadow: none; }
+
+/* Daily goals: revision and hobby time as pixel bars (the same cells as CPU / memory) */
+.w-goals { display: grid; align-items: stretch; gap: .9cqmin; min-width: 30cqmin; }
+.w-goals .gh { display: flex; justify-content: space-between; align-items: baseline; }
+.w-goals .gh b { font-size: 1.5cqmin; font-weight: 600; }
+.w-goals .gh em, .w-goals .hb.run b { font: 700 1cqmin/1 ui-monospace, "Cascadia Mono", Consolas, monospace; font-style: normal; letter-spacing: .18em; color: var(--a); }
+.w-goals .hb { grid-template-columns: 6.2cqmin auto 7.4cqmin; }
+.w-goals .hb.done em { color: var(--a); }
+.w-goals .hb.done em::after { content: " ✓"; }
+[data-layout="syn"] .w-goals { padding-left: 2cqmin; padding-right: 2cqmin; }
+[data-layout="syn"] .w-goals::before { content: "DAILY // FOCUS"; position: absolute; left: 1.8cqmin; top: .9cqmin; font: 700 .95cqmin/1 var(--syn-mono); letter-spacing: .18em; color: color-mix(in srgb, var(--a) 45%, #cfe6ff); }
+[data-layout="syn"] .w-goals .gh { position: absolute; right: 1.8cqmin; top: .9cqmin; } [data-layout="syn"] .w-goals .gh b { display: none; }
+
+/* Syndicates, balanced: the time and surroundings down the left, your day down the right (focus, load, log) in one
+   column as wide as the left one, and the schedule / now-playing strip under it at the bottom right, so the middle of
+   the wallpaper stays clear and both sides weigh the same */
+[data-layout="syn"] > .wp-synr { width: 33.2cqmin; align-items: stretch; }
+[data-layout="syn"] > .wp-synr > * { width: 100%; box-sizing: border-box; }
+[data-layout="syn"] > .wp-synb { left: auto; right: 2.2cqw; width: 33.2cqmin; flex-direction: column; align-items: stretch; }
+.macish[data-layout="syn"] > .wp-synb > .w-media { width: 100%; }
+[data-layout="syn"] > .wp-synb > .w-today { width: 100%; }
+[data-layout="syn"] .w-today .col { max-width: none; }
+/* the segments share whatever width the panel has (the value never gets cut off) */
+.hb { grid-template-columns: 4.6cqmin minmax(0, 1fr) auto; }
+.w-goals .hb { grid-template-columns: 5.8cqmin minmax(0, 1fr) auto; }
+.hb .cells s { width: auto; flex: 1 1 0; min-width: .3cqmin; }
+.hb em { min-width: 4.4cqmin; }
+[data-layout="syn"] .w-stats .hbars { width: 100%; }
+.w-goals .hb.done em, .w-goals .hb.run b, .w-goals .gh em { color: color-mix(in srgb, var(--a) 45%, #fff); }

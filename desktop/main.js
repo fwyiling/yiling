@@ -16,6 +16,7 @@ const systray = require('./tray'); // other programs' tray icons, for the top ba
 const winkey = require('./winkey'); // the Windows key opens Home
 const updater = require('./updater'); // updates from the desktop-latest release
 const clips = require('./clipboard'); // clipboard history, in Home
+const goals = require('./goals'); // daily revision / hobby time, in Home and on the desktop
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -1436,6 +1437,12 @@ function wireIpc() {
   ipcMain.handle('clip:copy', (e, id) => fromHome(e) && clips.use(String(id))); // only copy
   ipcMain.handle('clip:pin', (e, id, on) => { if (fromHome(e)) clips.pin(String(id), !!on); });
   ipcMain.handle('clip:remove', (e, id) => { if (fromHome(e)) clips.remove(String(id)); });
+  // daily goals: everyone may read them (the widget, Home), Home and Customize change them
+  const goalsWriter = (e) => fromHome(e) || (settingsWin && !settingsWin.isDestroyed() && e.sender === settingsWin.webContents);
+  ipcMain.handle('goals:get', () => goals.status());
+  ipcMain.handle('goals:start', (e, k) => (goalsWriter(e) ? goals.start(String(k)) : goals.status()));
+  ipcMain.handle('goals:stop', (e) => (goalsWriter(e) ? goals.stop() : goals.status()));
+  ipcMain.handle('goals:add', (e, k, m) => (goalsWriter(e) ? goals.add(String(k), Number(m)) : goals.status()));
   ipcMain.handle('clip:clear', (e) => { if (fromHome(e) || (settingsWin && e.sender === settingsWin.webContents)) clips.clear(); });
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
@@ -1643,6 +1650,9 @@ app.whenReady().then(() => {
   try { fs.writeFileSync(INSTANCE_FILE(), JSON.stringify({ appPath: app.getAppPath(), pid: process.pid, version: app.getVersion() })); } catch {}
   gallery.init(app.getPath('userData'));
   clips.init(app.getPath('userData'), () => win32.clipboardSeq());
+  goals.init(app.getPath('userData'), () => { const g = store.get().goals || {}; return { revision: Math.max(0, Number(g.revision) || 0), hobby: Math.max(0, Number(g.hobby) || 0), remind: g.remind !== false }; },
+    (title, body) => { if (Notification.isSupported()) new Notification({ title, body }).show(); });
+  goals.onChange((g) => broadcast('goals', g));
   if (store.get().home.clipboard !== false) clips.start();
   clips.onChange((l) => { if (homeWin && !homeWin.isDestroyed()) homeWin.webContents.send('clips', l); });
   themes.init(app.getPath('userData'));

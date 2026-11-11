@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld('sd', {
   onUpdate: on('update'),
   clips: (what, ...args) => ipcRenderer.invoke(`clip:${['list', 'use', 'copy', 'pin', 'remove', 'clear'].includes(what) ? what : 'list'}`, ...args),
   onClips: on('clips'),
+  goals: (what = 'get', ...args) => ipcRenderer.invoke(`goals:${['get', 'start', 'stop', 'add'].includes(what) ? what : 'get'}`, ...args),
+  onGoals: on('goals'),
   copyText: (t) => ipcRenderer.invoke('home:copy', t),
   pasteText: (t) => ipcRenderer.invoke('home:paste', t),
   rates: (base) => ipcRenderer.invoke('home:rates', base),

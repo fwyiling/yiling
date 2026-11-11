@@ -126,6 +126,10 @@ h2, .sec-h h2 { text-transform: uppercase; letter-spacing: .14em; font-size: 12p
 .chip.on { ${swap('p')} color: ${INK}; font-weight: 600; }
 .days .chip[data-n]::after { border-radius: 0; ${clip(3)} color: ${INK}; background: #d6e6f6; }
 .tabs { ${bev('f')} } .tabs button { border-radius: 0; } .tabs button.on { ${bev('p', 4)} color: ${INK}; }
+#goalCard .gbar { border-radius: 0; height: 8px; padding: 1px; background: rgba(0, 0, 0, .35); box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .18); }
+#goalCard .gbar i { background: repeating-linear-gradient(90deg, #d6e6f6 0 6px, transparent 6px 8px); }
+#goalCard .gl b, #goalCard .gl span { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
+#goalCard .goal.run .gl b::before { content: "▶ "; color: #d6e6f6; }
 #todos li { border-radius: 0; } #todos li:hover { ${bev('h')} }
 #todos .ck { border-radius: 0; width: 13px; height: 13px; margin: 0 3px; transform: rotate(45deg); border: 1.5px solid rgba(236, 244, 252, .6); }
 #todos li.done .ck { background: #d6e6f6; border-color: #d6e6f6; }
@@ -191,7 +195,7 @@ const wallpaper = `
 /* the Syndicates layout: the time panel cut like the cards (top left on the clock, bottom right under the date) */
 [data-layout="syn"] .w-clock { border: 0; border-radius: 0; background: none; border-image: var(--mx-hudTop) 10 fill / 10px 10px 0 10px stretch; clip-path: polygon(9px 0, 100% 0, 100% 100%, 0 100%, 0 9px); }
 [data-layout="syn"] .w-date { border: 0; background: repeating-linear-gradient(90deg, rgba(166, 214, 242, .55) 0 1px, transparent 1px 1.2cqmin) 1.8cqmin bottom .6cqmin / calc(100% - 3.6cqmin) .6cqmin no-repeat; border-image: var(--mx-hudBot) 10 fill / 0 10px 10px 10px stretch; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%); }
-[data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-clock)::before, [data-layout="syn"] .w-quote::before { color: #a6d6f2; }
+[data-layout="syn"] :is(.w-weather, .w-media, .w-today, .w-stats, .w-goals, .w-clock)::before, [data-layout="syn"] .w-quote::before { color: #a6d6f2; }
 [data-layout="syn"] .w-clock .hm { text-shadow: 0 0 2cqmin rgba(166, 214, 242, .35); }
 .macish[data-layout="syn"] .w-card { border-image-source: var(--mx-hud); background: none; }
 [data-layout="syn"] .w-clock, [data-layout="syn"] .w-date { background-color: transparent; }

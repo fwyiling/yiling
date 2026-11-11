@@ -169,3 +169,16 @@ body.dropping #panel::after { content: "Drop to pin"; position: absolute; inset:
 .emojis button { height: 42px; border: 0; border-radius: 10px; background: none; font-size: 24px; cursor: pointer; font-family: "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
 .emojis button:hover, .emojis button.on { background: color-mix(in srgb, var(--a) 22%, transparent); }
 .emoji-hint { display: block; padding: 4px 8px 2px; font-size: 12px; }
+
+/* daily goals */
+#goalCard .goal { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "l b" "bar bar"; gap: 6px 10px; align-items: center; }
+#goalCard .goal + .goal { margin-top: 12px; }
+#goalCard .gl { grid-area: l; display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+#goalCard .gl b { font-size: 13px; font-weight: 600; } #goalCard .gl span { font-size: 12px; opacity: .65; font-variant-numeric: tabular-nums; }
+#goalCard .gbtns { grid-area: b; display: flex; gap: 6px; }
+#goalCard .gbar { grid-area: bar; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+#goalCard .gbar i { display: block; height: 100%; width: 0; background: var(--a); transition: width .3s; }
+#goalCard .goal.done .gl span::after { content: " ✓"; color: var(--a); }
+#goalCard .goal.run .gl b::before { content: "● "; color: var(--a); }
+#goalCard .gl { flex-direction: column; align-items: flex-start; gap: 2px; white-space: nowrap; }
+#goalCard .gbtns .chip { padding-left: 10px; padding-right: 10px; }

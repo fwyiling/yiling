@@ -55,10 +55,14 @@
     <section data-panel="home">
       <label class="field-row"><span>Shortcut to open Home</span><button id="hotkey" class="btn keycap"></button></label>
       <label class="switch"><span><b>Clipboard history</b><small>What you copy (text, links, pictures) in Home's Clipboard tab, Alt+Shift+V. Kept on this PC only; anything a password manager marks private is skipped.</small></span><input type="checkbox" data-k="home.clipboard"></label>
-      <div class="row"><button id="clipClear" class="btn ghost">Clear clipboard history</button><span class="muted">Pinned items stay.</span></div>
+      <div class="row"><button id="clipClear" class="btn ghost">Clear unpinned items</button><span class="muted">Everything you copied goes, except what you pinned.</span></div>
       <label class="switch"><span><b>The Windows key opens Home</b><small>Home becomes your Start menu, like Seelen UI's. Shortcuts such as Win+E still work, and Ctrl+Esc opens Windows' own Start menu.</small></span><input type="checkbox" data-k="home.winKey"></label>
       <label class="field-row"><span>Web search</span><select class="field" data-k="home.engine"><option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave</option></select></label>
       <div class="row"><button id="clearPins" class="btn ghost">Unpin all apps</button><span class="muted" id="pinCount"></span></div>
+      <h2>Daily goals</h2>
+      <label class="slider"><span>Revision a day</span><input type="range" min="30" max="360" step="15" data-k="goals.revision"><em></em></label>
+      <label class="slider"><span>Hobby, at least</span><input type="range" min="10" max="120" step="5" data-k="goals.hobby"><em></em></label>
+      <label class="switch"><span><b>Evening reminders</b><small>A note at 5, 7 and 9 pm while revision is short of the goal, and at 8 pm if there's been no hobby time. Start and stop the timers in Home.</small></span><input type="checkbox" data-k="goals.remind"></label>
     </section>
     <section data-panel="dock">
       <h2>Dock</h2>

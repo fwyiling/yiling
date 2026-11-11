@@ -211,6 +211,35 @@ $('q').onkeydown = (e) => {
 };
 
 // ---------- to-dos & notes ----------
+// ---------- daily goals: revision and hobby stopwatches (the desktop widget shows the same) ----------
+let goalSt = null, goalAt = 0;
+const gfmt = (sec) => { const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}` : `${m}m`; };
+function renderGoals() {
+  const g = goalSt; if (!g || !sd.goals) { $('goalCard').hidden = true; return; }
+  $('goalCard').hidden = false;
+  let met = 0;
+  for (const row of document.querySelectorAll('#goalCard .goal')) {
+    const k = row.dataset.k, goal = g.goal[k] || 1, run = g.running === k;
+    const have = g[k] + (run ? (Date.now() - goalAt) / 1000 : 0);
+    if (have >= goal) met++;
+    row.classList.toggle('run', run); row.classList.toggle('done', have >= goal);
+    row.querySelector('.gl span').textContent = `${gfmt(have)} / ${gfmt(goal)}`;
+    row.querySelector('.gbar i').style.width = `${Math.min(100, (have / goal) * 100)}%`;
+    row.querySelector('.go').textContent = run ? 'Stop' : 'Start';
+    row.querySelector('.go').classList.toggle('on', run);
+  }
+  $('goalNote').textContent = met === 2 ? 'All done today' : g.running ? (g.running === 'revision' ? 'Revising…' : 'Hobby time…') : '';
+}
+for (const row of document.querySelectorAll('#goalCard .goal')) {
+  const k = row.dataset.k, got = (g) => { goalSt = g; goalAt = Date.now(); renderGoals(); };
+  row.querySelector('.go').onclick = () => (goalSt?.running === k ? sd.goals('stop') : sd.goals('start', k)).then(got);
+  row.querySelector('.add').onclick = () => sd.goals('add', k, 15).then(got);
+  row.querySelector('.add').oncontextmenu = (e) => { e.preventDefault(); sd.goals('add', k, -15).then(got); };
+}
+if (sd.goals) { sd.onGoals?.((g) => { goalSt = g; goalAt = Date.now(); renderGoals(); }); sd.goals().then((g) => { goalSt = g; goalAt = Date.now(); renderGoals(); }).catch(() => {}); }
+else $('goalCard').hidden = true;
+setInterval(() => { if (goalSt?.running && !document.hidden) renderGoals(); }, 1000);
+
 function renderTodos() {
   const list = s.home.todos || [];
   $('todoCount').textContent = list.length ? `${list.filter((t) => t.done).length}/${list.length}` : '';

@@ -25,19 +25,29 @@ const DOTS = {
   8: ['01110', '10001', '10001', '01110', '10001', '10001', '01110'], 9: ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
   ':': ['0', '0', '1', '0', '1', '0', '0'],
 };
+// Mecha pixels, not round LEDs: each one a square with two corners cut (the bevel of the theme's frames), all the lit
+// ones in one path and the unlit in another (cheap to draw, crisp at any size)
 function dotMatrix(text) {
   let x = 0; const lit = [], dim = [];
+  const S = 0.9, C = 0.3, O = (1 - S) / 2;
+  const px = (cx, cy) => `M${cx + O + C} ${cy + O}h${S - C}v${S - C}l${-C} ${C}h${C - S}v${C - S}z`;
   for (const ch of text) {
     const g = DOTS[ch]; if (!g) continue;
-    g.forEach((row, y) => [...row].forEach((b, i) => (b === '1' ? lit : dim).push(`<circle cx="${x + i + 0.5}" cy="${y + 0.5}" r="0.38"/>`)));
+    g.forEach((row, y) => [...row].forEach((b, i) => (b === '1' ? lit : dim).push(px(x + i, y))));
     x += g[0].length + 1;
   }
   const w = Math.max(1, x - 1);
-  return `<svg class="dm" viewBox="0 0 ${w} 7" style="aspect-ratio:${w}/7"><g class="off">${dim.join('')}</g><g class="on">${lit.join('')}</g></svg>`;
+  return `<svg class="dm" viewBox="0 0 ${w} 7" style="aspect-ratio:${w}/7"><defs><linearGradient id="dmLit" gradientUnits="userSpaceOnUse" spreadMethod="repeat" x1="0" y1="0" x2="0" y2="1"><stop class="g0" offset=".05"/><stop class="g0" offset=".22"/><stop class="g1" offset=".26"/><stop class="g1" offset=".7"/><stop class="g2" offset=".74"/></linearGradient></defs>`
+    + `<path class="off" d="${dim.join('')}"/><path class="on" d="${lit.join('')}"/></svg>`;
 }
 // a pixel health bar: so many square cells, lit up to the value (green, then amber, then red as it climbs)
 const CELLS = 20;
-const healthBar = () => `<i class="cells">${'<s></s>'.repeat(CELLS)}</i>`;
+const healthBar = () => `<i class="cells">${Array.from({ length: CELLS }, (_, i) => `<s style="--i:${i}"></s>`).join('')}</i>`;
+// light the first n cells; the last lit one is the bar's glowing head
+function fillCells(row, n) {
+  row.querySelectorAll('.cells s').forEach((c, i) => { c.classList.toggle('on', i < n); c.classList.toggle('head', i === n - 1); });
+  row.style.setProperty('--fill', n / CELLS);
+}
 
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 
@@ -49,11 +59,11 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   // grouped layouts: the time in one hero stack, the info as a row (or column) of matching cards
   const groups = { tl: el('div', 'wp-group wp-tl'), bl: el('div', 'wp-group wp-bl'), synl: el('div', 'wp-group wp-synl'), synb: el('div', 'wp-group wp-synb'), synr: el('div', 'wp-group wp-synr') };
   // Mac layout (after macOS desktop widgets): calendar + weather top left, reminders + now playing bottom left
-  const MAC_GROUP = { calendar: 'tl', weather: 'tl', reminders: 'bl', media: 'bl' };
+  const MAC_GROUP = { calendar: 'tl', weather: 'tl', goals: 'tl', reminders: 'bl', media: 'bl' };
   const hidden = el('div', 'wp-hidden');
   // Syndicates layout (made for the Mecha theme): a cockpit HUD down the left, a strip along the bottom, a rail on the right
-  const SYN_GROUP = { greeting: 'synl', clock: 'synl', date: 'synl', weather: 'synl', calendar: 'synl', reminders: 'synl', media: 'synb', today: 'synb', stats: 'synr', quote: 'synr' };
-  const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'today', 'reminders', 'media', 'stats', 'quote'];
+  const SYN_GROUP = { greeting: 'synl', clock: 'synl', date: 'synl', weather: 'synl', calendar: 'synl', reminders: 'synl', media: 'synb', today: 'synb', stats: 'synr', goals: 'synr', quote: 'synr' };
+  const ORDER = ['greeting', 'clock', 'date', 'calendar', 'weather', 'goals', 'today', 'reminders', 'media', 'stats', 'quote'];
   layer.append(groups.tl, groups.bl, groups.synl, groups.synb, groups.synr, hidden);
   root.append(media, dim, layer);
   let s = settings, mediaKey = '', deskId = desk, winToken = 0;
@@ -110,6 +120,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     calendar: () => el('div', 'w-calendar w-card'),
     reminders: () => el('div', 'w-reminders w-card', '<div class="rh"><b>Reminders</b><em></em></div><ul></ul>'),
     today: () => el('div', 'w-today w-card', '<div class="col cls"><span class="lbl">Next</span><b></b><span class="sub"></span></div><div class="col todo"><span class="lbl">To-do</span><b></b><span class="sub"></span></div>'),
+    goals: () => el('div', 'w-goals w-card', `<div class="gh"><b>Today's goals</b><em></em></div><div class="hb" data-k="revision"><b>REVISE</b>${healthBar()}<em></em></div><div class="hb" data-k="hobby"><b>HOBBY</b>${healthBar()}<em></em></div>`),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
     media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
@@ -124,12 +135,29 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   function renderToday() {
     const e = widgets.today; if (!e) return;
     const { nc, open } = todayInfo();
-    e.querySelector('.todo').hidden = !open.length;
+    e.querySelector('.todo').hidden = !open.length || (layout() === 'syn' && !!s.widgets.reminders?.on); // Syndicates: the to-dos are in Reminders already
     const lbl = e.querySelector('.cls .lbl'), b = e.querySelector('.cls b'), sub = e.querySelector('.cls .sub');
     if (nc) { lbl.textContent = nc.now ? 'Now' : nc.day === 'today' ? 'Next' : `Next · ${nc.day}`; b.textContent = nc.cls.t; sub.textContent = [nc.cls.s, nc.cls.p].filter(Boolean).join(' · '); }
     else { lbl.textContent = 'Timetable'; b.textContent = 'No classes yet'; sub.textContent = 'Add them in Home (Alt+Space)'; }
     if (open.length) { e.querySelector('.todo b').textContent = `${open.length} left`; e.querySelector('.todo .sub').textContent = open[0].text || ''; }
   }
+  // Daily goals (revision, hobby): from the app (Home starts and stops them); the running one keeps counting here
+  let goalsSt = null, goalsAt = 0;
+  const hm = (sec) => { const m = Math.floor(sec / 60); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+  function renderGoals() {
+    const e = widgets.goals; if (!e || e.hidden) return;
+    const g = goalsSt || (preview ? { revision: 4800, hobby: 600, running: 'revision', goal: { revision: 10800, hobby: 1800 } } : null);
+    if (!g) return;
+    for (const k of ['revision', 'hobby']) {
+      const have = g[k] + (g.running === k && goalsSt ? (Date.now() - goalsAt) / 1000 : 0), goal = g.goal[k] || 1;
+      const row = e.querySelector(`.hb[data-k="${k}"]`), n = Math.min(CELLS, Math.floor((have / goal) * CELLS));
+      fillCells(row, n);
+      row.querySelector('em').textContent = `${hm(have)}/${hm(goal)}`;
+      row.classList.toggle('done', have >= goal); row.classList.toggle('run', g.running === k);
+    }
+    e.querySelector('.gh em').textContent = g.running ? `● ${g.running === 'revision' ? 'REVISING' : 'HOBBY'}` : '';
+  }
+  if (!preview && sd?.goals) { sd.onGoals?.((g) => { goalsSt = g; goalsAt = Date.now(); renderGoals(); }); sd.goals().then((g) => { goalsSt = g; goalsAt = Date.now(); renderGoals(); }).catch(() => {}); }
   const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on || cardsLayout())
 
   function placeWidgets() {
@@ -182,7 +210,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
       r.querySelector('.fg').style.strokeDasharray = `${(st[k] / 100) * 97.4} 97.4`;
       const hb = widgets.stats.querySelector(`.hb[data-k="${k}"]`), n = Math.round((st[k] / 100) * CELLS);
       hb.querySelector('em').textContent = `${String(st[k]).padStart(2, '0')}%`;
-      hb.querySelectorAll('.cells s').forEach((c, i) => c.classList.toggle('on', i < n));
+      fillCells(hb, n);
     }
   }
   async function refreshWeather() {
@@ -236,12 +264,12 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     const cityChanged = next.widgets.weather?.city !== s.widgets.weather?.city;
     s = next;
     root.style.setProperty('--a', s.accent);
-    applyBackground(); placeWidgets(); renderMedia(); renderToday(); renderCalendar(); renderReminders(); refreshStats();
+    applyBackground(); placeWidgets(); renderMedia(); renderToday(); renderGoals(); renderCalendar(); renderReminders(); refreshStats();
     if (cityChanged || (widgets.weather && !widgets.weather.hidden && !widgets.weather.dataset.loaded)) refreshWeather(); // also when it's just been switched on
   }
   update(settings);
   const clockT = setInterval(() => { tick(false); renderCalendar(); }, 1000);
-  const todayT = setInterval(() => { if (widgets.today) { widgets.today.hidden = !visible('today', s.widgets.today || {}); renderToday(); } }, 30e3);
+  const todayT = setInterval(() => { if (widgets.today) { widgets.today.hidden = !visible('today', s.widgets.today || {}); renderToday(); } renderGoals(); }, 30e3);
   const statsT = setInterval(refreshStats, 3000);
   const weatherT = setInterval(refreshWeather, 15 * 60e3);
   /** Where each visible widget sits now, as screen fractions (to switch to free placement without a jump). */

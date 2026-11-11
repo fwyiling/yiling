@@ -54,7 +54,8 @@ document.querySelectorAll('.side [data-tab]').forEach((b) => b.onclick = () => {
 // ---------- generic inputs: data-k="path.to.key" ----------
 const getPath = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 const patchOf = (p, v) => p.split('.').reduceRight((acc, k) => ({ [k]: acc }), v);
-const fmt = { 'dock.opacity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
+const mins = (v) => { v = +v; return v >= 60 ? `${Math.floor(v / 60)} h${v % 60 ? ` ${v % 60} min` : ''}` : `${v} min`; };
+const fmt = { 'goals.revision': mins, 'goals.hobby': mins, 'dock.opacity': (v) => `${Math.round(v * 100)}%`, 'wallpaper.dim': (v) => `${Math.round(v * 100)}%` };
 document.querySelectorAll('[data-k]').forEach((el) => {
   const k = el.dataset.k;
   const read = () => (el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : k === 'general.fps' ? +el.value : el.value);
@@ -117,7 +118,7 @@ addEventListener('focus', loadDesks); // a desktop added or renamed while Custom
 loadDesks();
 
 // ---------- widgets list ----------
-const WIDGETS = { clock: 'Clock', greeting: 'Greeting', date: 'Date', stats: 'CPU & memory', weather: 'Weather', quote: 'Quote', media: 'Now playing', today: 'Today (next class, to-dos)', calendar: 'Calendar (Mac layout)', reminders: 'Reminders (Mac layout)' };
+const WIDGETS = { clock: 'Clock', greeting: 'Greeting', date: 'Date', stats: 'CPU & memory', weather: 'Weather', quote: 'Quote', media: 'Now playing', today: 'Today (next class, to-dos)', goals: 'Daily goals (revision, hobby)', calendar: 'Calendar (Mac layout)', reminders: 'Reminders (Mac layout)' };
 $('wlist').replaceChildren(...Object.entries(WIDGETS).map(([k, label]) => {
   const r = document.createElement('div'); r.className = 'wrow'; r.dataset.w = k;
   r.innerHTML = `<input type="checkbox" title="Show"><b>${label}</b><input type="range" min="0.5" max="2" step="0.05" title="Size"><div class="extra"></div>`;
@@ -484,4 +485,4 @@ $('tokSave').onclick = async () => {
   try { paintUpdate(await sd.updateToken(v)); $('tokText').textContent = v.trim() ? 'Token saved (encrypted on this PC).' : 'Token removed.'; }
   catch (e) { $('tokText').textContent = String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
 };
-$('clipClear').onclick = () => { sd.clips('clear'); $('clipClear').textContent = 'Cleared'; setTimeout(() => { $('clipClear').textContent = 'Clear clipboard history'; }, 1500); };
+$('clipClear').onclick = () => { sd.clips('clear'); $('clipClear').textContent = 'Cleared'; setTimeout(() => { $('clipClear').textContent = 'Clear unpinned items'; }, 1500); };
