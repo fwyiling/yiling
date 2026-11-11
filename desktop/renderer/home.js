@@ -1,5 +1,6 @@
 // Home panel (Alt+Space): search apps and the web, pinned apps, to-dos, notes, system stats.
 import { greeting, fmtTime, fmtDate, applyAccent, esc, DAYS, weekday, nextClass, byTime, useTheme } from './common.js';
+import { calc, convert, emoji, fmt } from './instant.js';
 const why = (e) => String(e?.message || e || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/^TypeError: fetch failed$|net::ERR_[A-Z_]+/, "can't reach the internet right now");
 // open an app or file; if Windows can't, Home stays open and says why (it used to fail silently)
 async function openItem(p) {
@@ -139,11 +140,39 @@ function resultMenu(r, x, y) {
   m.style.left = `${Math.min(x, innerWidth - m.offsetWidth - 8)}px`; m.style.top = `${Math.min(y, innerHeight - m.offsetHeight - 8)}px`;
   setTimeout(() => addEventListener('pointerdown', (e) => { if (!m.contains(e.target)) m.remove(); }, { once: true }));
 }
+// instant answers: a sum, a conversion (units, currencies), emoji after ":"
+const rates = new Map(); let copied = '';
+function instantRow(raw) {
+  const cv = convert(raw);
+  if (cv?.currency) {
+    const [from, to, amount] = cv.currency, r = rates.get(from);
+    if (r === undefined) { rates.set(from, null); sd.rates(from).then((v) => { rates.set(from, v || false); renderResults(); }).catch(() => rates.set(from, false)); }
+    if (!r?.rates?.[to]) return r === false ? null : { label: `${fmt(amount)} ${from} → ${to}…`, hint: 'Currency', sym: '¤', run: () => {} };
+    const v = +(amount * r.rates[to]).toFixed(2);
+    return { label: `${fmt(amount)} ${from} = ${v.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${to}`, hint: copied === String(v) ? 'Copied' : `Currency · rates of ${r.date} · Enter copies`, sym: '¤', run: () => copyAnswer(String(v)) };
+  }
+  if (cv?.text) { const v = fmt(+cv.value.toPrecision(10)); return { label: cv.text, hint: copied === v ? 'Copied' : 'Conversion · Enter copies', sym: '⇄', run: () => copyAnswer(v) }; }
+  const c = calc(raw);
+  if (c !== null) { const v = fmt(c); return { label: `= ${v}`, hint: copied === v ? 'Copied' : 'Calculator · Enter copies', sym: '=', big: true, run: () => copyAnswer(v) }; }
+  return null;
+}
+function copyAnswer(v) { sd.copyText(v); copied = v; renderResults(); }
+function renderEmoji(list) {
+  rows = list.map((x) => ({ label: x.e, run: () => sd.pasteText(x.e) }));
+  sel = Math.max(0, Math.min(sel, rows.length - 1));
+  if (!list.length) { $('results').innerHTML = '<div class="res"><span class="muted">No emoji by that name (Win+. has them all)</span></div>'; return; }
+  const grid = document.createElement('div'); grid.className = 'emojis';
+  grid.replaceChildren(...list.map((x, i) => { const b = document.createElement('button'); b.className = i === sel ? 'on' : ''; b.textContent = x.e; b.title = x.words; b.onclick = () => sd.pasteText(x.e); return b; }));
+  const hint = Object.assign(document.createElement('small'), { className: 'muted emoji-hint', textContent: 'Click or Enter puts it where you were typing · arrows move' });
+  $('results').replaceChildren(grid, hint);
+}
 function renderResults() {
   const q = $('q').value.trim().toLowerCase();
   $('results').hidden = !q;
   document.querySelector('.cols').hidden = !!q;
-  if (!q) return;
+  if (!q) { copied = ''; return; }
+  const em = emoji($('q').value);
+  if (em) { renderEmoji(em); return; }
   const pool = [...apps, ...s.home.pins.filter((p) => !apps.some((a) => a.path === p.path))]; // your pinned apps too, even ones the Start menu doesn't know
   const hits = pool.map((a) => [a, score(a.name, q)]).filter(([, sc]) => sc).sort((x, y) => y[1] - x[1] || x[0].name.localeCompare(y[0].name)).slice(0, 8).map(([a]) => a);
   const known = new Set(hits.map((a) => a.path));
@@ -151,14 +180,16 @@ function renderResults() {
   if (fileQ !== q) searchFilesSoon(q);
   const raw = $('q').value.trim();
   const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw) && !raw.includes(' ');
-  rows = [...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => openItem(a.path) })),
+  const answer = instantRow(raw);
+  rows = [...(answer ? [answer] : []), ...hits.map((a) => ({ label: a.name, hint: 'App', app: a, run: () => openItem(a.path) })),
     ...files.map((f) => ({ label: f.name, hint: (f.folder ? 'Folder · ' : '') + f.path.replace(/[\\/][^\\/]+$/, ''), app: { ...f, file: true }, pinnable: PIN_EXT.test(f.path), run: () => openItem(f.path) })),
     isUrl ? { label: raw, hint: 'Open site', run: () => sd.open(/^https?:/i.test(raw) ? raw : `https://${raw}`) } : null,
     { label: `Search the web for “${raw}”`, hint: (s.home.engine || 'google').replace(/^./, (c) => c.toUpperCase()), run: () => sd.open((ENGINES[s.home.engine] || ENGINES.google) + encodeURIComponent(raw)) }].filter(Boolean);
   sel = Math.min(sel, rows.length - 1);
   $('results').replaceChildren(...rows.map((r, i) => {
     const d = document.createElement('div'); d.className = 'res' + (i === sel ? ' on' : '');
-    d.append(r.app ? iconEl(r.app) : Object.assign(document.createElement('div'), { className: 'ph', textContent: r.hint === 'Open site' ? '↗' : '⌕' }));
+    if (r.sym) d.classList.add('answer'); if (r.big) d.classList.add('big');
+    d.append(r.app ? iconEl(r.app) : Object.assign(document.createElement('div'), { className: 'ph', textContent: r.sym || (r.hint === 'Open site' ? '↗' : '⌕') }));
     d.append(Object.assign(document.createElement('span'), { textContent: r.label }), Object.assign(document.createElement('small'), { textContent: r.hint }));
     if (r.app && (!r.app.file || r.pinnable)) d.append(pinButton(r.app)); // documents and folders open; apps can also be pinned
     d.onclick = () => r.run();
@@ -168,6 +199,11 @@ function renderResults() {
 }
 $('q').oninput = () => { sel = 0; renderResults(); };
 $('q').onkeydown = (e) => {
+  if (emoji($('q').value)) { // the emoji grid: arrows move in two directions
+    const cols = Math.max(1, Math.floor(($('results').querySelector('.emojis')?.clientWidth || 600) / 46));
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key];
+    if (step) { sel = Math.max(0, Math.min(rows.length - 1, sel + step)); renderResults(); e.preventDefault(); return; }
+  }
   if (e.key === 'ArrowDown') { sel = Math.min(rows.length - 1, sel + 1); renderResults(); e.preventDefault(); }
   else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); renderResults(); e.preventDefault(); }
   else if (e.key === 'Enter' && e.ctrlKey && rows[sel]?.app) { $('results').children[sel]?.querySelector('.rpin')?.click(); e.preventDefault(); }

@@ -161,3 +161,11 @@ body.dropping #panel::after { content: "Drop to pin"; position: absolute; inset:
 .clip:hover .ic, .clip.pinned .pin { opacity: 1; } .clip .ic:hover { background: rgba(255, 255, 255, .1); color: var(--t); } .clip.pinned .pin { color: var(--a); }
 .clip .ic svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 #clipHint { font-size: 12px; margin-right: 8px; }
+
+/* instant answers and emoji */
+.res.answer span { font-weight: 600; } .res.big span { font-size: 22px; font-variant-numeric: tabular-nums; }
+.res.answer .ph { display: grid; place-items: center; font-weight: 700; color: var(--a); background: color-mix(in srgb, var(--a) 18%, transparent); }
+.emojis { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; padding: 4px; }
+.emojis button { height: 42px; border: 0; border-radius: 10px; background: none; font-size: 24px; cursor: pointer; font-family: "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.emojis button:hover, .emojis button.on { background: color-mix(in srgb, var(--a) 22%, transparent); }
+.emoji-hint { display: block; padding: 4px 8px 2px; font-size: 12px; }

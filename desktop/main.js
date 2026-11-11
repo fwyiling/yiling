@@ -1,5 +1,5 @@
 // Syndicates Desktop – animated wallpaper + desktop widgets + a Home panel for Windows.
-const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, screen, ipcMain, globalShortcut, shell, dialog, protocol, net, powerMonitor, nativeImage, session, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -1398,6 +1398,19 @@ function wireIpc() {
     if (!topWin || e.sender !== topWin.webContents || !win32.isWin) return;
     await goToDesk(target);
     topApp = ''; topbarTick();
+  });
+  const fromHomeWin = (e) => homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents;
+  // Home's instant answers: copy a result, paste an emoji where you were, currency rates (ECB, via Frankfurter)
+  ipcMain.handle('home:copy', (e, t) => { if (fromHomeWin(e) && typeof t === 'string') clipboard.writeText(t.slice(0, 1000)); });
+  ipcMain.handle('home:paste', (e, t) => { if (!fromHomeWin(e) || typeof t !== 'string') return; clipboard.writeText(t.slice(0, 1000)); hideHome(); if (win32.isWin) setTimeout(() => win32.pressKeys([0x11, 0x56]), 180); });
+  const rateCache = new Map();
+  ipcMain.handle('home:rates', async (_e, base) => {
+    base = String(base || '').toUpperCase(); if (!/^[A-Z]{3}$/.test(base)) return null;
+    const hit = rateCache.get(base); if (hit && Date.now() - hit.t < 6 * 3600e3) return hit.v;
+    const r = await net.fetch(`https://api.frankfurter.app/latest?from=${base}`, { headers: { Accept: 'application/json' } }).catch(() => null);
+    if (!r?.ok) return null;
+    const j = await r.json().catch(() => null); if (!j?.rates) return null;
+    const v = { date: j.date, rates: j.rates }; rateCache.set(base, { t: Date.now(), v }); return v;
   });
   // clipboard history (Home)
   const fromHome = (e) => homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents;
