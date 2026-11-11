@@ -37,6 +37,15 @@
       <footer><span id="cBattery"></span><button class="ic-b" data-page="home" title="Windows Settings"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></footer>
     </section>
   </div>
+  <!-- sound: the volume, where it plays, everything playing, and each app's own volume (Windows' volume mixer, here) -->
+  <div id="sound" class="panel pad" hidden>
+    <div class="ph"><b>Sound</b></div>
+    <div class="slide" id="mSlide"><button id="mMute" class="ic-b" title="Mute"><svg viewBox="0 0 24 24" class="ic"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path class="wave" d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/><path class="x" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg></button><input type="range" min="0" max="100" id="mVol"><em id="mVolV"></em></div>
+    <div class="grp" id="mOutsGrp" hidden><small>Output</small><div id="mOuts" class="outs flat"></div></div>
+    <div class="grp" id="mPlayGrp" hidden><small>Playing</small><ul id="mPlay" class="plays"></ul></div>
+    <div class="grp"><small>Apps</small><ul id="mApps" class="mixer"><li class="empty muted">Nothing is making sound.</li></ul></div>
+    <footer class="pf"><button class="link" data-page="sound">Sound settings</button><button class="link" data-page="mixer">Windows volume mixer</button></footer>
+  </div>
   <!-- Wi-Fi networks -->
   <div id="wifi" class="panel pad" hidden>
     <div class="ph"><b>Wi-Fi</b><button id="wifiRefresh" class="ic-b" title="Scan again"><svg viewBox="0 0 24 24" class="ic"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4"/></svg></button><label class="sw"><input type="checkbox" id="wifiOn"><i></i></label></div>

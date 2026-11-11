@@ -50,7 +50,7 @@ function Read-Art($p) {
 $in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 512
 $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
-$last = ''; $lastKey = ''; $art = ''; $artTries = 0; $artError = ''; $cmdResult = ''; $tick = 0
+$last = ''; $lastKey = ''; $art = ''; $artTries = 0; $artError = ''; $cmdResult = ''; $tick = 0; $all = @()
 while ($true) {
   $poll = ($tick % 2) -eq 0 # about twice a second
   if ($rd.IsCompleted) {
@@ -60,6 +60,10 @@ while ($true) {
       $c = $c.Trim(); if (-not $c -or $c -eq 'poll') { continue } # 'poll': just read the state again (below)
       try {
         $s = $mgr.GetCurrentSession(); $op = $null
+        if ($c -match '^(toggle|next|prev) ([A-Za-z0-9+/=]+)$') { # one particular player (the sound panel lists them all)
+          $c = $Matches[1]; $want = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches[2]))
+          $s = $mgr.GetSessions() | Where-Object { $_.SourceAppUserModelId -eq $want } | Select-Object -First 1
+        }
         if ($s) {
           if ($c -eq 'toggle') { $op = $s.TryTogglePlayPauseAsync() }
           elseif ($c -eq 'next') { $op = $s.TrySkipNextAsync() }
@@ -72,6 +76,12 @@ while ($true) {
     $rd = $in.ReadAsync($buf, 0, $buf.Length); $poll = $true
   }
   if (($tick % 40) -eq 0 -and -not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { exit 0 }
+  if ($poll -and ($tick % 4) -eq 0) { # every player Windows knows (several can play at once), about once a second
+    $all = @(); try { foreach ($x in $mgr.GetSessions()) { try {
+      $xp = Await ($x.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+      $all += [ordered]@{ app = $x.SourceAppUserModelId; title = $xp.Title; artist = $xp.Artist; playing = ($x.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing') }
+    } catch {} } } catch {}
+  }
   if ($poll) {
     $o = [ordered]@{ on = $false }
     try {
@@ -90,8 +100,9 @@ while ($true) {
           dur = $dur; pos = $(if ($playing) { 0 } else { [math]::Round($pos) }); t0 = $t0; canSeek = [bool]$pi.Controls.IsPlaybackPositionEnabled }
       }
     } catch { $o = [ordered]@{ on = $false; error = $_.Exception.Message } }
+    $o.sessions = @($all)
     # non-ASCII (Chinese, Japanese, emoji…) as \\uXXXX escapes: the text survives whatever the console code page is
-    $j = [regex]::Replace(($o | ConvertTo-Json -Compress), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
+    $j = [regex]::Replace(($o | ConvertTo-Json -Compress -Depth 4), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
     if ($j -ne $last) { [Console]::Out.WriteLine($j); [Console]::Out.Flush(); $last = $j }
   }
   $tick++
@@ -116,7 +127,8 @@ function start() {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line.startsWith('{')) continue;
       try { const j = JSON.parse(line); restarts = 0; emit({ on: !!j.on, title: j.title || '', artist: j.artist || '', app: j.app || '', playing: !!j.playing, art: j.art || '', artError: j.artError || '', cmd: j.cmd || '', error: j.error || '',
-        dur: +j.dur || 0, pos: +j.pos || 0, t0: +j.t0 || 0, canSeek: !!j.canSeek }); } catch {}
+        dur: +j.dur || 0, pos: +j.pos || 0, t0: +j.t0 || 0, canSeek: !!j.canSeek,
+        sessions: (Array.isArray(j.sessions) ? j.sessions : j.sessions ? [j.sessions] : []).filter((x) => x && x.app).slice(0, 12).map((x) => ({ app: String(x.app), title: String(x.title || ''), artist: String(x.artist || ''), playing: !!x.playing })) }); } catch {}
     }
   });
   let lastErr = '';
@@ -141,7 +153,12 @@ function resume() { stopped = false; restarts = 0; start(); }
 const KEYS = { toggle: 0xB3, next: 0xB0, prev: 0xB1 };
 // Through Windows' media session (works with players that ignore media keys, e.g. NetEase Cloud Music);
 // the media keys are only the fallback when the reader isn't running.
-function control(cmd) {
+function control(cmd, app) {
+  if (app) { // one particular player, by its app id
+    if (!KEYS[cmd] || !state.sessions?.some((x) => x.app === app) || !child?.stdin.writable) return;
+    child.stdin.write(`${cmd} ${Buffer.from(app, 'utf8').toString('base64')}\n`); setTimeout(() => child?.stdin.writable && child.stdin.write('poll\n'), 450);
+    return;
+  }
   const seek = /^seek (\d{1,6}(\.\d+)?)$/.exec(cmd); // jump to a time in the song (seconds); needs the reader
   if (seek) { if (child && child.stdin.writable) { child.stdin.write(`seek ${seek[1]}\n`); setTimeout(() => child?.stdin.writable && child.stdin.write('poll\n'), 350); } return; }
   if (!KEYS[cmd]) throw new Error('unknown media command');

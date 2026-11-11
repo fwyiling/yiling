@@ -144,6 +144,7 @@ function bind() {
   // live window previews: DWM draws another window, scaled, into one of ours (how the taskbar's previews work: no screenshots)
   u.DWM_THUMBNAIL_PROPERTIES = koffi.struct('DWM_THUMBNAIL_PROPERTIES', { dwFlags: 'uint32', rcDestination: RECT, rcSource: RECT, opacity: 'uint8', fVisible: 'int32', fSourceClientAreaOnly: 'int32' });
   u.SIZE = koffi.struct('SIZE', { cx: 'long', cy: 'long' });
+  u.DwmSetWindowAttribute = u.dwmapi.func('long __stdcall DwmSetWindowAttribute(intptr_t hwnd, uint32 attr, int32_t *value, uint32 size)');
   u.DwmRegisterThumbnail = u.dwmapi.func('long __stdcall DwmRegisterThumbnail(intptr_t dest, intptr_t src, _Out_ intptr_t *thumb)');
   u.DwmUnregisterThumbnail = u.dwmapi.func('long __stdcall DwmUnregisterThumbnail(intptr_t thumb)');
   u.DwmUpdateThumbnailProperties = u.dwmapi.func('long __stdcall DwmUpdateThumbnailProperties(intptr_t thumb, DWM_THUMBNAIL_PROPERTIES *props)');
@@ -402,6 +403,12 @@ function setBlur(win, on) {
   } finally { u.koffi.free(ptr); }
 }
 
+/** No Windows fade when the window shows or hides: the page animates itself (two animations read as opening twice). */
+function noTransitions(win) {
+  if (!load()) return false;
+  return u.DwmSetWindowAttribute(hwndOf(win), 3, [1], 4) === 0; // DWMWA_TRANSITIONS_FORCEDISABLED
+}
+
 /** Have Explorer draw the desktop again (after the app's wallpaper windows are gone, Windows' own shows). */
 function repaintDesktop() {
   if (!load()) return false;
@@ -429,6 +436,8 @@ function explorerTray() {
   }
   return other;
 }
+/** Explorer's process id (it changes when Explorer restarts, and with it the backgrounds it keeps per desktop). */
+function explorerPid() { if (!load()) return 0; const h = explorerTray(); if (isNull(h)) return 0; const pid = [0]; u.GetWindowThreadProcessId(h, pid); return pid[0]; }
 const appbar = (hwnd, extra = {}) => ({ cbSize: u.koffi.sizeof(u.APPBARDATA), hWnd: hwnd, uCallbackMessage: 0, uEdge: 3, rc: { left: 0, top: 0, right: 0, bottom: 0 }, lParam: 0, ...extra });
 function taskbarAutoHide() {
   if (!load()) return false;
@@ -853,6 +862,8 @@ module.exports = {
   focusOwn: safe('focusOwn', (win) => focusWindow(hwndOf(win), false), false),
   repaintDesktop: safe('repaintDesktop', repaintDesktop, false),
   setBlur: safe('setBlur', setBlur, false),
+  noTransitions: safe('noTransitions', noTransitions, false),
+  explorerPid: safe('explorerPid', explorerPid, 0),
   dragState: safe('dragState', dragState, null),
   edgeSnap: safe('edgeSnap', edgeSnap, false),
   regString: safe('regString', regString, ''),

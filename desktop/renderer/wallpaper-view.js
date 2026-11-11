@@ -167,9 +167,10 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
       w.querySelector('.place').textContent = r.place;
       w.querySelector('.wi').innerHTML = weatherIcon(r.code, r.day);
       w.querySelector('.hl').textContent = Number.isFinite(r.hi) ? `H:${r.hi}° L:${r.lo}°` : '';
+      w.dataset.done = '1';
       w.querySelector('.hours').replaceChildren(...(r.hourly || []).map((h) => { const d = el('div', 'hr'); d.innerHTML = `<small>${String(h.hour).padStart(2, '0')}</small><i>${weatherIcon(h.code, h.hour >= 6 && h.hour < 19)}</i><b>${h.temp}°</b>`; return d; }));
     }
-    catch (e) { w.querySelector('.t').textContent = '–'; w.querySelector('.d').textContent = String(e?.message || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/fetch failed|net::ERR_\w+/, "can't reach the weather service") || 'Weather unavailable'; }
+    catch (e) { w.dataset.done = '1'; w.querySelector('.t').textContent = '–'; w.querySelector('.d').textContent = String(e?.message || '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/fetch failed|net::ERR_\w+/, "can't reach the weather service") || 'Weather unavailable'; }
   }
 
   function renderMedia() {
@@ -227,6 +228,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
   return {
     update,
     positions,
+    refreshWeather,
     widgets,
     pause(p) { media.querySelectorAll('video').forEach((v) => (p ? v.pause() : v.play().catch(() => {}))); root.classList.toggle('paused', p); },
     /** Another virtual desktop is showing (or, in Customize, being edited): its wallpaper. */

@@ -109,8 +109,8 @@ for (const [id, what] of [['bright', 'brightness'], ['vol', 'volume']]) {
 }
 $('muteBtn').onclick = () => sd.setSys('mute', !sys?.muted);
 $('cMedia').querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.mediaControl(b.dataset.m).catch(() => {}));
-sd.onSys((st) => { sys = st; renderSys(); });
-sd.onMedia((m) => { np = m; renderMedia(); });
+sd.onSys((st) => { sys = st; renderSys(); renderSound(); });
+sd.onMedia((m) => { np = m; renderMedia(); renderPlaying(); });
 
 // ---------- Wi-Fi ----------
 const bars = (sig) => { const n = sig >= 75 ? 3 : sig >= 45 ? 2 : sig >= 20 ? 1 : 0; return `<svg viewBox="0 0 24 24">${['M2.5 9.5a14 14 0 0 1 19 0', 'M5.8 13a9 9 0 0 1 12.4 0', 'M9.2 16.4a4 4 0 0 1 5.6 0'].map((d, i) => `<path d="${d}" opacity="${3 - i <= n ? 1 : .3}"/>`).join('')}<circle cx="12" cy="19.6" r=".9"/></svg>`; };
@@ -235,7 +235,7 @@ $('fPlus').onclick = () => { fMins = Math.min(240, fMins + 5); $('fMins').textCo
 $('fStart').onclick = () => { sd.timer('start', fMins * 60); sd.flyoutAction('close'); }; // runs in the island
 
 // ---------- which panel ----------
-const PANELS = ['menu', 'control', 'wifi', 'battery', 'calendar', 'shots', 'windows', 'trayp'];
+const PANELS = ['menu', 'control', 'sound', 'wifi', 'battery', 'calendar', 'shots', 'windows', 'trayp'];
 let lastPanel = '', lastShown = 0;
 function showPanel(panel) {
   if (panel === lastPanel && Date.now() - lastShown < 300) return; // the same request twice (message + ask): draw once
@@ -244,6 +244,7 @@ function showPanel(panel) {
   if (panel !== 'windows') sd.thumbs([]).catch(() => {});
   if (panel === 'menu') renderMenu();
   else if (panel === 'control') { renderSys(); renderMedia(); renderBattery(); }
+  else if (panel === 'sound') { renderSound(true); renderPlaying(true); }
   else if (panel === 'wifi') { openNet = ''; renderWifi(); }
   else if (panel === 'battery') renderBatteryPanel();
   else if (panel === 'calendar') { calBase = new Date(); calBase.setDate(1); renderCalendar(); }
@@ -349,3 +350,76 @@ async function renderTrayPanel(list) {
 sd.onTray?.((list) => { if (!$('trayp').hidden) renderTrayPanel(list); });
 sd.onSettings?.(() => { if (!$('trayp').hidden) renderTrayPanel(); });
 useTheme('panels'); // Customize > Themes
+
+// ---------- sound: the volume, the output, everything playing, each app's own volume ----------
+const SPK = '<svg viewBox="0 0 24 24" class="ic"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path class="wave" d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/><path class="x" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>';
+const appLabel = (id) => (id || '').split(/[!\\]/).pop().replace(/\.exe$/i, '').replace(/_[a-z0-9]{13}$/i, '').replace(/^\w/, (c) => c.toUpperCase());
+let mDrag = false; const appDrag = new Set(); const appIcons = {};
+function renderSound(force) {
+  if ($('sound').hidden || !sys) return;
+  if (!mDrag && sys.volume >= 0) { $('mVol').value = sys.muted ? 0 : sys.volume; $('mVolV').textContent = sys.muted ? 'Off' : sys.volume; fill($('mVol')); }
+  $('mSlide').classList.toggle('muted', !!sys.muted);
+  // where sound plays
+  const outs = Array.isArray(sys.outputs) ? sys.outputs.filter((o) => o.id && o.name) : [];
+  $('mOutsGrp').hidden = outs.length < 2;
+  const okey = outs.map((o) => o.id).join('|') + '>' + sys.output;
+  if (outs.length >= 2 && (force || $('mOuts').dataset.key !== okey)) {
+    $('mOuts').dataset.key = okey;
+    $('mOuts').replaceChildren(...outs.map((o) => {
+      const b = document.createElement('button'); b.className = o.id === sys.output ? 'on' : ''; b.title = o.name;
+      b.innerHTML = '<i></i><span></span>'; b.querySelector('span').textContent = o.name;
+      b.onclick = () => { $('mOuts').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); sd.setSys('output', o.id).catch(() => {}); };
+      return b;
+    }));
+  }
+  // each app's own volume (what Windows' volume mixer shows), the ones playing first
+  const apps = (Array.isArray(sys.apps) ? sys.apps : []).slice().sort((a, b) => (b.playing - a.playing) || String(a.name).localeCompare(String(b.name)));
+  const akey = apps.map((a) => `${a.pid}:${a.name}`).join('|');
+  const list = $('mApps');
+  if (force || list.dataset.key !== akey) {
+    list.dataset.key = akey;
+    if (!apps.length) list.innerHTML = '<li class="empty muted">Nothing is making sound.</li>';
+    else list.replaceChildren(...apps.map((a) => {
+      const li = document.createElement('li'); li.dataset.pid = a.pid;
+      const ic = appIcons[a.exe] ? `<img src="${appIcons[a.exe]}" alt="">` : `<span class="ph">${(a.name || '?').slice(0, 1).toUpperCase()}</span>`;
+      li.innerHTML = `${ic}<div class="n"><i></i><span></span><em></em></div><input type="range" min="0" max="100"><button class="ic-b" title="Mute">${SPK}</button>`;
+      li.querySelector('.n span').textContent = a.name || 'App';
+      const r = li.querySelector('input'); let t;
+      r.oninput = () => { appDrag.add(a.pid); fill(r); li.querySelector('em').textContent = r.value; clearTimeout(t); t = setTimeout(() => sd.setSys('appvol', [a.pid, +r.value]).catch(() => {}), 40); };
+      r.onchange = () => { sd.setSys('appvol', [a.pid, +r.value]).catch(() => {}); setTimeout(() => appDrag.delete(a.pid), 1200); };
+      li.querySelector('button').onclick = () => sd.setSys('appmute', [a.pid, !li.classList.contains('muted')]).catch(() => {});
+      return li;
+    }));
+    if (apps.some((a) => a.exe && !(a.exe in appIcons))) sd.appIcons().then((m) => { Object.assign(appIcons, m); for (const a of apps) if (!(a.exe in appIcons)) appIcons[a.exe] = ''; renderSound(true); }).catch(() => {});
+  }
+  for (const a of apps) {
+    const li = list.querySelector(`li[data-pid="${a.pid}"]`); if (!li) continue;
+    li.classList.toggle('playing', !!a.playing); li.classList.toggle('muted', !!a.muted);
+    if (!appDrag.has(a.pid)) { const r = li.querySelector('input'); r.value = a.muted ? 0 : a.volume; fill(r); li.querySelector('em').textContent = a.muted ? 'Off' : a.volume; }
+  }
+}
+// every player Windows knows, several at once: each with its own play / pause and skip
+function renderPlaying(force) {
+  if ($('sound').hidden) return;
+  const list = (np?.sessions || []).slice().sort((a, b) => b.playing - a.playing);
+  $('mPlayGrp').hidden = !list.length;
+  const key = list.map((x) => [x.app, x.title, x.artist, x.playing].join('\t')).join('\n');
+  if (!force && $('mPlay').dataset.key === key) return;
+  $('mPlay').dataset.key = key;
+  $('mPlay').replaceChildren(...list.map((x) => {
+    const li = document.createElement('li'); if (x.playing) li.className = 'on';
+    li.innerHTML = '<div class="t"><small></small><b></b><span></span></div><div class="c">'
+      + '<button data-c="prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 6l-8 6 8 6z"/></svg></button>'
+      + '<button data-c="toggle" title="Play / pause"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg></button>'
+      + '<button data-c="next" title="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button></div>';
+    li.querySelector('small').textContent = appLabel(x.app); li.querySelector('b').textContent = x.title || 'Unknown title'; li.querySelector('span').textContent = x.artist || '';
+    for (const b of li.querySelectorAll('[data-c]')) b.onclick = () => sd.mediaControl(b.dataset.c, x.app).catch(() => {});
+    return li;
+  }));
+}
+{
+  const r = $('mVol'); let t;
+  r.oninput = () => { mDrag = true; fill(r); $('mVolV').textContent = r.value; clearTimeout(t); t = setTimeout(() => sd.setSys('volume', +r.value), 40); };
+  r.onchange = () => { sd.setSys('volume', +r.value); setTimeout(() => { mDrag = false; }, 600); };
+  $('mMute').onclick = () => sd.setSys('mute', !sys?.muted);
+}

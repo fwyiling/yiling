@@ -132,10 +132,20 @@ function scheduleHomeRelease() {
   if (winKeyOn()) return; // it's the Start menu now: kept ready, so the Windows key opens it at once
   homeRelease = setTimeout(() => { if (homeWin && !homeWin.isDestroyed() && !homeWin.isVisible()) { homeWin.destroy(); homeWin = null; } }, 15 * 60e3);
 }
+// hidden in two steps: the page clears itself first (search, results, the panel faded out), so the next opening
+// starts from nothing and plays its one animation, instead of flashing the last frame and then animating again
+let homeHideT = 0;
+function hideHome() {
+  if (!homeWin || homeWin.isDestroyed() || !homeWin.isVisible()) return;
+  homeWin.webContents.send('home-hidden');
+  clearTimeout(homeHideT);
+  homeHideT = setTimeout(() => { if (homeWin && !homeWin.isDestroyed()) homeWin.hide(); }, 70);
+  scheduleHomeRelease();
+}
 function toggleHome(force, mode = '') {
   const show = force ?? !(homeWin && homeWin.isVisible());
-  if (!show) { homeWin?.hide(); scheduleHomeRelease(); return; }
-  clearTimeout(homeRelease);
+  if (!show) { hideHome(); return; }
+  clearTimeout(homeRelease); clearTimeout(homeHideT);
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   if (!homeWin || homeWin.isDestroyed()) {
     homeWin = new BrowserWindow({
@@ -143,8 +153,9 @@ function toggleHome(force, mode = '') {
       backgroundColor: '#00000000', title: 'Syndicates Home', webPreferences: webPrefs,
     });
     homeWin.setMenu(null);
+    if (win32.isWin) win32.noTransitions(homeWin);
     homeWin.loadURL(ui('home.html'));
-    homeWin.on('blur', () => { homeWin?.hide(); scheduleHomeRelease(); });
+    homeWin.on('blur', () => hideHome());
     homeWin.on('closed', () => { homeWin = null; });
     // shown once the page has drawn its content (not on the first empty paint, which looked like loading twice)
     let shown = false;
@@ -489,7 +500,7 @@ function syncWallAccent() {
 }
 // ---------- themes ----------
 const themeBundle = () => themes.bundle(store.get().themes?.active);
-function broadcastTheme() { const b = themeBundle(); all().forEach((w) => w.webContents.send('theme', b)); }
+function broadcastTheme() { const b = themeBundle(); all().forEach((w) => w.webContents.send('theme', b)); themeStamp++; syncWindowsWallpaper(3000); }
 // which virtual desktop is showing (its id), for a different wallpaper on each desktop
 let deskId = '';
 function readDeskId() { if (win32.isWin) { const v = win32.virtualDesktops(); deskId = v.ids[v.current] || deskId; } return deskId; }
@@ -785,7 +796,7 @@ function startDockExtras() {
 // ---------- themed pop-ups: the top bar's menu and the control centre (instead of Windows' own) ----------
 let flyWin = null;
 let flyHiddenAt = 0, flyShownAt = 0;
-const FLY = { tray: { w: 300, h: 330 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 280, h: 486 }, control: { w: 380, h: 580 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
+const FLY = { tray: { w: 300, h: 330 }, shots: { w: 396, h: 470, dock: true }, menu: { w: 280, h: 486 }, control: { w: 380, h: 580 }, sound: { w: 360, h: 600 }, wifi: { w: 330, h: 470 }, battery: { w: 330, h: 430 }, calendar: { w: 360, h: 600 } };
 // an app's windows, as live previews (a dock icon with several windows): as many cards as windows, 4 to a row
 const WIN_CARD = { w: 212, h: 150, gap: 10 };
 function windowsPanelSize(n) {
@@ -935,65 +946,94 @@ function power([exe, args]) {
 }
 
 // ---------- Windows' own background, kept as a still of ours ----------
-// Windows draws its own wallpaper for a moment while desktops slide (and before the app has started). If that's a
-// different picture, or the same one cropped differently, every switch shows a jump. So Windows' background is set
-// to a still of this wallpaper, rendered by the same page at the screen's real size: the picture and its darkening,
-// no widgets. What Windows had before is remembered and put back when this is switched off or nothing is picked.
-// Windows 11 keeps a background per desktop, and setting it reaches the desktop showing: so each desktop gets its
-// still when you're on it (once per picture), which also covers a different wallpaper on each desktop.
-let stillT = 0, stillBusy = false;
-const stillSet = new Map(); // desktop id -> the still it was given this run
-// Windows 11 can keep a background per desktop (and shows it while sliding to that desktop). A desktop whose own
-// background is an old picture of ours gets the right one, so a slide never shows yesterday's still or frozen widgets.
-function fixOtherDesks(file) {
-  if (!file || !win32.isWin) return;
-  for (const id of win32.virtualDesktops().ids) {
-    if (id === deskId) continue;
-    const own = win32.regString(DESK_KEY(id), 'Wallpaper');
-    if (own && isOurPicture(own) && path.resolve(own).toLowerCase() !== path.resolve(file).toLowerCase()) win32.regSetString(DESK_KEY(id), 'Wallpaper', file);
-  }
+// Windows draws its own background while desktops slide (and before the app has started), not our window. So that
+// background is a still of the desktop as it looks right now: the same page rendered offscreen at the screen's real
+// pixels, picture, darkening and widgets (not the ones that tick, the clock and CPU), fitted 1:1 with "fill". It's
+// made again whenever what it shows changes (the weather, a to-do, the song, the date, a setting, a theme), so
+// during a slide you see the same widgets in the same place and nothing pops when the slide ends.
+// It goes onto every desktop at once through the shell's desktop interface (vdesk.js), so no desktop keeps an old
+// picture; where that isn't available, a desktop gets it when you're on it. What Windows had before is remembered
+// and put back when this is switched off or nothing is picked.
+let stillT = 0, stillBusy = false, stillLast = 0, themeStamp = 0, lastWeatherJson = '';
+const stillApplied = new Map(); // desktop id -> the content key its still shows
+const STILL_GAP = 15000; // at most one new still every 15 s (songs change, weather loads…)
+const sha = (x) => require('crypto').createHash('sha1').update(x).digest('hex').slice(0, 16);
+const mediaKey = () => { const m = media.get(); return m.on ? [m.title, m.artist, m.playing, !!m.art].join('|') : 'off'; };
+function stillKey(desk) {
+  const st = store.get(), w = wallFor(st.wallpaper, desk), d = screen.getPrimaryDisplay(), now = new Date();
+  return sha(JSON.stringify([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size, d.scaleFactor, st.widgets, st.home?.todos, st.home?.timetable, st.name, st.accent,
+    st.themes?.active, themeStamp, lastWeatherJson, mediaKey(), now.toDateString(), now.getHours(), st.dock?.on]));
+}
+function loadApplied() { // across restarts of the app, for as long as Explorer keeps running
+  const saved = store.get().wallpaper.stillApplied, pid = win32.explorerPid();
+  if (saved && pid && saved.explorer === pid) for (const [k, v] of Object.entries(saved.desks || {})) stillApplied.set(k, v);
+}
+const saveApplied = () => store.set({ wallpaper: { stillApplied: { explorer: win32.explorerPid(), desks: Object.fromEntries(stillApplied) } } });
+async function renderStill(desk, key) {
+  const d = screen.getPrimaryDisplay(), want = path.join(STILL_DIR(), `still-${key}.jpg`);
+  if (fs.existsSync(want)) return want;
+  const shot = await lockscreen.snapshot(STILL_DIR(), ui('wallpaper.html', `?snapshot=1&still=1&desk=${encodeURIComponent(desk)}`), webPrefs.preload);
+  // exactly the screen's pixels (Windows draws it 1:1 with "fill"), whatever size the snapshot came out
+  const img = nativeImage.createFromPath(shot), px = { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
+  const sz = img.getSize();
+  if (!img.isEmpty() && (sz.width !== px.width || sz.height !== px.height)) { fs.writeFileSync(want, img.resize({ ...px, quality: 'best' }).toJPEG(92)); fs.rmSync(shot, { force: true }); }
+  else fs.renameSync(shot, want);
+  return want;
+}
+function pruneStills() {
+  const keep = new Set([...stillApplied.values()].map((k) => `still-${k}.jpg`));
+  const old = fs.readdirSync(STILL_DIR()).filter((f) => /^still-[0-9a-f]+\.jpg$/.test(f) && !keep.has(f)).map((f) => ({ f, t: fs.statSync(path.join(STILL_DIR(), f)).mtimeMs })).sort((x, y) => y.t - x.t).slice(4);
+  for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true });
+}
+/** Put a picture on desktop id (Windows' background there). The one showing: as Windows sets backgrounds; others: through the shell. */
+async function setDeskBackground(id, i, file, style, cur) {
+  if (id === cur) return win32.setWindowsWallpaper(file, style);
+  if (!vdesk.status().ready) vdesk.start();
+  return !!(await vdesk.wallpaper(i, file));
 }
 function syncWindowsWallpaper(delay = 1500) {
   clearTimeout(stillT);
   stillT = setTimeout(async function run() {
     if (!win32.isWin || app.isQuitting) return;
     if (quiet() || stillBusy) { stillT = setTimeout(run, 400); return; }
-    const st = store.get(), desk = deskId, w = wallFor(st.wallpaper, desk), now = winwallFile(desk);
-    const picked = !!(w.scene === 'web' ? w.url : w.file);
-    if (!st.wallpaper.matchWindows || !picked) { // off, or nothing picked (Windows' background is the wallpaper): the user's own back
-      const own = ownWindowsBackground();
-      if (isOurPicture(now) && own) win32.setWindowsWallpaper(own, own === st.wallpaper.prevWindows ? st.wallpaper.prevStyle || null : 10);
-      fixOtherDesks(own);
-      stillSet.delete(desk);
-      return;
-    }
-    const d = screen.getPrimaryDisplay();
-    const key = require('crypto').createHash('sha1').update([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size.width, d.size.height, d.scaleFactor].join('|')).digest('hex').slice(0, 16);
-    const want = path.join(STILL_DIR(), `still-${key}.jpg`);
-    const filled = win32.regString('Control Panel\\Desktop', 'WallpaperStyle') === '10'; // a still from an earlier version may have another fit
-    if (filled && (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want)))) { stillSet.set(desk, want); if (!st.wallpaper.perDesk) fixOtherDesks(want); return; }
+    if (gamer) { stillT = setTimeout(run, 60e3); return; } // not while playing
+    const st = store.get(), v = win32.virtualDesktops(), ids = v.ids.length ? v.ids : [deskId || 'local'], cur = ids.includes(deskId) ? deskId : ids[v.current] || ids[0];
+    if (!stillApplied.size) loadApplied();
+    const pickedOn = (id) => { const w = wallFor(st.wallpaper, id); return !!(w.scene === 'web' ? w.url : w.file); };
     stillBusy = true;
     try {
-      if (!fs.existsSync(want)) {
-        const shot = await lockscreen.snapshot(STILL_DIR(), ui('wallpaper.html', '?snapshot=1&plain=1'), webPrefs.preload);
-        if (deskId !== desk || quiet()) { fs.rmSync(shot, { force: true }); stillBusy = false; stillT = setTimeout(run, 600); return; } // another desktop by now: its picture, not this one
-        // exactly the screen's pixels (Windows draws it 1:1 with "fill"), whatever size the snapshot came out
-        const img = nativeImage.createFromPath(shot), px = { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
-        const sz = img.getSize();
-        if (!img.isEmpty() && (sz.width !== px.width || sz.height !== px.height)) { fs.writeFileSync(want, img.resize({ ...px, quality: 'best' }).toJPEG(92)); fs.rmSync(shot, { force: true }); }
-        else fs.renameSync(shot, want);
-        const old = fs.readdirSync(STILL_DIR()).filter((f) => /^still-[0-9a-f]+\.jpg$/.test(f)).map((f) => ({ f, t: fs.statSync(path.join(STILL_DIR(), f)).mtimeMs })).sort((x, y) => y.t - x.t).slice(12);
-        for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true }); // a dozen is plenty
+      if (!st.wallpaper.matchWindows || !ids.some(pickedOn)) { // off, or nothing picked (Windows' background is the wallpaper): the user's own back
+        const own = ownWindowsBackground();
+        if (own) for (const [i, id] of ids.entries()) if (isOurPicture(winwallFile(id)) || stillApplied.has(id)) { await setDeskBackground(id, i, own, own === st.wallpaper.prevWindows ? st.wallpaper.prevStyle || null : 10, cur); stillApplied.delete(id); }
+        saveApplied();
+        return;
       }
-      const prev = st.wallpaper.prevWindows;
+      const now = winwallFile(cur), prev = st.wallpaper.prevWindows;
       if (now && !isOurPicture(now) && (!prev || isOurPicture(prev))) store.set({ wallpaper: { prevWindows: now, prevStyle: win32.regString('Control Panel\\Desktop', 'WallpaperStyle') || '10' } });
       else if (prev && isOurPicture(prev)) store.set({ wallpaper: { prevWindows: '', prevStyle: '' } }); // a lock picture kept by an old version
-      if (win32.setWindowsWallpaper(want, 10)) stillSet.set(desk, want); // fill: a screen-sized picture lands 1:1
-      if (!st.wallpaper.perDesk) fixOtherDesks(want); // the same wallpaper everywhere: no desktop keeps an old picture
+      if (win32.regString('Control Panel\\Desktop', 'WallpaperStyle') !== '10') stillApplied.clear(); // another fit (an earlier version, or changed in Settings)
+      // what each desktop should show; the one in front first. The same wallpaper everywhere: one picture for all.
+      const order = [cur, ...ids.filter((id) => id !== cur)];
+      if (st.widgets.weather?.on && !lastWeatherJson) { try { lastWeatherJson = JSON.stringify(await system.weather(st.widgets.weather?.city || '')); } catch {} } // known before the key: no second still once it loads
+      const keys = new Map(order.map((id) => [id, stillKey(st.wallpaper.perDesk ? id : cur)]));
+      const todo = order.filter((id) => pickedOn(id) && stillApplied.get(id) !== keys.get(id));
+      if (!todo.length) return;
+      const wait = stillLast + STILL_GAP - Date.now();
+      if (wait > 0) { stillBusy = false; stillT = setTimeout(run, wait); return; }
+      stillLast = Date.now();
+      const files = new Map();
+      for (const id of todo) {
+        const key = keys.get(id);
+        if (!files.has(key)) files.set(key, await renderStill(st.wallpaper.perDesk ? id : cur, key));
+        if (quiet()) { stillBusy = false; stillT = setTimeout(run, 600); return; } // a slide started: finish after it
+        if (await setDeskBackground(id, ids.indexOf(id), files.get(key), 10, cur)) stillApplied.set(id, key);
+      }
+      saveApplied(); pruneStills();
     } catch (e) { console.warn('[still]', e.message); }
-    stillBusy = false;
+    finally { stillBusy = false; }
   }, delay);
 }
+setInterval(() => syncWindowsWallpaper(0), 10 * 60e3); // the date, the hour's greeting, the weather: only re-made if something changed
 
 // ---------- lock screen ----------
 let lockTimer = null;
@@ -1059,7 +1099,8 @@ function applySettings(patch) {
     if (next.general.accentFromWallpaper) { store.set({ general: { accentManual: before.accent } }); syncWallAccent(); }
     else if (next.general.accentManual) { const back = next.general.accentManual; store.set({ general: { accentManual: '' } }); setTimeout(() => applySettings({ accent: back }), 0); }
   }
-  if (patch.wallpaper !== undefined) { syncWallAccent(); if (Object.keys(patch.wallpaper).some((k) => k !== 'prevWindows')) syncWindowsWallpaper(); }
+  if (patch.wallpaper !== undefined) { syncWallAccent(); if (Object.keys(patch.wallpaper).some((k) => !['prevWindows', 'prevStyle', 'stillApplied'].includes(k))) syncWindowsWallpaper(); }
+  if (patch.widgets || patch.home?.todos || patch.home?.timetable || patch.name !== undefined || patch.accent !== undefined || patch.dock?.on !== undefined) syncWindowsWallpaper(3000); // the still shows the widgets
   if (patch.topbar?.ime !== undefined) { deskWorker?.postMessage({ ime: next.topbar.ime === true }); if (!next.topbar.ime && topWin && !topWin.isDestroyed()) topWin.webContents.send('ime', null); }
   if (patch.island?.on !== undefined) setIsland(next.island.on);
   if (patch.dock) { if (patch.dock.on !== undefined) setDock(next.dock.on); else { placeDock(); dockEdgeCheck(); } }
@@ -1175,7 +1216,11 @@ function wireIpc() {
   ipcMain.handle('settings:set', (_e, patch) => applySettings(patch));
   ipcMain.handle('paused', () => paused);
   ipcMain.handle('stats', () => system.stats());
-  ipcMain.handle('weather', (_e, city) => system.weather(city));
+  ipcMain.handle('weather', async (_e, city) => {
+    const v = await system.weather(city), j = JSON.stringify(v);
+    if (j !== lastWeatherJson) { const had = !!lastWeatherJson; lastWeatherJson = j; if (had) broadcast('weather-changed'); syncWindowsWallpaper(3000); } // every widget shows the same forecast, and so does the still
+    return v;
+  });
   ipcMain.handle('books', (_e, q) => system.books(q));
   // Places: what the desktop icons were for, so they can be hidden without losing anything
   ipcMain.handle('places:open', (_e, key) => {
@@ -1247,7 +1292,7 @@ function wireIpc() {
   ipcMain.handle('gestures:mac', () => taskbar.setThreeFingerDesktops());
   ipcMain.handle('lock:apply', () => applyLockScreen());
   ipcMain.handle('windows-settings', (_e, page) => { // only these Settings pages
-    const pages = { location: 'ms-settings:privacy-location', home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', language: 'ms-settings:regionlanguage', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
+    const pages = { location: 'ms-settings:privacy-location', home: 'ms-settings:', wifi: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth', sound: 'ms-settings:sound', mixer: 'ms-settings:apps-volume', batterysaver: 'ms-settings:batterysaver', nightlight: 'ms-settings:nightlight', accessibility: 'ms-settings:easeofaccess', colors: 'ms-settings:colors', language: 'ms-settings:regionlanguage', lockscreen: 'ms-settings:lockscreen', taskbar: 'ms-settings:taskbar', background: 'ms-settings:personalization-background', touchpad: 'ms-settings:devices-touchpad' };
     if (!pages[page]) throw new Error('unknown page');
     return shell.openExternal(pages[page]);
   });
@@ -1416,7 +1461,18 @@ function wireIpc() {
   ipcMain.handle('sys:set', (_e, what, value) => sysctl.set(what, value));
   ipcMain.handle('dock:keys', (e, what) => { if (!dockWin || e.sender !== dockWin.webContents || !DOCK_KEYS[what]) return; if (what === 'start' && winKeyOn()) toggleHome(); else win32.pressKeys(DOCK_KEYS[what]); });
   ipcMain.handle('media:get', () => media.get());
-  ipcMain.handle('media:control', (_e, cmd) => media.control(String(cmd)));
+  ipcMain.handle('media:control', (_e, cmd, app) => media.control(String(cmd), app ? String(app) : ''));
+  // the sound panel's app list: each program's icon, by its exe (only exes the volume mixer reported)
+  const appIconCache = new Map();
+  ipcMain.handle('sys:appIcons', async () => {
+    const out = {};
+    for (const a of sysctl.get()?.apps || []) {
+      if (!a.exe || !/\.exe$/i.test(a.exe)) continue;
+      if (!appIconCache.has(a.exe)) appIconCache.set(a.exe, await app.getFileIcon(a.exe, { size: 'normal' }).then((i) => i.toDataURL()).catch(() => ''));
+      out[a.exe] = appIconCache.get(a.exe);
+    }
+    return out;
+  });
   // pin what you dropped on Home (a file you chose by dragging it there)
   // files found by searching Home: those may be launched and pinned too
   // recent files (Windows' Recent list), for Home's Files tab
@@ -1571,7 +1627,8 @@ app.whenReady().then(() => {
   });
   wireIpc();
   setTimeout(() => refreshApps(true), 4000); // in the background, after the wallpaper is up
-  media.onChange((st) => broadcast('media', st));
+  let lastMediaKey = '';
+  media.onChange((st) => { broadcast('media', st); const k = mediaKey(); if (k !== lastMediaKey) { lastMediaKey = k; syncWindowsWallpaper(4000); } });
   systray.onChange((list) => { const marked = markTray(list); for (const w of [topWin, flyWin]) if (w && !w.isDestroyed()) w.webContents.send('tray', marked); });
   // system controls: the control centre shows them, the island pops up when volume / brightness change
   sysctl.onChange((st, prev) => { broadcast('sys', st); outputsChanged(st, prev); }); // volume / brightness / radios for the control centre (Windows shows its own volume pop-up)

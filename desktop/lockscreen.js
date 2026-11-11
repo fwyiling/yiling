@@ -23,7 +23,9 @@ async function snapshot(dir, url, preload, partition = 'sd-snapshot') {
     w.webContents.on('paint', (_e, _dirty, image) => { last = image; });
     w.webContents.setFrameRate(15);
     await w.loadURL(url);
-    await new Promise((r) => setTimeout(r, 2200)); // let the scene draw a few frames and the widgets fill in
+    // until the page says everything has drawn (the picture, the forecast with its icons), at most 7 s
+    for (let t = 0; t < 70; t++) { if (await w.webContents.executeJavaScript("document.documentElement.dataset.ready === '1'").catch(() => false)) break; await new Promise((r) => setTimeout(r, 100)); }
+    await new Promise((r) => setTimeout(r, 150)); // one more frame painted
     const img = last && !last.isEmpty() ? last : await w.webContents.capturePage();
     fs.mkdirSync(dir, { recursive: true });
     for (const f of fs.readdirSync(dir)) if (/^lock-\d+\.jpg$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });

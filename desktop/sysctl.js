@@ -46,6 +46,85 @@ interface IPolicyConfig {
   [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int role);
 }
 [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")] class PolicyConfigClient { }
+// each app's own volume, as in Windows' volume mixer: the sessions on the output in use
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceAny { int Activate(ref Guid id, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object o); }
+[Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioSessionManager2 { int a(); int b(); int GetSessionEnumerator(out IAudioSessionEnumerator e); }
+[Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioSessionEnumerator { int GetCount(out int n); int GetSession(int i, out IAudioSessionControl2 s); }
+[Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioSessionControl2 {
+  int GetState(out int state); int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+  int a(); int b(); int c(); int d(); int e(); int f(); int g();
+  int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string id); int h();
+  int GetProcessId(out uint pid); [PreserveSig] int IsSystemSoundsSession();
+}
+[Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface ISimpleAudioVolume {
+  int SetMasterVolume(float level, ref Guid ctx); int GetMasterVolume(out float level);
+  int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid ctx); int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+}
+public static class SdMixer {
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, System.Text.StringBuilder s, ref int size);
+  static string Exe(uint pid) {
+    IntPtr h = OpenProcess(0x1000, false, pid); if (h == IntPtr.Zero) return "";
+    try { var sb = new System.Text.StringBuilder(1024); int n = sb.Capacity; return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString() : ""; } finally { CloseHandle(h); }
+  }
+  static System.Collections.Generic.Dictionary<string, string> descs = new System.Collections.Generic.Dictionary<string, string>();
+  static string Desc(string exe) {
+    if (exe == "") return "";
+    string d; if (descs.TryGetValue(exe, out d)) return d;
+    try { d = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileDescription ?? ""; } catch { d = ""; }
+    descs[exe] = d; return d;
+  }
+  static System.Collections.Generic.List<IAudioSessionControl2> Sessions() {
+    var list = new System.Collections.Generic.List<IAudioSessionControl2>();
+    var en = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+    IMMDevice dev; if (en.GetDefaultAudioEndpoint(0, 1, out dev) != 0 || dev == null) return list;
+    object o; var iid = typeof(IAudioSessionManager2).GUID;
+    if (((IMMDeviceAny)dev).Activate(ref iid, 23, IntPtr.Zero, out o) != 0) return list;
+    IAudioSessionEnumerator e; if (((IAudioSessionManager2)o).GetSessionEnumerator(out e) != 0) return list;
+    int n; e.GetCount(out n);
+    for (int i = 0; i < n; i++) { IAudioSessionControl2 s; if (e.GetSession(i, out s) == 0 && s != null) list.Add(s); }
+    return list;
+  }
+  // one line per app (its sessions together): pid, playing (1/0), volume 0-100, muted (1/0), name, exe; tab-separated
+  public static string[] Apps() {
+    var byPid = new System.Collections.Generic.Dictionary<uint, string[]>();
+    foreach (var s in Sessions()) {
+      try {
+        int state; s.GetState(out state); if (state == 2) continue; // expired
+        uint pid; s.GetProcessId(out pid);
+        bool sys = s.IsSystemSoundsSession() == 0;
+        var v = (ISimpleAudioVolume)s; float lv; bool m; v.GetMasterVolume(out lv); v.GetMute(out m);
+        string exe = sys ? "" : Exe(pid), name = "";
+        if (sys) name = "System sounds";
+        else { s.GetDisplayName(out name); if (string.IsNullOrEmpty(name) || name.StartsWith("@")) name = Desc(exe); if (string.IsNullOrEmpty(name)) name = System.IO.Path.GetFileNameWithoutExtension(exe); }
+        if (!sys && pid == 0) continue;
+        string[] cur;
+        if (byPid.TryGetValue(pid, out cur)) { if (state == 1) cur[1] = "1"; continue; }
+        byPid[pid] = new string[] { pid.ToString(), state == 1 ? "1" : "0", ((int)Math.Round(lv * 100)).ToString(), m ? "1" : "0", (name ?? "").Replace((char)9, ' '), exe };
+      } catch { }
+    }
+    var outl = new System.Collections.Generic.List<string>();
+    foreach (var a in byPid.Values) outl.Add(string.Join(((char)9).ToString(), a));
+    return outl.ToArray();
+  }
+  public static void Set(uint pid, int volume, int mute) {
+    Guid g = Guid.Empty;
+    foreach (var s in Sessions()) {
+      try {
+        uint p; s.GetProcessId(out p); if (p != pid) continue;
+        var v = (ISimpleAudioVolume)s;
+        if (volume >= 0) { v.SetMasterVolume(Math.Max(0, Math.Min(100, volume)) / 100f, ref g); if (volume > 0) v.SetMute(false, ref g); }
+        if (mute >= 0) v.SetMute(mute == 1, ref g);
+      } catch { }
+    }
+  }
+}
 public static class SdAudio {
   static IAudioEndpointVolume Vol() {
     var e = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
@@ -131,7 +210,7 @@ function Wifi() {
 $in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 1024
 $rd = $in.ReadAsync($buf, 0, $buf.Length)
 $parent = [int]$env:SD_PARENT_PID
-$last = ''; $tick = 0; $bright = Brightness; $wifi = Wifi
+$last = ''; $tick = 0; $bright = Brightness; $wifi = Wifi; $apps = @()
 while ($true) {
   if ($rd.IsCompleted) {
     $n = 0; try { $n = $rd.Result } catch {}
@@ -143,6 +222,8 @@ while ($true) {
           'volume' { [SdAudio]::Set([float]$p[1] / 100); if ([SdAudio]::Muted() -and [float]$p[1] -gt 0) { [SdAudio]::Mute($false) } }
           'mute' { [SdAudio]::Mute($p[1] -eq '1') }
           'output' { [SdAudio]::SetDefault($p[1]) }
+          'appvol' { [SdMixer]::Set([uint32]$p[1], [int]$p[2], -1); $tick = 1 } # report the new level at once
+          'appmute' { [SdMixer]::Set([uint32]$p[1], -1, [int]$p[2]); $tick = 1 }
           'brightness' { Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Select-Object -First 1 | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{ Timeout = 1; Brightness = [byte]$p[1] } | Out-Null; $bright = [int]$p[1] }
           'wifi' { SetRadio 'WiFi' ($p[1] -eq '1'); $wifi = Wifi }
           'bluetooth' { SetRadio 'Bluetooth' ($p[1] -eq '1') }
@@ -159,12 +240,13 @@ while ($true) {
   try { $vol = [math]::Round([SdAudio]::Get() * 100); $muted = [SdAudio]::Muted() } catch {}
   $outs = @(); try { $outs = @([SdAudio]::Outputs() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ id = $q[0]; name = $q[1] } }) } catch {}
   $out = ''; try { $out = [SdAudio]::Default() } catch {}
+  if (($tick % 2) -eq 1) { $apps = @(); try { $apps = @([SdMixer]::Apps() | ForEach-Object { $q = $_.Split([char]9); [ordered]@{ pid = [int]$q[0]; playing = $q[1] -eq '1'; volume = [int]$q[2]; muted = $q[3] -eq '1'; name = $q[4]; exe = $q[5] } }) } catch {} } # every second
   $w = Radio 'WiFi'; $b = Radio 'Bluetooth'
   $o = [ordered]@{
     volume = $vol; muted = $muted; brightness = $bright
     wifi = [ordered]@{ on = $(if ($w) { $w.State.ToString() -eq 'On' } else { [bool]$wifi.ssid }); has = [bool]$w; ssid = $wifi.ssid; signal = $wifi.signal }
     bluetooth = [ordered]@{ on = $(if ($b) { $b.State.ToString() -eq 'On' } else { $false }); has = [bool]$b }
-    outputs = $outs; output = $out
+    outputs = $outs; output = $out; apps = $apps
     airplane = $(if ($radios.Count) { -not ($radios | Where-Object { $_.State.ToString() -eq 'On' }) } else { $false })
   }
   $j = [regex]::Replace(($o | ConvertTo-Json -Compress -Depth 4), '[^\\x00-\\x7F]', { param($m) '\\u{0:x4}' -f [int][char]$m.Value })
@@ -186,7 +268,7 @@ function start() {
     for (let i; (i = buf.indexOf('\n')) >= 0;) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line.startsWith('{')) continue;
-      try { const prev = state; state = JSON.parse(line); restarts = 0; for (const fn of listeners) fn(state, prev); } catch {}
+      try { const prev = state; state = JSON.parse(line); if (state.apps && !Array.isArray(state.apps)) state.apps = [state.apps]; restarts = 0; for (const fn of listeners) fn(state, prev); } catch {}
     }
   });
   child.stderr.on('data', (d) => { const l = String(d).split('\n').map((x) => x.trim()).find((x) => x && !x.startsWith('#< CLIXML') && !x.startsWith('<Objs')); if (l) console.warn('[sysctl]', l); });
@@ -198,6 +280,13 @@ function set(what, value) {
   if (what === 'output') { // a sound output by its Windows id: {0.0.0.00000000}.{guid}
     if (!/^\{[0-9.]+\}\.\{[0-9a-fA-F-]{36}\}$/.test(String(value)) || !state?.outputs?.some((o) => o.id === value)) throw new Error('unknown sound output');
     if (child?.stdin.writable) child.stdin.write(`output ${value}\n`);
+    return;
+  }
+  if (what === 'appvol' || what === 'appmute') { // one app's own volume / mute: [pid, value], for an app that's in the list
+    const [pid, v] = Array.isArray(value) ? value : [];
+    if (!Number.isInteger(pid) || !state?.apps?.some((a) => a.pid === pid)) throw new Error('unknown app');
+    const n = what === 'appvol' ? Math.round(Math.max(0, Math.min(100, Number(v) || 0))) : (v ? 1 : 0);
+    if (child?.stdin.writable) child.stdin.write(`${what} ${pid} ${n}\n`);
     return;
   }
   if (!COMMANDS[what]) throw new Error('unknown control');

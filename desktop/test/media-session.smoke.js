@@ -57,6 +57,7 @@ player.stdout.on('data', (d) => {
   media.onChange((st) => {
     console.log('state:', JSON.stringify({ ...st, art: st.art ? `${st.art.slice(0, 30)}… (${st.art.length} chars)` : '' }));
     if (st.artError) lastArtError = st.artError;
+    if (Array.isArray(st.sessions) && st.sessions.length) console.log('players:', JSON.stringify(st.sessions)); // the sound panel's list
     if (!st.on || !String(st.title).includes('晴天')) return;
     sawSong = true;
     if (!sentToggle && st.art) { sentToggle = true; media.control('toggle'); return; }

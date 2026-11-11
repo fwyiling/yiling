@@ -6,6 +6,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .search svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #backdrop { position: fixed; inset: 0; background: radial-gradient(1200px 700px at 30% 10%, color-mix(in srgb, var(--a) 22%, transparent), transparent 70%), rgba(8, 10, 14, .9); animation: fade .18s ease; }
 @keyframes fade { from { opacity: 0; } }
+body.off #panel, body.off #backdrop { opacity: 0; animation: none; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985); } }
 #panel { position: relative; margin: 6vh auto 0; width: min(1080px, 92vw); max-height: 88vh; display: flex; flex-direction: column; gap: 18px; animation: rise .22s cubic-bezier(.2, 0, 0, 1); }
 .top { display: flex; justify-content: space-between; align-items: flex-end; }

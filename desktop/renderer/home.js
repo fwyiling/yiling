@@ -341,12 +341,19 @@ for (const b of document.querySelectorAll('#pwr [data-p]')) {
     sd.flyoutAction(k);
   };
 }
+// one opening animation each time: hidden, the page is cleared and faded out; shown, it plays the rise once
+function onHidden() { document.body.classList.add('off'); $('q').value = ''; renderResults(); document.querySelector('.ctx')?.remove(); }
 function onShown(mode) {
+  if (document.body.classList.contains('off')) {
+    document.body.classList.remove('off');
+    for (const e of [$('panel'), $('backdrop')]) { e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; }
+  }
   $('q').value = ''; renderResults(); $('q').focus();
   $('q').placeholder = mode === 'pin' ? 'Type an app’s name, then press Pin (or Ctrl+Enter)' : 'Search apps, files, folders or the web'; tick(); renderTimetable(); renderIconsBtn();
   sd.apps().then((list) => { if (list.length !== apps.length) { apps = list; if (showAll) renderGrid(); } }).catch(() => {}); // picks up newly installed apps
 }
 sd.onHomeShown(onShown);
+sd.onHomeHidden?.(onHidden);
 $('hint').textContent = `${s.home.hotkey} opens this panel · drag apps here to pin them · right-click a tile for more`;
 
 apps = await sd.apps().catch(() => []);

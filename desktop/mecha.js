@@ -95,6 +95,13 @@ input[type=range] { background: linear-gradient(90deg, #d6e6f6 var(--v, 50%), rg
 .traygrid .ti .eye { border-radius: 0; transform: rotate(45deg); } .traygrid .ti .eye svg { transform: rotate(-45deg); }
 .outs button { border-radius: 0; } .outs button:hover { ${bev('h')} }
 .outs button i { border-radius: 0; transform: rotate(45deg) scale(.78); } .outs button.on i { box-shadow: inset 0 0 0 4px #d6e6f6; }
+/* the sound panel */
+.plays li { ${bev('cardSoft', 10)} }
+.plays li.on { ${swap('cardSel')} }
+.plays .t small { color: #a6d6f2; text-transform: uppercase; letter-spacing: .08em; }
+.plays .c button { border-radius: 0; } .plays .c button:hover { ${bev('h')} }
+.mixer img, .mixer .ph { border-radius: 0; ${clip(4)} }
+.mixer .n i { border-radius: 0; transform: rotate(45deg); background: #a6d6f2; }
 `;
 
 // Home (Alt+Space or the Windows key)
@@ -173,6 +180,8 @@ a { color: #a6d6f2; }
 
 // desktop widgets: their insides to match the bevel-cut cards
 const wallpaper = `
+/* the card's background blur is a rectangle: cut it like the frame, or it showed as square corners */
+.w-card, [data-layout="mac"] .w-card { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); box-shadow: none; }
 .w-calendar .grid .today { border-radius: 0; background: #d6e6f6; color: ${INK}; ${clip(3)} }
 .w-reminders li i { border-radius: 0; transform: rotate(45deg) scale(.85); }
 .w-media .art, [data-layout="mac"] .w-media .art { border-radius: 0; ${clip(6)} }
@@ -187,4 +196,12 @@ const island = `
 .big-art { border-radius: 0; ${clip(8)} }
 `;
 
-module.exports = { frame, shared, styles: { panels, home, settings, wallpaper, island } };
+// the dock's Syndicates button: the logo cut to the same bevel, on a light-outlined plate
+const dock = `
+#home.item.sys { ${bev('h', 6)} }
+#home.item.sys:hover { ${swap('p')} }
+#home.item.sys img { width: 66%; height: 66%; border-radius: 0; clip-path: polygon(24% 0, 100% 0, 100% 76%, 76% 100%, 0 100%, 0 24%); }
+#start.item.sys { ${bev('f', 6)} } #start.item.sys:hover { ${swap('h')} }
+`;
+
+module.exports = { frame, shared, styles: { panels, home, settings, wallpaper, island, dock } };

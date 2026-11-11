@@ -58,6 +58,7 @@ async function weather() {
   catch { $('weather').textContent = ''; }
 }
 weather(); setInterval(weather, 15 * 60e3);
+sd.onWeatherChanged?.(weather); // the same forecast as the widgets, at the same moment
 
 // battery (laptops only): asked from Windows, which knows whether there is one (the web API can't tell)
 let hasBattery = false;
@@ -76,7 +77,8 @@ battery(); setInterval(battery, 5000);
 sd.onPower?.(battery); // plugged in / unplugged: at once
 
 $('logo').onclick = () => sd.flyout('menu', Math.round($('logo').getBoundingClientRect().left));
-$('quick').onclick = () => { const r = $('quick').getBoundingClientRect(); sd.flyout('control', Math.round(r.left + r.width / 2)); };
+$('quick').onclick = () => { const r = $('quick').getBoundingClientRect(); sd.flyout('sound', Math.round(r.left + r.width / 2)); }; // sound only
+$('ccBtn').onclick = () => { const r = $('ccBtn').getBoundingClientRect(); sd.flyout('control', Math.round(r.left + r.width / 2)); }; // Wi-Fi, Bluetooth, brightness and the rest
 $('timerBtn').onclick = () => sd.topbarTimer();
 $('ovBtn').onclick = () => sd.overview();
 const anchor = (el) => { const r = el.getBoundingClientRect(); return Math.round(r.left + r.width / 2); };

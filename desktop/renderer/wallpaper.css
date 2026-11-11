@@ -10,7 +10,9 @@
 .wp-media img, .wp-media video { transform: translate(calc(var(--px) * -1.2%), calc(var(--py) * -1.2%)) scale(1.04); transition: transform .6s ease-out; }
 .wp-empty { display: grid; place-items: center; color: #9aa3ad; font-size: 3cqmin; }
 .wp-dim { background: #000; opacity: var(--dim, .15); pointer-events: none; }
-.wp-widgets { position: absolute; inset: 0; pointer-events: none; --drift: translate(calc(var(--px) * 1.2cqw), calc(var(--py) * 1.2cqh)); }
+/* the widgets stay exactly where they are (no drift with the pointer): Windows' background has them drawn in the
+   same place, so a desktop slide shows them steady */
+.wp-widgets { position: absolute; inset: 0; pointer-events: none; --drift: translate(0, 0); }
 .wp-widgets > * { position: absolute; transform: translate(-50%, -50%) var(--drift) scale(var(--scale, 1)); transform-origin: center;
   text-shadow: 0 2px 18px rgba(0, 0, 0, .45); white-space: nowrap; transition: transform .6s ease-out; }
 .wp-widgets [hidden] { display: none !important; }
@@ -140,5 +142,8 @@
 
 /* the still for Windows' own background: the picture and its darkening, no widgets */
 .plain .wp-widgets { display: none !important; }
+/* the still with widgets: only the ones that don't change by the second */
+.still-shot .w-clock, .still-shot .w-stats { visibility: hidden !important; }
+.still-shot *, .still-shot *::before, .still-shot *::after { animation: none !important; transition: none !important; }
 /* nothing picked: your Windows background, exactly where Windows draws it (no drift, no extra zoom) */
 .wp-media img.wp-native { transform: none !important; }

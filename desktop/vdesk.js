@@ -39,6 +39,31 @@ interface IVirtualDesktopManagerInternal {
   [PreserveSig] int GetAdjacentDesktop(IVirtualDesktop from, int direction, out IVirtualDesktop desktop);
   void SwitchDesktop(IVirtualDesktop desktop);
 }
+// The same interface written out to the wallpaper methods. Windows 11 24H2 (build 26100+) put one method
+// (SwitchDesktopAndMoveForegroundView) after SwitchDesktop without changing the interface id, so the layout is
+// picked by build number; the app passes it in. Layouts from MScholtes/VirtualDesktop (VirtualDesktop11.cs, -24H2.cs).
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("53F5CA0B-158F-4124-900C-057158060B27")]
+interface IVdmWall23 {
+  int GetCount(); void a(); void b(); IVirtualDesktop GetCurrentDesktop(); void GetDesktops(out IObjectArray desktops); void c(); void d();
+  void e(); void f(); void g(); void h(); void i();
+  void SetDesktopName(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string name);
+  void SetDesktopWallpaper(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string path);
+}
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("53F5CA0B-158F-4124-900C-057158060B27")]
+interface IVdmWall24 {
+  int GetCount(); void a(); void b(); IVirtualDesktop GetCurrentDesktop(); void GetDesktops(out IObjectArray desktops); void c(); void d();
+  void SwitchDesktopAndMoveForegroundView(IVirtualDesktop desktop);
+  void e(); void f(); void g(); void h(); void i();
+  void SetDesktopName(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string name);
+  void SetDesktopWallpaper(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string path);
+}
+// to read a desktop's background back (the same on both builds)
+[ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("3F07F4BE-B107-441A-AF0F-39D82529072C")]
+interface IVirtualDesktopW {
+  void a(); void b();
+  [return: MarshalAs(UnmanagedType.HString)] string GetName();
+  [return: MarshalAs(UnmanagedType.HString)] string GetWallpaperPath();
+}
 [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("4CE81583-1E4C-4632-A621-07A53543148F")]
 interface IVirtualDesktopPinnedApps {
   bool IsAppIdPinned([MarshalAs(UnmanagedType.LPWStr)] string appId);
@@ -135,6 +160,16 @@ public static class SdDesk {
     mgr.MoveViewToDesktop(view, d);
     return true;
   }
+  // a desktop's own background (Windows shows it while sliding to that desktop); checked afterwards by reading it back
+  public static bool Wallpaper(int layout, int i, string file) {
+    Init();
+    var d = At(i); if (d == null || !System.IO.File.Exists(file)) return false;
+    if (layout == 24) ((IVdmWall24)mgr).SetDesktopWallpaper(d, file);
+    else if (layout == 23) ((IVdmWall23)mgr).SetDesktopWallpaper(d, file);
+    else return false;
+    string now = ((IVirtualDesktopW)d).GetWallpaperPath();
+    return string.Equals(now, file, StringComparison.OrdinalIgnoreCase);
+  }
   public static bool SwitchTo(int i) { Init(); var d = At(i); if (d == null) return false; mgr.SwitchDesktop(d); return true; }
   // straight to the desktop next door (no slide): only when Windows' own Win+Ctrl+arrow didn't get through
   public static bool Switch(bool right) { Init(); var target = Next(right); if (target == null) return false; mgr.SwitchDesktop(target); return true; }
@@ -158,6 +193,7 @@ while ($true) {
       'switch' { [SdDesk]::Switch($p[2] -eq 'right') }
       'switchto' { [SdDesk]::SwitchTo([int]$p[2]) }
       'moveto' { [SdDesk]::MoveTo([IntPtr][long]$p[2], [int]$p[3]) }
+      'wallpaper' { [SdDesk]::Wallpaper([int]$p[2], [int]$p[3], [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p[4]))) }
       'count' { [SdDesk]::Count() -gt 0 }
       default { $false }
     }
@@ -221,5 +257,12 @@ module.exports = {
     return r && typeof r.data === 'string' ? r.data.split(',') : list.map(() => '');
   },
   goTo: (i) => ask(`switchto ${Math.trunc(Number(i))}`),
+  /** Desktop number i's own Windows background (a picture file). False where this Windows build isn't known. */
+  wallpaper(i, file) {
+    const build = Number(os.release().split('.')[2]) || 0;
+    const layout = build >= 26100 ? 24 : build >= 22000 ? 23 : 0; // 24H2 and later / earlier Windows 11 (the helper only starts where the interface id matches)
+    if (!layout || !file) return Promise.resolve(false);
+    return ask(`wallpaper ${layout} ${Math.trunc(Number(i))} ${Buffer.from(String(file), 'utf8').toString('base64')}`, 4000);
+  },
   moveTo: (hwnd, i) => ask(`moveto ${Math.trunc(Number(hwnd))} ${Math.trunc(Number(i))}`),
 };

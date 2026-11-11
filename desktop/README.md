@@ -12,8 +12,10 @@ island, a desktops overview and themes, in the same grey-blue style as the Syndi
   attention, middle-click for another window), a Screenshots stack and the Bin. The Windows taskbar hides
   itself while the dock is on and comes back when you turn it off or quit.
 - **Top bar**: the app in front, your desktops, **tray icons** (Discord, Steam, OneDrive…; hide the ones you
-  don't want), weather, battery, Wi-Fi, sound, and panels for each. Its menu has Sleep, Restart, Shut down
-  and Sign out.
+  don't want), weather, battery, Wi-Fi, a control centre (Bluetooth, brightness…), sound, and panels for each.
+  The **sound panel** has the volume, where sound plays, every player that's playing (each with its own
+  play / pause) and **each app's own volume and mute**, like Windows' volume mixer. Its menu has Sleep,
+  Restart, Shut down and Sign out.
 - **Island**: a pill at the top for the timer, what's playing (with a seek bar), volume / brightness and
   short notes (Caps Lock, headphones), with an **island pet** to keep you company.
 - **Desktops**: three-finger swipes like a MacBook, drag a window against the screen edge to take it to the

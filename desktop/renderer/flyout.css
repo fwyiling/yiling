@@ -166,3 +166,24 @@ footer { display: flex; justify-content: space-between; align-items: center; mar
 .outs button i { width: 14px; height: 14px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--m); }
 .outs button.on { color: var(--t); } .outs button.on i { box-shadow: inset 0 0 0 4.5px var(--a); }
 .outs button { min-width: 0; } .outs button span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* the sound panel */
+#sound { max-height: 600px; overflow: hidden auto; scrollbar-width: thin; }
+#sound .slide { grid-template-columns: 26px 1fr 34px; }
+#mSlide.muted .ic .x, #mApps .muted .ic .x { display: block; } #mSlide.muted .ic .wave, #mApps .muted .ic .wave { display: none; }
+.outs.flat { margin: 0; }
+.plays, .mixer { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.plays li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+.plays .t { display: grid; min-width: 0; } .plays .t b, .plays .t span, .plays .t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plays .t b { font-size: 12.5px; } .plays .t span { font-size: 11.5px; color: var(--m); } .plays .t small { font-size: 10.5px; color: var(--a); font-weight: 600; letter-spacing: .02em; }
+.plays .c { display: flex; gap: 2px; } .plays .c button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; } .plays .c button:hover { background: rgba(255, 255, 255, .08); }
+.plays .c svg { width: 15px; height: 15px; } .plays .c .pause, .plays li.on .c .play { display: none; } .plays li.on .c .pause { display: block; }
+.mixer li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 26px; grid-template-rows: auto auto; column-gap: 8px; row-gap: 3px; align-items: center; padding: 5px 2px; }
+.mixer li.empty { display: block; padding: 6px 2px; font-size: 12px; }
+.mixer img, .mixer .ph { width: 20px; height: 20px; grid-row: span 2; border-radius: 5px; object-fit: contain; }
+.mixer .ph { display: grid; place-items: center; background: color-mix(in srgb, var(--a) 40%, #252b34); font-size: 10px; font-weight: 700; }
+.mixer .n { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.mixer .n em { font-style: normal; color: var(--m); font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.mixer .n i { width: 6px; height: 6px; border-radius: 50%; background: var(--a); flex: none; opacity: 0; } .mixer li.playing .n i { opacity: 1; }
+.mixer input[type=range] { grid-column: 2; height: 4px; }
+.mixer .ic-b { grid-column: 3; grid-row: 1 / span 2; }
