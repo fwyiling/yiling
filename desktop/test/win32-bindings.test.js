@@ -46,6 +46,7 @@ const calls = {
   hideSwitchLabel: () => w.hideSwitchLabel({ x: 0, y: 0, width: 1920, height: 1080 }),
   taskbarVisible: () => w.taskbarVisible(),
   taskbarOpacity: () => w.taskbarOpacity(),
+  setWindowsWallpaperFill: () => w.setWindowsWallpaper('C:\\x.jpg', 10),
   watchTaskbar: () => w.watchTaskbar(() => {}),
   unwatchTaskbar: () => w.unwatchTaskbar(),
   foregroundKind: () => w.foregroundKind(),

@@ -12,6 +12,7 @@ const DEFAULTS = {
     dim: 0.15,                // darken the wallpaper so widgets stay readable
     matchWindows: true,       // keep Windows' own background a still of this wallpaper (it shows through during desktop slides)
     prevWindows: '',          // what Windows' background was before that, to put back
+    prevStyle: '',            // and how Windows fitted it
     perDesk: false,           // a different wallpaper on each virtual desktop
     desks: {},                // desktop id -> { scene, file, url, fileStamp } (null: same as the main one)
   },

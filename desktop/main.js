@@ -928,25 +928,30 @@ function syncWindowsWallpaper(delay = 1500) {
     const st = store.get(), desk = deskId, w = wallFor(st.wallpaper, desk), now = winwallFile(desk);
     const picked = !!(w.scene === 'web' ? w.url : w.file);
     if (!st.wallpaper.matchWindows || !picked) { // off, or nothing picked (Windows' background is the wallpaper): the user's own back
-      if (isOurStill(now) && st.wallpaper.prevWindows && fs.existsSync(st.wallpaper.prevWindows)) win32.setWindowsWallpaper(st.wallpaper.prevWindows);
+      if (isOurStill(now) && st.wallpaper.prevWindows && fs.existsSync(st.wallpaper.prevWindows)) win32.setWindowsWallpaper(st.wallpaper.prevWindows, st.wallpaper.prevStyle || null);
       stillSet.delete(desk);
       return;
     }
     const d = screen.getPrimaryDisplay();
     const key = require('crypto').createHash('sha1').update([w.scene, w.file, w.url, w.fileStamp, w.dim, d.size.width, d.size.height, d.scaleFactor].join('|')).digest('hex').slice(0, 16);
     const want = path.join(STILL_DIR(), `still-${key}.jpg`);
-    if (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want))) { stillSet.set(desk, want); return; }
+    const filled = win32.regString('Control Panel\\Desktop', 'WallpaperStyle') === '10'; // a still from an earlier version may have another fit
+    if (filled && (stillSet.get(desk) === want || (now && path.resolve(now).toLowerCase() === want.toLowerCase() && fs.existsSync(want)))) { stillSet.set(desk, want); return; }
     stillBusy = true;
     try {
       if (!fs.existsSync(want)) {
         const shot = await lockscreen.snapshot(STILL_DIR(), ui('wallpaper.html', '?snapshot=1&plain=1'), webPrefs.preload);
         if (deskId !== desk || quiet()) { fs.rmSync(shot, { force: true }); stillBusy = false; stillT = setTimeout(run, 600); return; } // another desktop by now: its picture, not this one
-        fs.renameSync(shot, want);
+        // exactly the screen's pixels (Windows draws it 1:1 with "fill"), whatever size the snapshot came out
+        const img = nativeImage.createFromPath(shot), px = { width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor) };
+        const sz = img.getSize();
+        if (!img.isEmpty() && (sz.width !== px.width || sz.height !== px.height)) { fs.writeFileSync(want, img.resize({ ...px, quality: 'best' }).toJPEG(92)); fs.rmSync(shot, { force: true }); }
+        else fs.renameSync(shot, want);
         const old = fs.readdirSync(STILL_DIR()).filter((f) => /^still-[0-9a-f]+\.jpg$/.test(f)).map((f) => ({ f, t: fs.statSync(path.join(STILL_DIR(), f)).mtimeMs })).sort((x, y) => y.t - x.t).slice(12);
         for (const o of old) fs.rmSync(path.join(STILL_DIR(), o.f), { force: true }); // a dozen is plenty
       }
-      if (now && !isOurStill(now) && !st.wallpaper.prevWindows) store.set({ wallpaper: { prevWindows: now } });
-      if (win32.setWindowsWallpaper(want)) stillSet.set(desk, want);
+      if (now && !isOurStill(now) && !st.wallpaper.prevWindows) store.set({ wallpaper: { prevWindows: now, prevStyle: win32.regString('Control Panel\\Desktop', 'WallpaperStyle') || '10' } });
+      if (win32.setWindowsWallpaper(want, 10)) stillSet.set(desk, want); // fill: a screen-sized picture lands 1:1
     } catch (e) { console.warn('[still]', e.message); }
     stillBusy = false;
   }, delay);

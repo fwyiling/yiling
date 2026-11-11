@@ -100,6 +100,7 @@ function bind() {
     u.WlanFreeMemory = wlan.func('void __stdcall WlanFreeMemory(void *mem)');
     u.WlanCloseHandle = wlan.func('uint32 __stdcall WlanCloseHandle(intptr_t handle, void *reserved)');
   } catch { /* no Wi-Fi service on this PC (desktops without Wi-Fi) */ }
+  u.RegSetKeyValueW = advapi32.func('long __stdcall RegSetKeyValueW(intptr_t hkey, str16 sub, str16 name, uint32 type, str16 data, uint32 size)');
   u.RegGetValueW = advapi32.func('long __stdcall RegGetValueW(intptr_t hkey, str16 sub, str16 value, uint32 flags, void *type, _Out_ uint8_t *data, _Inout_ uint32_t *size)');
   const SYSTEM_POWER_STATUS = koffi.struct('SYSTEM_POWER_STATUS', { ACLineStatus: 'uint8', BatteryFlag: 'uint8', BatteryLifePercent: 'uint8', SystemStatusFlag: 'uint8', BatteryLifeTime: 'uint32', BatteryFullLifeTime: 'uint32' });
   u.SYSTEM_POWER_STATUS = SYSTEM_POWER_STATUS;
@@ -301,8 +302,14 @@ function setDesktopIcons(show) {
 
 // ---------- desktop picture ----------
 /** Set the regular Windows wallpaper (shown before the app starts, and if it isn't running). */
-function setWindowsWallpaper(file) {
+function setWindowsWallpaper(file, style) {
   if (!load()) return false;
+  // style: how Windows fits it ('10' fill, '6' fit, '2' stretch, '0' centre / tile, '22' span); set before the
+  // picture so Windows draws it that way straight away
+  if (style != null) {
+    const put = (name, v) => u.RegSetKeyValueW(-2147483647, 'Control Panel\\Desktop', name, 1, v, (v.length + 1) * 2); // HKCU, REG_SZ
+    put('WallpaperStyle', String(style)); put('TileWallpaper', '0');
+  }
   return u.SystemParametersInfoW(0x0014, 0, file, 0x01 | 0x02); // SPI_SETDESKWALLPAPER, save + tell everyone
 }
 
