@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld('sd', {
   copyText: (t) => ipcRenderer.invoke('home:copy', t),
   pasteText: (t) => ipcRenderer.invoke('home:paste', t),
   rates: (base) => ipcRenderer.invoke('home:rates', base),
+  lyrics: (title, artist, dur) => ipcRenderer.invoke('lyrics:get', title, artist, dur),
   theme: () => ipcRenderer.invoke('theme:bundle'),
   onTheme: on('theme'),
   themes: (what, ...args) => ipcRenderer.invoke(`themes:${what}`, ...args),

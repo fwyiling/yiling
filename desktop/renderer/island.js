@@ -60,7 +60,7 @@ function renderMedia() {
   const art = /^data:image\//.test(np.art || '') ? `url("${np.art}")` : '';
   m.querySelector('.big-art').style.backgroundImage = art; m.querySelector('.big-art').classList.toggle('has', !!art);
   document.querySelector('.mini-art').style.backgroundImage = art;
-  progLoop();
+  progLoop(); loadLyrics(); lyricLoop();
 }
 document.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => sd.mediaControl(b.dataset.m).catch(() => {}));
 // the song's position: Windows says when the song was at 0:00 (while playing) or where it stopped (paused), and the
@@ -92,6 +92,39 @@ seekEl.addEventListener('change', () => {
   if (np.playing) np.t0 = Date.now() - to * 1000; else np.pos = to; // straight away; Windows confirms a moment later
   seeking = false; renderProg();
 }); // the real state comes back from Windows (no guessing: guesses went out of sync)
+
+// ---------- lyrics ----------
+// time-synced lyrics (LRCLIB) for the song playing: the line being sung in the pill, and that line and the next in the
+// open island. Looked up once per song; the line is worked out from the song's position, only while it plays.
+let lyr = { key: '', lines: [] }, lyrIdx = -2, lyrT = 0;
+async function loadLyrics() {
+  const key = np.on ? `${np.title}|${np.artist}` : '';
+  if (key === lyr.key) return;
+  lyr = { key, lines: [] }; lyrIdx = -2; showLyric();
+  if (!key || s.island?.lyrics === false) return;
+  const r = await sd.lyrics(np.title, np.artist, np.dur).catch(() => null);
+  if (lyr.key !== key) return; // another song by now
+  lyr.lines = r?.lines || []; showLyric(); lyricLoop();
+}
+function showLyric() {
+  const on = s.island?.lyrics !== false && lyr.lines.length > 0 && !!np.on;
+  const p = songPos() + 0.25; // a beat early: the line is up as it's sung
+  let i = -1; for (let k = 0; k < lyr.lines.length && lyr.lines[k].t <= p; k++) i = k;
+  const now = i >= 0 ? lyr.lines[i].text : '', next = lyr.lines[i + 1]?.text || '';
+  const pill = on && np.playing && !!now;
+  isl.classList.toggle('lyrics', pill);
+  const mini = document.querySelector('.mini .lyr'); mini.hidden = !pill;
+  const box = document.querySelector('.lyrics'); box.hidden = !on;
+  if (i === lyrIdx) return;
+  lyrIdx = i;
+  mini.textContent = now; mini.classList.remove('in'); void mini.offsetWidth; mini.classList.add('in');
+  box.querySelector('.l-now').textContent = now || '♪'; box.querySelector('.l-next').textContent = next;
+}
+function lyricLoop() {
+  const run = !!np.playing && lyr.lines.length > 0 && s.island?.lyrics !== false;
+  if (run && !lyrT) lyrT = setInterval(showLyric, 300); else if (!run && lyrT) { clearInterval(lyrT); lyrT = 0; }
+  showLyric();
+}
 
 // ---------- shape ----------
 // the window grows before the island opens and shrinks after it has closed (it's just the pill most of the time)
@@ -330,7 +363,7 @@ sd.onMedia((m) => {
   if (m.playing && before.playing && m.title && before.title && m.title !== before.title) react('happy', 950); // a new song
 });
 sd.media().then((m) => { np = m; renderMedia(); shape(); }).catch(() => {});
-sd.onSettings((n) => { s = n; look(); });
+sd.onSettings((n) => { const lyrBefore = s.island?.lyrics; s = n; look(); if (lyrBefore !== s.island?.lyrics) { lyr.key = '__'; loadLyrics(); lyricLoop(); } });
 look(); setMins(mins); onTimer(timer);
 
 // switching desktops: endless animations (equaliser, glow) hold still for the slide, so Windows has one

@@ -33,7 +33,7 @@ const DEFAULTS = {
   home: { hotkey: 'Alt+Space', winKey: true, clipboard: true, engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [] },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, autoUpdate: true, deskMotion: false, deskMotionV2: true, edgeSwitch: true, ownOsd: true, lowPower: null, accentFromWallpaper: false, accentManual: '' },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: false, startV2: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, bin: true, shots: true, hide: 'smart', reserve: true, prevAutoHide: null },
-  island: { on: true, pet: 'cat' },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)
+  island: { on: true, pet: 'cat', lyrics: true },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)
   topbar: { on: true, tray: true, traySystem: false, trayHidden: [], weather: true, media: true, battery: true, ime: false, look: 'solid', opacity: 0.96 }, // look: solid | glass (frosted, the desktop blurred behind) // a slim bar along the top, like macOS
   themes: { active: [] },   // themes in use, in order: a later one wins where they overlap (none: the standard look)
   desktops: { names: {} },  // names you gave desktops (by desktop id)

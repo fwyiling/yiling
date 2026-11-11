@@ -16,6 +16,7 @@
       </div>
       <svg class="idle-ico" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg>
       <div class="pet" id="pet"></div>
+      <span class="lyr" hidden></span>
       <div class="trail"><span class="t"></span><i class="eq"><s></s><s></s><s></s><s></s></i></div>
     </div>
     <!-- open: media and timer -->
@@ -29,6 +30,7 @@
           <button data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button>
         </div>
         <div class="prog" hidden><span class="p-now">0:00</span><input type="range" class="seek" min="0" max="100" step="1" value="0" aria-label="Position in the song"><span class="p-dur">0:00</span></div>
+        <div class="lyrics" hidden><b class="l-now"></b><span class="l-next"></span></div>
       </section>
       <section class="timer">
         <button class="perch" id="perch"><div class="pet"></div></button>

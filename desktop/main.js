@@ -1412,6 +1412,26 @@ function wireIpc() {
     const j = await r.json().catch(() => null); if (!j?.rates) return null;
     const v = { date: j.date, rates: j.rates }; rateCache.set(base, { t: Date.now(), v }); return v;
   });
+  // lyrics for the song playing: LRCLIB (free, open, time-synced lyrics); cached per song
+  const lyricCache = new Map();
+  const parseLrc = (lrc) => String(lrc || '').split(/\r?\n/).flatMap((line) => {
+    const times = [...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)], text = line.replace(/\[[^\]]*\]/g, '').trim();
+    return times.map((m) => ({ t: +m[1] * 60 + +m[2], text }));
+  }).sort((a, b) => a.t - b.t);
+  ipcMain.handle('lyrics:get', async (_e, title, artist, dur) => {
+    title = String(title || '').slice(0, 200); artist = String(artist || '').slice(0, 200); dur = Math.round(+dur || 0);
+    if (!title) return null;
+    const key = `${title}|${artist}|${dur}`;
+    if (lyricCache.has(key)) return lyricCache.get(key);
+    const get = async (url) => { const r = await net.fetch(url, { headers: { 'User-Agent': 'Syndicates Desktop (https://github.com/fwyiling/yiling)' } }).catch(() => null); return r?.ok ? r.json().catch(() => null) : null; };
+    const clean = (t) => t.replace(/\s*[([](official|lyrics?|audio|video|mv|hd|4k|remaster(ed)?|feat\.?|ft\.?)[^)\]]*[)\]]/gi, '').replace(/\s+-\s+.*(official|lyrics|video).*$/i, '').trim();
+    const p = new URLSearchParams({ track_name: clean(title), artist_name: artist }); if (dur) p.set('duration', String(dur));
+    let j = artist ? await get(`https://lrclib.net/api/get?${p}`) : null;
+    if (!j?.syncedLyrics) { const list = await get(`https://lrclib.net/api/search?${new URLSearchParams({ q: `${clean(title)} ${artist}`.trim() })}`); j = Array.isArray(list) ? list.find((x) => x.syncedLyrics && (!dur || Math.abs((x.duration || 0) - dur) < 8)) || list.find((x) => x.syncedLyrics) : null; }
+    const v = j?.syncedLyrics ? { lines: parseLrc(j.syncedLyrics).filter((l, i, a) => l.text || (a[i + 1] && a[i + 1].t - l.t > 4)).slice(0, 400) } : { lines: [] };
+    lyricCache.set(key, v); if (lyricCache.size > 60) lyricCache.delete(lyricCache.keys().next().value);
+    return v;
+  });
   // clipboard history (Home)
   const fromHome = (e) => homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents;
   ipcMain.handle('clip:list', (e) => (fromHome(e) ? clips.list() : []));
