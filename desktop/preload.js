@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld('sd', {
   onWeatherChanged: on('weather-changed'),
   onApps: on('apps'),
   homeReady: () => ipcRenderer.send('home:ready'),
+  homeBeat: () => ipcRenderer.send('home:beat'),
   searchFiles: (q) => ipcRenderer.invoke('files:search', q),
   recentFiles: () => ipcRenderer.invoke('files:recent'),
   pinPath: (p) => ipcRenderer.invoke('pin:add', p),

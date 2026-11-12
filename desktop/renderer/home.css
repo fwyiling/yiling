@@ -14,7 +14,7 @@ body.off #panel, body.off #backdrop { opacity: 0; animation: none; }
 #date, .muted { color: var(--m); }
 #time { font-size: 56px; font-weight: 600; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
 #time small { font-size: 18px; color: var(--m); margin-left: 4px; font-weight: 500; }
-.search { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 18px; border-radius: 30px; background: var(--card); border: 1px solid var(--line); backdrop-filter: blur(20px); }
+.search { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 18px; border-radius: 30px; background: var(--card); border: 1px solid var(--line); }
 .search:focus-within { border-color: color-mix(in srgb, var(--a) 70%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--a) 22%, transparent); }
 .search svg { color: color-mix(in srgb, var(--a) 70%, #fff); }
 #q { flex: 1; border: 0; outline: none; background: none; font-size: 18px; }

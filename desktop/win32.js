@@ -68,6 +68,7 @@ function bind() {
     EnumDisplaySettingsW: user32.func('bool __stdcall EnumDisplaySettingsW(str16 device, uint32 mode, _Inout_ uint8_t *devmode)'),
     ChangeDisplaySettingsExW: user32.func('long __stdcall ChangeDisplaySettingsExW(str16 device, uint8_t *devmode, intptr_t hwnd, uint32 flags, void *param)'),
     AttachThreadInput: user32.func('bool __stdcall AttachThreadInput(uint32 from, uint32 to, bool attach)'),
+    IsHungAppWindow: user32.func('bool __stdcall IsHungAppWindow(intptr_t hwnd)'),
     BringWindowToTop: user32.func('bool __stdcall BringWindowToTop(intptr_t hwnd)'),
     shell32: koffi.load('shell32.dll'),
     kernel32: koffi.load('kernel32.dll'),
@@ -781,7 +782,9 @@ function focusWindow(hwnd, toggle = true) {
   // share input with the window in front for a moment (AttachThreadInput), and a tap of Alt.
   const fg = u.GetForegroundWindow(), pid = [0];
   const fgThread = isNull(fg) ? 0 : u.GetWindowThreadProcessId(fg, pid), me = u.GetCurrentThreadId();
-  const attached = fgThread && fgThread !== me && u.AttachThreadInput(me, fgThread, true);
+  // never share input with a window that isn't answering: AttachThreadInput would wait on it, and freeze this app
+  // with its Home panel over the whole screen
+  const attached = fgThread && fgThread !== me && !u.IsHungAppWindow(fg) && u.AttachThreadInput(me, fgThread, true);
   try {
     u.keybd_event(0x12, 0, 0x1, 0); u.keybd_event(0x12, 0, 0x1 | 0x2, 0);
     u.BringWindowToTop(hwnd);

@@ -38,6 +38,8 @@ if (!app.requestSingleInstanceLock({ appPath: app.getAppPath() })) {
 }
 const crashguard = require('./crashguard'); // errors logged instead of fatal, crashed windows reloaded, crash.log
 crashguard.init();
+// a crashed page in a full-screen window (Home) would leave a blank sheet over everything: hide it straight away
+crashguard.onWindowGone((wc) => { if (homeWin && !homeWin.isDestroyed() && wc === homeWin.webContents) homeWin.hide(); });
 // keep the last warnings and errors for "Copy diagnostics"
 const recentLog = [];
 for (const level of ['warn', 'error']) {
@@ -157,13 +159,34 @@ function scheduleHomeRelease() {
 // hidden in two steps: the page clears itself first (search, results, the panel faded out), so the next opening
 // starts from nothing and plays its one animation, instead of flashing the last frame and then animating again
 let homeHideT = 0;
-function hideHome() {
+// Home covers the whole screen and stays on top, so it must never trap it: if its page stops answering (no
+// heartbeat for 3 s) or crashes, it's hidden at once, and Esc closes it from here too, whatever the page is doing
+let homeBeat = 0, homeGuardT = null;
+function guardHome(on) {
+  clearInterval(homeGuardT); homeGuardT = null;
+  try { if (on) globalShortcut.register('Escape', () => { // the page answering: Esc goes to it (clears the search first); not answering: Home goes
+    if (homeWin && !homeWin.isDestroyed() && Date.now() - homeBeat < 1200) { homeWin.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' }); homeWin.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' }); }
+    else hideHome(true);
+  }); else if (globalShortcut.isRegistered('Escape')) globalShortcut.unregister('Escape'); } catch {}
+  if (!on) return;
+  homeBeat = Date.now(); crashguard.log('home', 'opened');
+  homeGuardT = setInterval(() => {
+    if (!homeWin || homeWin.isDestroyed() || !homeWin.isVisible()) { guardHome(false); return; }
+    if (Date.now() - homeBeat > 3000) { crashguard.log('home', 'Home stopped answering while open: hidden so it doesn\'t cover the screen'); hideHome(true); }
+  }, 500);
+}
+function hideHome(now) {
   if (!homeWin || homeWin.isDestroyed() || !homeWin.isVisible()) return;
+  guardHome(false);
+  if (now === true) { homeWin.hide(); try { homeWin.webContents.send('home-hidden'); } catch {} scheduleHomeRelease(); return; }
   homeWin.webContents.send('home-hidden');
   clearTimeout(homeHideT);
   homeHideT = setTimeout(() => { if (homeWin && !homeWin.isDestroyed()) homeWin.hide(); }, 70);
   scheduleHomeRelease();
 }
+// a pixel short of the whole screen: a topmost window covering the screen exactly is taken by Windows for a full-screen
+// game (its own display path, black flashes on some graphics drivers)
+const homeRect = (d) => ({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height - 1 });
 function toggleHome(force, mode = '') {
   const show = force ?? !(homeWin && homeWin.isVisible());
   if (!show) { hideHome(); return; }
@@ -171,8 +194,10 @@ function toggleHome(force, mode = '') {
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   if (!homeWin || homeWin.isDestroyed()) {
     homeWin = new BrowserWindow({
-      ...d.bounds, frame: false, transparent: true, show: false, skipTaskbar: true, resizable: false, alwaysOnTop: true,
-      backgroundColor: '#00000000', title: 'Syndicates Home', webPreferences: webPrefs,
+      // solid, not see-through: its backdrop was 90% dark already, and a transparent window the size of the screen (2880x1800
+      // at 200%) is a lot for some graphics drivers to blend over the live wallpaper every frame
+      ...homeRect(d), frame: false, transparent: false, show: false, skipTaskbar: true, resizable: false, alwaysOnTop: true,
+      backgroundColor: '#07090e', title: 'Syndicates Home', webPreferences: webPrefs,
     });
     homeWin.setMenu(null);
     if (win32.isWin) win32.noTransitions(homeWin);
@@ -181,13 +206,13 @@ function toggleHome(force, mode = '') {
     homeWin.on('closed', () => { homeWin = null; });
     // shown once the page has drawn its content (not on the first empty paint, which looked like loading twice)
     let shown = false;
-    const reveal = () => { if (shown || !homeWin || homeWin.isDestroyed()) return; shown = true; homeWin.setBounds(d.bounds); homeWin.show(); homeWin.focus(); if (win32.isWin && !homeWin.isFocused()) win32.focusOwn(homeWin); if (mode) homeWin.webContents.send('home-shown', mode); };
+    const reveal = () => { if (shown || !homeWin || homeWin.isDestroyed()) return; shown = true; homeWin.setBounds(homeRect(d)); homeWin.show(); guardHome(true); homeWin.focus(); if (win32.isWin && !homeWin.isFocused()) win32.focusOwn(homeWin); if (mode) homeWin.webContents.send('home-shown', mode); };
     ipcMain.once('home:ready', reveal);
     setTimeout(reveal, 2500); // in case the page is slow
     return;
   }
-  homeWin.setBounds(d.bounds);
-  homeWin.show(); homeWin.focus();
+  homeWin.setBounds(homeRect(d));
+  homeWin.show(); homeWin.focus(); guardHome(true);
   if (win32.isWin && !homeWin.isFocused()) win32.focusOwn(homeWin); // opened by the Windows key: the key went to another program
   homeWin.webContents.send('home-shown', mode);
 }
@@ -1023,7 +1048,9 @@ async function setDeskBackground(id, i, file, style, cur) {
   return ok;
 }
 const v11 = () => vdesk.supported();
-function syncWindowsWallpaper(delay = 1500) {
+let stillFull = true; // a round for every desktop is due (anything but the minute's clock update asks for one)
+function syncWindowsWallpaper(delay = 1500, nearOnly = false) {
+  if (!nearOnly) stillFull = true;
   clearTimeout(stillT);
   stillT = setTimeout(async function run() {
     if (!win32.isWin || app.isQuitting) return;
@@ -1048,11 +1075,14 @@ function syncWindowsWallpaper(delay = 1500) {
       const order = [cur, ...ids.filter((id) => id !== cur)];
       if (st.widgets.weather?.on && !lastWeatherJson) { try { lastWeatherJson = JSON.stringify(await system.weather(st.widgets.weather?.city || '')); } catch {} } // known before the key: no second still once it loads
       const keys = new Map(order.map((id) => [id, stillKey(st.wallpaper.perDesk ? id : cur)]));
-      const todo = order.filter((id) => pickedOn(id) && stillApplied.get(id) !== keys.get(id));
-      if (!todo.length) return;
+      // each minute only the desktops a slide goes to next (the one showing, and left / right of it); all of them every
+      // five minutes and on every other change. Five full-screen pictures a minute was a lot of work for Explorer
+      const near = !stillFull && new Date().getMinutes() % 5 !== 0, ci = ids.indexOf(cur);
+      const todo = order.filter((id) => pickedOn(id) && stillApplied.get(id) !== keys.get(id) && (!near || Math.abs(ids.indexOf(id) - ci) <= 1));
+      if (!todo.length) { if (!near) stillFull = false; return; }
       const wait = stillLast + STILL_GAP - Date.now();
       if (wait > 0) { stillBusy = false; stillT = setTimeout(run, wait); return; }
-      stillLast = Date.now();
+      stillLast = Date.now(); stillFull = false;
       const files = new Map();
       for (const id of todo) {
         const key = keys.get(id);
@@ -1071,7 +1101,7 @@ setInterval(() => syncWindowsWallpaper(0), 10 * 60e3); // the date, the hour's g
 const clockShown = () => { const w = store?.get().widgets; return !!w?.clock?.on && (w.layout === 'syn' || w.layout === 'free'); };
 (function minuteStill() {
   const now = new Date(), wait = (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 400;
-  setTimeout(() => { if (store && clockShown() && store.get().wallpaper.matchWindows && !paused) syncWindowsWallpaper(0); minuteStill(); }, wait);
+  setTimeout(() => { if (store && clockShown() && store.get().wallpaper.matchWindows && !paused) syncWindowsWallpaper(0, true); minuteStill(); }, wait);
 })();
 
 // ---------- lock screen ----------
@@ -1433,6 +1463,7 @@ function wireIpc() {
   });
   // clipboard history (Home)
   const fromHome = (e) => homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents;
+  ipcMain.on('home:beat', (e) => { if (homeWin && !homeWin.isDestroyed() && e.sender === homeWin.webContents) homeBeat = Date.now(); });
   ipcMain.handle('clip:list', (e) => (fromHome(e) ? clips.list() : []));
   ipcMain.handle('clip:use', (e, id) => { // back on the clipboard, Home away, pasted where you were
     if (!fromHome(e) || !clips.use(String(id))) return false;

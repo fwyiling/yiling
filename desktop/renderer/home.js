@@ -468,4 +468,5 @@ $('hint').textContent = `${s.home.hotkey} opens this panel · drag apps here to 
 apps = await sd.apps().catch(() => []);
 renderGrid(); renderTodos(); renderReading(); onShown();
 requestAnimationFrame(() => sd.homeReady()); // drawn: the window may appear now
+setInterval(() => { if (!document.hidden) sd.homeBeat?.(); }, 500); // "still answering": the app hides Home if this stops (it covers the screen)
 useTheme('home'); // Customize > Themes

@@ -11,7 +11,7 @@ const { app, crashReporter } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-let file = '', flag = '', lastSession = null;
+let file = '', flag = '', lastSession = null, onGone = () => {};
 const recent = [];
 const stamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
 function log(kind, msg) {
@@ -43,6 +43,7 @@ function init() {
   try { crashReporter.start({ uploadToServer: false, compress: true }); } catch {} // dumps stay in app.getPath('crashDumps')
   app.on('render-process-gone', (_e, wc, d) => {
     if (d.reason === 'clean-exit') return;
+    try { onGone(wc); } catch {}
     log('window', `${nameOf(wc)}: page ${d.reason} (exit code ${d.exitCode})`);
     revive(wc, d.reason);
   });
@@ -78,4 +79,4 @@ function summary() {
   return { lastSessionCrashed: !!lastSession, crashDumps: dumps, log: tail };
 }
 
-module.exports = { init, log, summary };
+module.exports = { init, log, summary, onWindowGone: (fn) => { onGone = fn; } };
