@@ -17,6 +17,7 @@ const winkey = require('./winkey'); // the Windows key opens Home
 const updater = require('./updater'); // updates from the desktop-latest release
 const clips = require('./clipboard'); // clipboard history, in Home
 const goals = require('./goals'); // daily revision / hobby time, in Home and on the desktop
+const focus = require('./focus'); // focus mode: distractions nudged (or minimized) while you revise
 const shots = require('./shots');
 const taskbar = require('./taskbar');
 const lockscreen = require('./lockscreen');
@@ -209,6 +210,8 @@ function registerHotkey() {
   if (!hotkeyStatus.switchKeys) console.warn('[switch] Ctrl+Alt+Shift+Left/Right is taken by another app');
   reg('Ctrl+Alt+T', () => openIslandTimer()); // the timer, from anywhere
   reg('Ctrl+Alt+G', () => setGamer(!gamer)); // gamer mode
+  reg('Ctrl+Alt+R', () => goals.toggle('revision')); // the revision stopwatch, on / off
+  reg('Ctrl+Alt+F', () => focus.set(!focus.isOn(), 'manual')); // focus mode, on / off
   if (store.get().home.clipboard !== false) reg('Alt+Shift+V', () => toggleHome(true, 'clip')); // the clipboard history (Win+V stays Windows')
 }
 
@@ -1445,6 +1448,9 @@ function wireIpc() {
   ipcMain.handle('goals:start', (e, k) => (goalsWriter(e) ? goals.start(String(k)) : goals.status()));
   ipcMain.handle('goals:stop', (e) => (goalsWriter(e) ? goals.stop() : goals.status()));
   ipcMain.handle('goals:add', (e, k, m) => (goalsWriter(e) ? goals.add(String(k), Number(m)) : goals.status()));
+  ipcMain.handle('goals:toggle', (e, k) => (goalsWriter(e) ? goals.toggle(String(k)) : goals.status()));
+  ipcMain.handle('focus:get', () => focus.status());
+  ipcMain.handle('focus:set', (e, on) => (goalsWriter(e) ? focus.set(!!on, 'manual') : focus.status()));
   ipcMain.handle('clip:clear', (e) => { if (fromHome(e) || (settingsWin && e.sender === settingsWin.webContents)) clips.clear(); });
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
@@ -1654,7 +1660,18 @@ app.whenReady().then(() => {
   clips.init(app.getPath('userData'), () => win32.clipboardSeq());
   goals.init(app.getPath('userData'), () => { const g = store.get().goals || {}; return { revision: Math.max(0, Number(g.revision) || 0), hobby: Math.max(0, Number(g.hobby) || 0), remind: g.remind !== false }; },
     (title, body) => { if (Notification.isSupported()) new Notification({ title, body }).show(); });
-  goals.onChange((g) => broadcast('goals', g));
+  focus.init({ win32, cfg: () => store.get().focus || {}, onChange: (f) => broadcast('focus', f),
+    nudge: (text) => { if (islandWin && !islandWin.isDestroyed()) islandWin.webContents.send('osd', { kind: 'focus', text }); else if (Notification.isSupported()) new Notification({ title: 'Focus mode', body: text, silent: true }).show(); } });
+  // focus mode follows the revision stopwatch (when it's set to), unless it was switched on by hand
+  const focusFollow = (g) => {
+    if (store.get().focus?.auto === false) return;
+    if (g.running === 'revision' && !focus.isOn()) focus.set(true, 'revision');
+    else if (g.running !== 'revision' && focus.why() === 'revision') focus.set(false);
+  };
+  goals.onChange((g) => { broadcast('goals', g); focusFollow(g); });
+  focusFollow(goals.status());
+  // asleep or shut down: the revision stopwatch stops (nothing counts while the PC is off), and so does a countdown
+  powerMonitor.on('suspend', () => { goals.suspend(); if (timer.state === 'running') TIMER_ACTIONS.pause(); });
   if (store.get().home.clipboard !== false) clips.start();
   clips.onChange((l) => { if (homeWin && !homeWin.isDestroyed()) homeWin.webContents.send('clips', l); });
   themes.init(app.getPath('userData'));
@@ -1791,6 +1808,7 @@ app.on('before-quit', (e) => {
   if (dockWin && win32.isWin) { win32.releaseEdge(dockWin); win32.showTaskbar(true); win32.setTaskbarAutoHide(!!store.get().dock.prevAutoHide); } // and the taskbar
 });
 app.on('will-quit', () => {
+  try { goals.flush(); } catch {} // "last seen": a restart soon after carries on counting, a shutdown doesn't
   globalShortcut.unregisterAll();
   deskWorker?.terminate();
   vdesk.stop();

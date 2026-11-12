@@ -231,6 +231,10 @@ const petBtns = [...Object.keys(PETS), 'none'].map((id) => {
 $('pets').replaceChildren(...petBtns);
 
 // ---------- reflect settings in the controls ----------
+// focus mode's lists: typed as comma-separated words, kept as lists
+for (const [id, k] of [['focusApps', 'apps'], ['focusSites', 'sites']]) {
+  $(id).addEventListener('change', () => save({ focus: { [k]: $(id).value.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 60) } }));
+}
 function paint() {
   document.querySelectorAll('[data-k]').forEach((el) => {
     if (el === document.activeElement && el.type !== 'checkbox' && el.type !== 'range') return;
@@ -238,6 +242,7 @@ function paint() {
     if (el.type === 'checkbox') el.checked = !!v; else if (v != null) el.value = v;
     if (el.type === 'range') el.parentElement.querySelector('em').textContent = fmt[el.dataset.k]?.(v) ?? v;
   });
+  for (const [id, k] of [['focusApps', 'apps'], ['focusSites', 'sites']]) if (document.activeElement !== $(id)) $(id).value = (s.focus?.[k] || []).join(', ');
   const pet = PETS[s.island?.pet] ? s.island.pet : s.island?.pet === 'none' ? 'none' : 'cat';
   petBtns.forEach((b) => b.classList.toggle('on', b.dataset.pet === pet));
   $('petPick').hidden = !s.island?.on;

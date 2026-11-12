@@ -229,6 +229,13 @@ function renderGoals() {
     row.querySelector('.go').classList.toggle('on', run);
   }
   $('goalNote').textContent = met === 2 ? 'All done today' : g.running ? (g.running === 'revision' ? 'Revising…' : 'Hobby time…') : '';
+  if (g.week) {
+    const live = g.running === 'revision' ? (Date.now() - goalAt) / 1000 : 0;
+    $('gWeek').textContent = `This week ${gfmt(g.week.revision + live)} / ${gfmt(g.week.goal.revision)}`;
+    $('gMonth').textContent = `${g.month.name} ${gfmt(g.month.revision + live)} / ${gfmt(g.month.goal.revision)}`;
+    const box = $('gDays'); if (box.children.length !== 7) box.innerHTML = '<span><s></s><u></u></span>'.repeat(7);
+    g.week.days.forEach((d, i) => { const v = d.revision + (d.today ? live : 0), e = box.children[i]; e.style.setProperty('--h', Math.min(1, v / (g.goal.revision || 1))); e.querySelector('u').textContent = d.label[0]; e.title = `${d.label}: ${gfmt(v)}`; e.className = d.today ? 'today' : d.future ? 'future' : v >= g.goal.revision ? 'met' : ''; });
+  }
 }
 for (const row of document.querySelectorAll('#goalCard .goal')) {
   const k = row.dataset.k, got = (g) => { goalSt = g; goalAt = Date.now(); renderGoals(); };
@@ -239,6 +246,10 @@ for (const row of document.querySelectorAll('#goalCard .goal')) {
 if (sd.goals) { sd.onGoals?.((g) => { goalSt = g; goalAt = Date.now(); renderGoals(); }); sd.goals().then((g) => { goalSt = g; goalAt = Date.now(); renderGoals(); }).catch(() => {}); }
 else $('goalCard').hidden = true;
 setInterval(() => { if (goalSt?.running && !document.hidden) renderGoals(); }, 1000);
+let focusSt = { on: false };
+const renderFocusBtn = () => { $('focusBtn').textContent = focusSt.on ? 'Focus on' : 'Focus off'; $('focusBtn').classList.toggle('on', !!focusSt.on); };
+if (sd.focus) { sd.focus().then((f) => { focusSt = f; renderFocusBtn(); }).catch(() => {}); sd.onFocus?.((f) => { focusSt = f; renderFocusBtn(); }); $('focusBtn').onclick = () => sd.focus(!focusSt.on).then((f) => { focusSt = f; renderFocusBtn(); }); }
+else $('focusBtn').hidden = true;
 
 function renderTodos() {
   const list = s.home.todos || [];

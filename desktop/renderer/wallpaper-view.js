@@ -120,7 +120,7 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
     calendar: () => el('div', 'w-calendar w-card'),
     reminders: () => el('div', 'w-reminders w-card', '<div class="rh"><b>Reminders</b><em></em></div><ul></ul>'),
     today: () => el('div', 'w-today w-card', '<div class="col cls"><span class="lbl">Next</span><b></b><span class="sub"></span></div><div class="col todo"><span class="lbl">To-do</span><b></b><span class="sub"></span></div>'),
-    goals: () => el('div', 'w-goals w-card', `<div class="gh"><b>Today's goals</b><em></em></div><div class="hb" data-k="revision"><b>REVISE</b>${healthBar()}<em></em></div><div class="hb" data-k="hobby"><b>HOBBY</b>${healthBar()}<em></em></div>`),
+    goals: () => el('div', 'w-goals w-card', `<div class="gh"><b>Today's goals</b><em></em></div><div class="hb" data-k="revision"><b>REVISE</b>${healthBar()}<em></em></div><div class="hb" data-k="hobby"><b>HOBBY</b>${healthBar()}<em></em></div><div class="gsep"></div><div class="hb wk" data-k="week"><b>WEEK</b>${healthBar()}<em></em></div><div class="hb wk" data-k="month"><b>MONTH</b>${healthBar()}<em></em></div><div class="gdays">${'<i><s></s><u></u></i>'.repeat(7)}</div>`),
     quote: () => el('figure', 'w-quote', '<blockquote></blockquote><figcaption></figcaption>'),
     media: () => el('div', 'w-media w-card', '<div class="art none"><svg class=\"note\" viewBox=\"0 0 24 24\"><path d=\"M9 18V6l10-2v12\"/><circle cx=\"6.5\" cy=\"18\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"16\" r=\"2.5\"/></svg></div><div class="txt"><b></b><span></span></div><i class="eq"><s></s><s></s><s></s></i>'),
   };
@@ -156,6 +156,20 @@ export function mountWallpaper(root, settings, { preview = false, sd = window.sd
       row.classList.toggle('done', have >= goal); row.classList.toggle('run', g.running === k);
     }
     e.querySelector('.gh em').textContent = g.running ? `● ${g.running === 'revision' ? 'REVISING' : 'HOBBY'}` : '';
+    // this week and this month (revision), against the daily goal times the days; the week as seven columns
+    const wk = g.week || (preview ? { revision: 32400, goal: { revision: 75600 }, days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, i) => ({ label, revision: [10800, 7200, 9000, 4800, 0, 0, 0][i], today: i === 3, future: i > 3 })) } : null);
+    const mo = g.month || (preview ? { revision: 98000, goal: { revision: 324000 }, name: 'November' } : null);
+    const live = g.running === 'revision' && goalsSt ? (Date.now() - goalsAt) / 1000 : 0;
+    e.querySelector('.gsep').hidden = !wk;
+    for (const [k, v] of [['week', wk], ['month', mo]]) {
+      const row = e.querySelector(`.hb[data-k="${k}"]`); row.hidden = !v; if (!v) continue;
+      const have = v.revision + live, goal = v.goal.revision || 1;
+      fillCells(row, Math.min(CELLS, Math.floor((have / goal) * CELLS)));
+      row.querySelector('em').textContent = `${Math.floor(have / 3600)}/${Math.round(goal / 3600)}h`;
+      row.classList.toggle('done', have >= goal);
+    }
+    const days = e.querySelector('.gdays'); days.hidden = !wk;
+    if (wk) wk.days.forEach((d, i) => { const c = days.children[i], v = d.revision + (d.today ? live : 0); c.style.setProperty('--h', Math.min(1, v / (g.goal.revision || 1))); c.querySelector('u').textContent = d.label[0]; c.className = d.today ? 'today' : d.future ? 'future' : v >= g.goal.revision ? 'met' : ''; });
   }
   if (!preview && sd?.goals) { sd.onGoals?.((g) => { goalsSt = g; goalsAt = Date.now(); renderGoals(); }); sd.goals().then((g) => { goalsSt = g; goalsAt = Date.now(); renderGoals(); }).catch(() => {}); }
   const visible = (k, cfg) => cfg.on && (k !== 'media' || nowPlaying.on || cardsLayout())

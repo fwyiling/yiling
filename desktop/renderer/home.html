@@ -64,9 +64,10 @@
           <div class="mctl"><button data-m="prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 6l-8 6 8 6z"/></svg></button><button data-m="toggle" class="pp" title="Play / pause"><svg viewBox="0 0 24 24" class="play"><path d="M8 5.5v13l10-6.5z"/></svg><svg viewBox="0 0 24 24" class="pause"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg></button><button data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 6l8 6-8 6z"/></svg></button></div>
         </div>
         <div class="card" id="goalCard">
-          <div class="sec-h"><h2>Daily goals</h2><span id="goalNote" class="muted"></span></div>
+          <div class="sec-h"><h2>Daily goals</h2><span><span id="goalNote" class="muted"></span><button id="focusBtn" class="chip" title="Focus mode (Ctrl+Alt+F): distracting apps and sites get a nudge">Focus off</button></span></div>
           <div class="goal" data-k="revision"><div class="gl"><b>Revision</b><span></span></div><div class="gbar"><i></i></div><div class="gbtns"><button class="chip go">Start</button><button class="chip add" title="Add 15 min (right-click: take 15 off)">+15</button></div></div>
           <div class="goal" data-k="hobby"><div class="gl"><b>Hobby</b><span></span></div><div class="gbar"><i></i></div><div class="gbtns"><button class="chip go">Start</button><button class="chip add" title="Add 15 min (right-click: take 15 off)">+15</button></div></div>
+          <div class="gweek"><div><span id="gWeek"></span><span id="gMonth"></span></div><i id="gDays"></i></div>
         </div>
         <div class="card" id="todoCard">
           <div class="sec-h"><h2>To-do</h2><span id="todoCount" class="muted"></span></div>

@@ -63,6 +63,11 @@
       <label class="slider"><span>Revision a day</span><input type="range" min="30" max="360" step="15" data-k="goals.revision"><em></em></label>
       <label class="slider"><span>Hobby, at least</span><input type="range" min="10" max="120" step="5" data-k="goals.hobby"><em></em></label>
       <label class="switch"><span><b>Evening reminders</b><small>A note at 5, 7 and 9 pm while revision is short of the goal, and at 8 pm if there's been no hobby time. Start and stop the timers in Home.</small></span><input type="checkbox" data-k="goals.remind"></label>
+      <h2>Focus mode</h2>
+      <label class="switch"><span><b>On while you revise</b><small>Starts and stops with the revision timer. Also Ctrl+Alt+F, or the Focus button in Home and the island, any time.</small></span><input type="checkbox" data-k="focus.auto"></label>
+      <label class="switch"><span><b>Strict</b><small>Minimize distracting apps and sites as soon as they come to the front, instead of a nudge in the island.</small></span><input type="checkbox" data-k="focus.strict"></label>
+      <label class="field-row"><span>Distracting apps <small>program names, comma separated (Task Manager › Details shows them)</small></span><input class="field" id="focusApps" spellcheck="false"></label>
+      <label class="field-row"><span>Distracting sites <small>words in a browser tab's title, comma separated</small></span><input class="field" id="focusSites" spellcheck="false"></label>
     </section>
     <section data-panel="dock">
       <h2>Dock</h2>

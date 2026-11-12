@@ -34,7 +34,10 @@ const DEFAULTS = {
   home: { hotkey: 'Alt+Space', winKey: true, clipboard: true, engine: 'google', pins: [], todos: [], notes: '', timetable: [], books: [] },
   general: { startWithWindows: false, pauseOnFullscreen: true, pauseOnBattery: true, hideDesktopIcons: false, fps: 30, pauseWhenCovered: true, autoGamer: true, hideSwitchLabel: true, autoUpdate: true, deskMotion: false, deskMotionV2: true, edgeSwitch: true, ownOsd: true, lowPower: null, accentFromWallpaper: false, accentManual: '' },
   dock: { on: false, style: 'floating', size: 'm', pinned: true, running: true, clock: true, media: true, start: false, startV2: true, homeBtn: true, quick: true, gear: true, magnify: true, opacity: 0.96, bin: true, shots: true, hide: 'smart', reserve: true, prevAutoHide: null },
-  goals: { revision: 180, hobby: 30, remind: true }, // daily minutes: revision, and at least this much of something you enjoy; evening nudges
+  goals: { revision: 180, hobby: 30, remind: true },
+  // focus mode: on by itself while you revise (auto); the apps (program names) and sites (words in a browser tab's
+  // title) that get a nudge, or are minimized in strict mode
+  focus: { auto: true, strict: false, apps: ['discord', 'steam', 'epicgameslauncher', 'riotclientservices', 'valorant', 'robloxplayerbeta', 'whatsapp'], sites: ['youtube', 'tiktok', 'instagram', 'netflix', 'twitch', 'reddit'] }, // daily minutes: revision, and at least this much of something you enjoy; evening nudges
   island: { on: true, pet: 'cat', lyrics: true },   // the pill at the top: timer, now playing; pet: a little friend living in it (cat, bunny, chick, panda, puppy, ghost, slime or none)
   topbar: { on: true, tray: true, traySystem: false, trayHidden: [], weather: true, media: true, battery: true, ime: false, look: 'solid', opacity: 0.96 }, // look: solid | glass (frosted, the desktop blurred behind) // a slim bar along the top, like macOS
   themes: { active: [] },   // themes in use, in order: a later one wins where they overlap (none: the standard look)
@@ -71,10 +74,14 @@ class Store {
     if (saved?.general && !saved.general.deskMotionV2) { saved.general.deskMotion = false; saved.general.deskMotionV2 = true; } // the glide after a switch read as a jolt: still, as on a Mac (Customize > General brings it back)
     if (['center', 'left'].includes(saved?.widgets?.layout)) saved.widgets.layout = 'mac'; // Centered and Left are gone
     if (saved?.widgets && !saved.widgets.macOffered) { saved.widgets.layout = 'mac'; saved.widgets.macOffered = true; } // the new Mac-style widgets, once (Customize > Widgets switches back)
+    if (saved?.home?.ttSeeded && !saved.home.ttFixP5 && Array.isArray(saved.home.timetable)) { // the last lesson is 14:05-15:05
+      for (const c of saved.home.timetable) { if (c.s === '14:20' && c.e === '15:05') c.s = '14:05'; if (c.s === '13:30' && c.e === '14:20') c.e = '14:05'; }
+      saved.home.ttFixP5 = true;
+    }
     if (!saved?.home?.ttSeeded) { // the built-in timetable, once, if there's none yet (Home > Timetable edits it)
       saved.home = saved.home || {};
       if (!(saved.home.timetable || []).length) saved.home.timetable = require('./timetable');
-      saved.home.ttSeeded = true;
+      saved.home.ttSeeded = true; saved.home.ttFixP5 = true;
     }
     this.data = merge(DEFAULTS, saved);
   }

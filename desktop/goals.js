@@ -1,7 +1,10 @@
 // Daily goals: so many minutes of revision a day (3 hours by default) and at least so many of something you enjoy (30
 // minutes). A stopwatch for each (start one in Home or on the widget, it stops the other), minutes can also be added by
 // hand, and a nudge in the evening if a goal isn't met yet. Kept on this PC: goals.json in the app's folder; a new day
-// starts at midnight (time running across it is split between the two days).
+// starts at midnight (time running across it is split between the two days). The day resets; the last two months
+// stay as history, for this week's and this month's totals (target: the daily goal times the days).
+// The PC asleep or off doesn't count: the stopwatch stops when Windows goes to sleep, and if the app wasn't running for
+// a while (shut down, crashed), only the time up to when it was last seen counts.
 const fs = require('fs');
 const path = require('path');
 
@@ -10,16 +13,28 @@ let file = '', st = null, timer = null, getCfg = () => ({ revision: 180, hobby: 
 const listeners = new Set();
 
 const dayOf = (t = Date.now()) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const fresh = () => ({ day: dayOf(), revision: 0, hobby: 0, running: null, since: 0, reminded: [], history: {} });
-const save = () => { try { fs.writeFileSync(file, JSON.stringify(st)); } catch {} };
+const fresh = () => ({ day: dayOf(), revision: 0, hobby: 0, running: null, since: 0, reminded: [], history: {}, seen: Date.now() });
+const save = () => { st.seen = Date.now(); try { fs.writeFileSync(file, JSON.stringify(st)); } catch {} };
 const fmt = (sec) => { const m = Math.floor(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`; };
 
 /** Seconds done today, the running stopwatch included. */
 const done = (k) => st[k] + (st.running === k ? Math.max(0, (Date.now() - st.since) / 1000) : 0);
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function status() {
   rollover();
-  const c = getCfg();
-  return { day: st.day, revision: Math.round(done('revision')), hobby: Math.round(done('hobby')), running: st.running, since: st.since, goal: { revision: c.revision * 60, hobby: c.hobby * 60 }, history: st.history };
+  const c = getCfg(), now = new Date();
+  const today = { revision: Math.round(done('revision')), hobby: Math.round(done('hobby')) };
+  const on = (d) => { const k = dayOf(+d); return k === st.day ? today : st.history[k] || { revision: 0, hobby: 0 }; };
+  // this week, Monday to Sunday
+  const mon = new Date(now); mon.setHours(12, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+  const days = DAY_NAMES.map((label, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); const v = d > now && dayOf(+d) !== st.day ? { revision: 0, hobby: 0 } : on(d); return { day: dayOf(+d), label, revision: v.revision, hobby: v.hobby, today: dayOf(+d) === st.day, future: d > now && dayOf(+d) !== st.day }; });
+  const week = { revision: days.reduce((a, d) => a + d.revision, 0), hobby: days.reduce((a, d) => a + d.hobby, 0), goal: { revision: c.revision * 60 * 7, hobby: c.hobby * 60 * 7 }, days };
+  // this month, the 1st to today (target: the daily goal for every day of the month)
+  const inMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let mRev = 0, mHob = 0;
+  for (let i = 1; i <= now.getDate(); i++) { const v = on(new Date(now.getFullYear(), now.getMonth(), i, 12)); mRev += v.revision; mHob += v.hobby; }
+  const month = { revision: mRev, hobby: mHob, goal: { revision: c.revision * 60 * inMonth, hobby: c.hobby * 60 * inMonth }, name: now.toLocaleString('en', { month: 'long' }), days: inMonth };
+  return { day: st.day, ...today, running: st.running, since: st.since, goal: { revision: c.revision * 60, hobby: c.hobby * 60 }, week, month };
 }
 const emit = () => { const s = status(); for (const fn of listeners) fn(s); };
 
@@ -29,16 +44,16 @@ function rollover() {
   if (st.day === today) return false;
   if (st.running) { const mid = new Date(); mid.setHours(0, 0, 0, 0); st[st.running] += Math.max(0, (mid - st.since) / 1000); st.since = +mid; }
   st.history[st.day] = { revision: Math.round(st.revision), hobby: Math.round(st.hobby) };
-  const keep = Object.keys(st.history).sort().slice(-14); st.history = Object.fromEntries(keep.map((d) => [d, st.history[d]]));
+  const keep = Object.keys(st.history).sort().slice(-62); st.history = Object.fromEntries(keep.map((d) => [d, st.history[d]]));
   Object.assign(st, { day: today, revision: 0, hobby: 0, reminded: [] });
   save();
   return true;
 }
 
-function stop() {
+function stop(at) {
   rollover();
   if (!st.running) return status();
-  st[st.running] += Math.max(0, (Date.now() - st.since) / 1000);
+  st[st.running] += Math.max(0, ((at || Date.now()) - st.since) / 1000);
   st.running = null; st.since = 0; save(); emit();
   return status();
 }
@@ -49,6 +64,10 @@ function start(kind) {
   st.running = kind; st.since = Date.now(); save(); emit();
   return status();
 }
+/** Start it, or stop it if it's the one running. */
+const toggle = (kind) => (st.running === kind ? stop() : start(kind));
+/** Windows is going to sleep (or shutting down): nothing counts while it's off. */
+function suspend() { if (st.running) { const k = st.running; stop(); return k; } return ''; }
 /** Add (or take away, with a negative number) minutes by hand. */
 function add(kind, minutes) {
   if (!KINDS.includes(kind)) return status();
@@ -79,7 +98,7 @@ function check() {
     const k = st.running, id = `${k}@goal`;
     if (!st.reminded.includes(id) && c[k] > 0 && done(k) >= c[k] * 60) { st.reminded.push(id); save(); notify(k === 'revision' ? 'Revision goal reached' : 'Hobby time done', `${fmt(c[k] * 60)} today. Nice work.`); }
   }
-  if (st.running) emit(); // the widget's minutes move on
+  if (st.running) { save(); emit(); } // the widget's minutes move on (and "last seen" with them)
 }
 
 function init(userData, cfg, notifier) {
@@ -88,9 +107,15 @@ function init(userData, cfg, notifier) {
   if (notifier) notify = notifier;
   try { st = { ...fresh(), ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { st = fresh(); }
   if (!KINDS.includes(st.running)) st.running = null;
-  rollover();
+  // the app wasn't running for a while (the PC was off, or it crashed): count only up to when it was last seen
+  if (st.running && st.seen && Date.now() - st.seen > 3 * 60e3) {
+    const at = Math.max(st.since, st.seen);
+    if (dayOf(at) !== st.day) { st.running = null; st.since = 0; } // odd clock: drop it
+    else { st[st.running] += Math.max(0, (at - st.since) / 1000); st.running = null; st.since = 0; }
+  }
+  rollover(); save();
   clearInterval(timer); timer = setInterval(check, 60e3); timer.unref?.();
   setTimeout(check, 5000).unref?.();
 }
 
-module.exports = { init, status, start, stop, add, onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, _dayOf: dayOf };
+module.exports = { init, flush: () => { if (st) save(); }, status, start, stop: () => stop(), add, toggle, suspend, onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, _dayOf: dayOf };

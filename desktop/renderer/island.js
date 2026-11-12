@@ -75,6 +75,13 @@ function renderFocus() {
     g.querySelector('.bar b').style.width = `${Math.min(100, (have / goal) * 100)}%`;
   }
   f.querySelector('.f-sub').textContent = met === 2 ? 'all done today' : '';
+  if (goals.week) {
+    const wk = goals.week, liveAdd = k ? goalHave(k) - goals[k] : 0, wRev = wk.revision + (k === 'revision' ? liveAdd : 0);
+    $('fWeek').textContent = `This week ${hm2(wRev)} / ${hm2(wk.goal.revision)} · ${goals.month.name} ${hm2(goals.month.revision + (k === 'revision' ? liveAdd : 0))} / ${hm2(goals.month.goal.revision)}`;
+    const days = $('fWeek').nextElementSibling, max = Math.max(goals.goal.revision, 1);
+    if (days.children.length !== 7) days.innerHTML = '<s></s>'.repeat(7);
+    wk.days.forEach((d, i) => { const v = d.revision + (d.today && k === 'revision' ? liveAdd : 0), e = days.children[i]; e.style.setProperty('--h', Math.min(1, v / max)); e.title = `${d.label}: ${hm2(v)}`; e.className = d.today ? 'today' : v >= max ? 'met' : ''; });
+  }
   if (k) {
     const have = goalHave(k), goal = goals.goal[k] || 1, rest = goal - have;
     $('fNow').textContent = hms(have);
@@ -90,6 +97,11 @@ function renderFocus() {
   }
 }
 $('fStop').onclick = () => sd.goals('stop');
+let focusSt = await sd.focus?.().catch(() => null) || { on: false };
+function renderFocusMode() { const b = $('fFocus'); b.textContent = focusSt.on ? 'Focus on' : 'Focus off'; b.classList.toggle('accent', !!focusSt.on); isl.classList.toggle('focusing', !!focusSt.on); }
+$('fFocus').onclick = () => sd.focus(!focusSt.on).then((f) => { focusSt = f; renderFocusMode(); });
+sd.onFocus?.((f) => { focusSt = f; renderFocusMode(); });
+renderFocusMode();
 $('fSwap').onclick = () => sd.goals('start', goalRun() === 'revision' ? 'hobby' : 'revision');
 document.querySelectorAll('[data-start]').forEach((b) => { b.onclick = () => sd.goals('start', b.dataset.start); });
 function onGoals(g) {
@@ -237,6 +249,7 @@ function endAlert() { const was = alerting; alerting = false; clearTimeout(alert
 
 // ---------- pop-ups: volume, brightness, Caps Lock, headphones ----------
 const ICONS = {
+  focus: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8"/>',
   volume: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.6 6.6a7.5 7.5 0 0 1 0 10.8"/>',
   muted: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/>',
   brightness: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -249,9 +262,9 @@ function showOsd(info) {
   const o = document.querySelector('.osd');
   const kind = info.kind === 'volume' && (info.muted || info.value === 0) ? 'muted' : info.kind === 'device' ? 'headphones' : info.kind;
   o.querySelector('.o-ic').innerHTML = ICONS[kind] || ICONS.volume;
-  o.classList.toggle('on', info.kind === 'caps' ? !!info.on : info.kind === 'device' ? !!info.connected : info.kind === 'ime' ? !!info.native : false);
-  const note = info.kind === 'caps' || info.kind === 'device' || info.kind === 'ime';
-  if (note) o.querySelector('.o-txt').textContent = info.kind === 'caps' ? `Caps Lock ${info.on ? 'on' : 'off'}`
+  o.classList.toggle('on', info.kind === 'focus' ? true : info.kind === 'caps' ? !!info.on : info.kind === 'device' ? !!info.connected : info.kind === 'ime' ? !!info.native : false);
+  const note = info.kind === 'caps' || info.kind === 'device' || info.kind === 'ime' || info.kind === 'focus';
+  if (note) o.querySelector('.o-txt').textContent = info.kind === 'focus' ? info.text : info.kind === 'caps' ? `Caps Lock ${info.on ? 'on' : 'off'}`
     : info.kind === 'ime' ? (info.native ? ({ 0x11: '日本語', 0x12: '한국어' }[info.lang & 0x3FF] || '中文 · 拼音') : 'English')
     : `${info.name || 'Audio device'} ${info.connected ? 'connected' : 'disconnected'}`;
   else { o.querySelector('.o-bar b').style.width = `${info.value}%`; o.querySelector('.o-val').textContent = info.kind === 'volume' && info.muted ? 'Off' : info.value; }

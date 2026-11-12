@@ -891,6 +891,15 @@ module.exports = {
   /** Changes with every copy (the clipboard history only reads the clipboard when it does). */
   clipboardSeq: safe('clipboardSeq', () => (load() ? u.GetClipboardSequenceNumber() : -1), -1),
   keyDown: safe('keyDown', (vk) => !!(load() && (u.GetAsyncKeyState(vk) & 0x8000)), false),
+  /** The app in front: its top-level window, program file name (lower case) and title. For focus mode. */
+  foregroundApp: safe('foregroundApp', () => {
+    if (!load()) return null;
+    const fg = u.GetForegroundWindow(); if (isNull(fg)) return null;
+    const root = u.GetAncestor(fg, 2), pid = [0]; u.GetWindowThreadProcessId(root, pid);
+    const b = new Uint16Array(256), n = u.GetWindowTextW(root, b, 256);
+    return { hwnd: Number(root), pid: pid[0], exe: (exeOf(pid[0]).split('\\').pop() || '').toLowerCase(), title: String.fromCharCode(...b.slice(0, n)) };
+  }, null),
+  minimizeWindow: safe('minimizeWindow', (hwnd) => !!(load() && u.ShowWindow(hwnd, 6)), false), // SW_MINIMIZE
   foregroundId: safe('foregroundId', () => (load() ? Number(u.GetForegroundWindow()) : 0), 0),
   recycleBin: safe('recycleBin', recycleBin, { items: 0, bytes: 0 }),
   emptyBin: safe('emptyBin', emptyBin, false),

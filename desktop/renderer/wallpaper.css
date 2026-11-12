@@ -261,3 +261,16 @@
 .hb em { min-width: 4.4cqmin; }
 [data-layout="syn"] .w-stats .hbars { width: 100%; }
 .w-goals .hb.done em, .w-goals .hb.run b, .w-goals .gh em { color: color-mix(in srgb, var(--a) 45%, #fff); }
+
+/* week and month under the day's bars, then the week as seven pixel columns (a met day full height, today outlined) */
+.w-goals .gsep { height: 1px; margin: .2cqmin 0; background: linear-gradient(90deg, rgba(232, 246, 255, .2), transparent); }
+.w-goals .hb.wk b { opacity: .7; }
+.w-goals .gdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: .6cqmin; height: 4.2cqmin; margin-top: .3cqmin; }
+.w-goals .gdays i { position: relative; display: grid; grid-template-rows: 1fr auto; justify-items: center; gap: .3cqmin; font-style: normal; }
+.w-goals .gdays s { align-self: end; width: 48%; height: calc(.25cqmin + var(--h, 0) * 100%); transform: skewX(-12deg);
+  background: linear-gradient(color-mix(in srgb, var(--a) 40%, #fff), color-mix(in srgb, var(--a) 70%, #000)); opacity: .55; }
+.w-goals .gdays i.met s { opacity: 1; box-shadow: 0 0 .5cqmin color-mix(in srgb, var(--a) 60%, transparent); }
+.w-goals .gdays i.today s { opacity: 1; outline: 1px solid rgba(255, 255, 255, .8); outline-offset: .15cqmin; }
+.w-goals .gdays i.future s { opacity: .15; }
+.w-goals .gdays u { text-decoration: none; font: 700 .85cqmin/1 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .1em; opacity: .6; }
+.w-goals .gdays i.today u { opacity: 1; color: color-mix(in srgb, var(--a) 45%, #fff); }
