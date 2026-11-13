@@ -32,7 +32,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 .btn:focus-visible{outline:2px solid var(--sun);outline-offset:2px}
 #keys{top:calc(env(safe-area-inset-top,0px) + 16px);right:max(16px,env(safe-area-inset-right,0px));font-size:12px;color:var(--muted);text-align:right;line-height:1.7}
 #keys kbd{font-family:var(--ui);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
-#hint{top:50%;left:50%;transform:translate(-50%,-50%);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);opacity:.8}
+#hint{top:62%;left:50%;transform:translate(-50%,-50%);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);opacity:.8}
 #cross{top:50%;left:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:rgba(255,255,255,.7)}
 #intro{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-end;justify-content:flex-start;
   padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));padding-block:24px calc(env(safe-area-inset-bottom,0px) + 48px);
@@ -47,7 +47,21 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 #joy{position:fixed;z-index:6;left:max(28px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 86px);width:110px;height:110px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.18);touch-action:none}
 #joy i{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(255,255,255,.35)}
 #jump{position:fixed;z-index:6;right:max(28px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 100px);width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--text);font:500 12px var(--ui);letter-spacing:.08em;text-transform:uppercase}
-body.photo .hud,body.photo #joy,body.photo #jump{display:none}
+body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:none}
+#tag{font-size:13px;letter-spacing:.06em;color:var(--text);transform:translate(-50%,-100%);white-space:nowrap;padding:2px 8px;border-radius:3px;background:rgba(8,11,16,.35)}
+#charPanel{position:fixed;z-index:8;top:50%;right:max(16px,env(safe-area-inset-right,0px));transform:translateY(-50%);width:min(300px,calc(100vw - 32px));
+  display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:6px;border:1px solid var(--line);background:rgba(8,11,16,.62);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#charPanel h2{font-family:var(--display);font-weight:400;font-size:24px;margin:0;letter-spacing:.04em}
+#charPanel .field{display:flex;flex-direction:column;gap:7px}
+#charPanel .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+#charPanel input[type=text]{all:unset;border-bottom:1px solid var(--line);padding:6px 0;font-size:17px;color:var(--text)}
+#charPanel input[type=text]:focus-visible{border-color:var(--sun)}
+#charPanel input[type=range]{accent-color:var(--sun)}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatches button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.swatches button[aria-pressed="true"]{border-color:var(--sun)}
+.swatches button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+#charDone{align-self:flex-start;color:var(--ink);background:var(--sun)}
 @media (max-width:640px){#keys{display:none} #tod{width:30vw} .btn{padding:7px 8px}}
 [hidden]{display:none!important}
 </style>
@@ -57,7 +71,7 @@ body.photo .hud,body.photo #joy,body.photo #jump{display:none}
 <div class="hud" id="brand"><b>Lumenvale</b><span>Valley look-dev · build 0.1</span></div>
 <div class="hud" id="keys">
   <kbd>W A S D</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump<br>
-  <kbd>F</kbd> fly · <kbd>T</kbd> time flow · <kbd>H</kbd> hide HUD · <kbd>Esc</kbd> free mouse
+  <kbd>V</kbd> camera · <kbd>K</kbd> character · scroll zoom<br><kbd>F</kbd> fly · <kbd>T</kbd> time flow · <kbd>H</kbd> hide HUD · <kbd>Esc</kbd> free mouse
 </div>
 <div class="hud" id="cross" hidden></div>
 <div class="hud" id="hint" hidden>Click to look around</div>
@@ -66,8 +80,18 @@ body.photo .hud,body.photo #joy,body.photo #jump{display:none}
   <input id="tod" type="range" min="5" max="19.6" step="0.01" value="7.15" aria-label="Time of day">
   <button class="btn" id="auto" aria-pressed="false">Time flow</button>
   <button class="btn" id="fly" aria-pressed="false">Fly</button>
+  <button class="btn" id="charBtn" aria-pressed="false">Character</button>
   <button class="btn" id="snd" aria-pressed="false">Sound</button>
 </div>
+<div class="hud" id="tag" hidden></div>
+<aside id="charPanel" hidden aria-label="Character">
+  <h2>Your wanderer</h2>
+  <div class="field"><label class="lbl" for="cname">Name</label><input id="cname" type="text" maxlength="18" value="Wanderer" autocomplete="off"></div>
+  <div class="field"><span class="lbl">Outfit</span><div class="swatches" id="outfits"></div></div>
+  <div class="field"><span class="lbl">Visor light</span><div class="swatches" id="visors"></div></div>
+  <div class="field"><label class="lbl" for="cheight">Height <output id="hOut">1.80 m</output></label><input id="cheight" type="range" min="0.92" max="1.08" step="0.01" value="1"></div>
+  <button class="btn" id="charDone">Done</button>
+</aside>
 <div id="joy" hidden><i></i></div>
 <button id="jump" hidden>Jump</button>
 
@@ -95,6 +119,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const $ = id => document.getElementById(id);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -596,9 +621,79 @@ function updateEnv(az) {
   if (probeSky(new THREE.Vector3(0.25, 1, 0.1), tmpC)) cloudU.uSkyCol.value.copy(tmpC);
 }
 
+/* ---------- character ---------- */
+const OUTFITS = [
+  { name: 'Vanguard', c: 0xffffff }, { name: 'Alpine', c: 0xaebd8c }, { name: 'Glacier', c: 0xcfdcea },
+  { name: 'Ember', c: 0xe2a17e }, { name: 'Dusk', c: 0x9a8fb4 }, { name: 'Shadow', c: 0x5d5f6a },
+];
+const VISORS = [ { name: 'Cyan', c: 0x5ff0ff }, { name: 'Amber', c: 0xffb347 }, { name: 'Rose', c: 0xff6f9a }, { name: 'Off', c: 0x000000 } ];
+const CHAR = { name: 'Wanderer', outfit: 1, visor: 1, height: 1 };
+try { Object.assign(CHAR, JSON.parse(localStorage.getItem('lumenvale-char') || '{}')); } catch (e) {}
+const Char = { model: null, mixer: null, actions: {}, weights: { idle: 1, walk: 0, run: 0 }, bodyMat: null, visorMat: null, baseH: 1.8, face: 0, speed: 0 };
+const MODEL_YAW = Math.PI; // the rig faces -Z
+function loadCharacter() {
+  new GLTFLoader().load('assets/Soldier.glb', gltf => {
+    const m = gltf.scene;
+    m.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
+        o.material = o.material.clone();
+        if (/visor/i.test(o.material.name)) Char.visorMat = o.material; else Char.bodyMat = o.material;
+      }
+    });
+    m.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(m, true); const bh = box.max.y - box.min.y; Char.baseH = bh > 1.3 && bh < 2.4 ? bh : 1.8;
+    Char.mixer = new THREE.AnimationMixer(m);
+    for (const clip of gltf.animations) {
+      const k = clip.name.toLowerCase();
+      if (k === 'idle' || k === 'walk' || k === 'run') { const a = Char.mixer.clipAction(clip); a.play(); a.setEffectiveWeight(k === 'idle' ? 1 : 0); Char.actions[k] = a; }
+    }
+    Char.model = m; scene.add(m);
+    applyLook();
+  }, undefined, err => { console.error('Character failed to load', err); view = 'first'; });
+}
+function applyLook() {
+  $('hOut').textContent = (Char.baseH * CHAR.height).toFixed(2) + ' m';
+  try { localStorage.setItem('lumenvale-char', JSON.stringify(CHAR)); } catch (e) {}
+  [...$('outfits').children].forEach((b, i) => b.setAttribute('aria-pressed', i === CHAR.outfit));
+  [...$('visors').children].forEach((b, i) => b.setAttribute('aria-pressed', i === CHAR.visor));
+  $('tag').textContent = CHAR.name || 'Wanderer';
+  if (!Char.model) return;
+  Char.model.scale.setScalar(CHAR.height);
+  if (Char.bodyMat) Char.bodyMat.color.setHex(OUTFITS[CHAR.outfit].c);
+  if (Char.visorMat) { Char.visorMat.emissive.setHex(VISORS[CHAR.visor].c); Char.visorMat.emissiveIntensity = 2.2; }
+}
+function buildCharacterPanel() {
+  OUTFITS.forEach((o, i) => { const b = document.createElement('button'); b.style.background = '#' + o.c.toString(16).padStart(6, '0'); b.setAttribute('aria-label', o.name + ' outfit'); b.title = o.name; b.onclick = () => { CHAR.outfit = i; applyLook(); }; $('outfits').append(b); });
+  VISORS.forEach((o, i) => { const b = document.createElement('button'); b.style.background = o.c ? '#' + o.c.toString(16).padStart(6, '0') : 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'; b.setAttribute('aria-label', o.name + ' visor'); b.title = o.name; b.onclick = () => { CHAR.visor = i; applyLook(); }; $('visors').append(b); });
+  $('cname').value = CHAR.name;
+  $('cname').addEventListener('input', e => { CHAR.name = e.target.value.trim().slice(0, 18); applyLook(); });
+  $('cheight').value = CHAR.height;
+  $('cheight').addEventListener('input', e => { CHAR.height = parseFloat(e.target.value); applyLook(); });
+  $('charDone').addEventListener('click', () => toggleCharPanel(false));
+  applyLook();
+}
+let panelOpen = false;
+function toggleCharPanel(force) {
+  panelOpen = force === undefined ? !panelOpen : force;
+  $('charPanel').hidden = !panelOpen; $('charBtn').setAttribute('aria-pressed', panelOpen);
+  if (panelOpen) { if (document.pointerLockElement) document.exitPointerLock(); if (P.fly) toggleFly(); view = 'third'; }
+  updateHint();
+}
+function animateCharacter(dt) {
+  if (!Char.mixer) return;
+  const s = Char.speed, swim = heightAt(P.x, P.z) < -1.3;
+  const target = { idle: 1 - smooth(0.15, 1.2, s), run: smooth(3.2, 5.4, s), walk: 0 };
+  target.walk = Math.max(0, 1 - target.idle - target.run);
+  for (const k in Char.actions) { Char.weights[k] = lerp(Char.weights[k], target[k], 1 - Math.exp(-dt * 10)); Char.actions[k].setEffectiveWeight(Char.weights[k]); }
+  if (Char.actions.walk) Char.actions.walk.timeScale = clamp(s / 2.1, 0.5, 1.7) * (swim ? 0.7 : 1);
+  if (Char.actions.run) Char.actions.run.timeScale = clamp(s / 6.0, 0.7, 1.3);
+  Char.mixer.update(dt);
+}
+
 /* ---------- player ---------- */
 const P = { x: 0, z: 0, y: 10, vy: 0, ground: false, fly: false, bob: 0 };
-let yaw = 0, pitch = 0;
+let yaw = 0, pitch = 0, view = 'third', camDist = 4.2;
+const camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
 const keys = {};
 const joy = { x: 0, y: 0 };
 function findSpawn() {
@@ -614,8 +709,10 @@ function findSpawn() {
 }
 function tick(dt) {
   let mx = joy.x, mz = -joy.y;
+  const px0 = P.x, pz0 = P.z;
   if (keys.KeyW || keys.ArrowUp) mz += 1; if (keys.KeyS || keys.ArrowDown) mz -= 1;
   if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
+  if (panelOpen) { mx = 0; mz = 0; }
   const len = Math.hypot(mx, mz); if (len > 1) { mx /= len; mz /= len; }
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
   const run = keys.ShiftLeft || keys.ShiftRight;
@@ -626,8 +723,10 @@ function tick(dt) {
     if (keys.Space || jumpHeld) P.y += sp * 0.6 * dt; if (keys.KeyC || keys.ControlLeft) P.y -= sp * 0.6 * dt;
     P.y = clamp(P.y, Math.max(gy, 0) + 1.7, 900);
   } else {
-    const sp = swim ? 3 : (run ? 10 : 4.4);
-    const nx = P.x + (fx * mz + rx * mx) * sp * dt, nz = P.z + (fz * mz + rz * mx) * sp * dt;
+    const sp = swim ? 2.2 : (run ? 6.2 : 2.3);
+    const mvx = fx * mz + rx * mx, mvz = fz * mz + rz * mx;
+    if (len > 0.1) { const tgt = Math.atan2(mvx, mvz); let d = tgt - Char.face; d = Math.atan2(Math.sin(d), Math.cos(d)); Char.face += d * (1 - Math.exp(-dt * 12)); }
+    const nx = P.x + mvx * sp * dt, nz = P.z + mvz * sp * dt;
     const ngy = heightAt(nx, nz), step = Math.hypot(nx - P.x, nz - P.z);
     if (!(P.ground && ngy - gy > step * 1.15 + 0.02 && !swim)) { const p = { x: nx, z: nz }; collide(p); P.x = p.x; P.z = p.z; }
     P.vy -= 20 * dt; P.y += P.vy * dt;
@@ -637,25 +736,56 @@ function tick(dt) {
     if (P.ground && len > 0.1) P.bob += sp * dt * 1.7;
   }
   const d = Math.hypot(P.x, P.z); if (d > 960) { P.x *= 960 / d; P.z *= 960 / d; }
-  camera.position.set(P.x, P.y + (P.fly ? 0 : Math.sin(P.bob * 2) * 0.035), P.z);
+  Char.speed = lerp(Char.speed, Math.hypot(P.x - px0, P.z - pz0) / Math.max(dt, 1e-4), 1 - Math.exp(-dt * 8));
+  const feet = P.y - 1.7, third = view === 'third' && !P.fly && Char.model;
+  if (Char.model) { Char.model.visible = third; Char.model.position.set(P.x, feet, P.z); Char.model.rotation.y = Char.face + MODEL_YAW; }
+  if (third) {
+    if (panelOpen) { // swing round to face the character
+      const want = Math.atan2(Math.sin(Char.face), Math.cos(Char.face)); let d = want - yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+      yaw += d * (1 - Math.exp(-dt * 4)); pitch = lerp(pitch, -0.05, 1 - Math.exp(-dt * 4));
+    }
+    const H = Char.baseH * CHAR.height, dist = panelOpen ? 3.3 : camDist;
+    camTarget.set(P.x, feet + H * (panelOpen ? 0.62 : 0.88), P.z);
+    const cp = Math.cos(pitch), fwd = new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), shoulder = panelOpen ? 1.05 : 0.45;
+    let dd = dist;
+    for (let t = 0.2; t <= 1.001; t += 0.2) { // keep the camera out of the hillside
+      const x = camTarget.x - fwd.x * dist * t + right.x * shoulder * t, z = camTarget.z - fwd.z * dist * t + right.z * shoulder * t, y = camTarget.y - fwd.y * dist * t;
+      if (heightAt(x, z) + 0.35 > y) { dd = Math.max(0.6, dist * t * 0.85); break; }
+    }
+    camPos.copy(camTarget).addScaledVector(fwd, -dd).addScaledVector(right, shoulder * dd / dist);
+    camPos.y = Math.max(camPos.y, heightAt(camPos.x, camPos.z) + 0.35, 0.3);
+    camera.position.copy(camPos);
+    const tag = camTarget.clone(); tag.y = feet + H + 0.32; tag.project(camera);
+    const show = tag.z < 1 && !panelOpen; $('tag').hidden = !show;
+    if (show) { $('tag').style.left = (tag.x * 0.5 + 0.5) * innerWidth + 'px'; $('tag').style.top = (-tag.y * 0.5 + 0.5) * innerHeight + 'px'; }
+  } else {
+    $('tag').hidden = true;
+    camera.position.set(P.x, feet + 1.7 * CHAR.height + (P.fly ? 0 : Math.sin(P.bob * 2) * 0.035), P.z);
+  }
   camera.rotation.set(pitch, yaw, 0);
 }
 
 /* ---------- input ---------- */
 let locked = false, dragging = false, started = false, jumpHeld = false, autoTime = false;
 addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'text') return;
   keys[e.code] = true;
   if (!started) return;
   if (e.code === 'KeyF') toggleFly();
   if (e.code === 'KeyT') toggleAuto();
   if (e.code === 'KeyH') document.body.classList.toggle('photo');
+  if (e.target && e.target.id === 'cname') return;
+  if (e.code === 'KeyV') view = view === 'third' ? 'first' : 'third';
+  if (e.code === 'KeyK') toggleCharPanel();
   if (e.code === 'Space') e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-function look(dx, dy, k = 0.0022) { yaw -= dx * k; pitch = clamp(pitch - dy * k, -1.45, 1.45); }
+function look(dx, dy, k = 0.0022) { if (panelOpen) return; yaw -= dx * k; pitch = clamp(pitch - dy * k, view === 'third' && !P.fly ? -1.1 : -1.45, view === 'third' && !P.fly ? 0.9 : 1.45); }
+canvas.addEventListener('wheel', e => { camDist = clamp(camDist * Math.exp(e.deltaY * 0.001), 1.8, 12); e.preventDefault(); }, { passive: false });
 canvas.addEventListener('click', () => {
-  if (!started || isTouch || locked) return;
+  if (!started || isTouch || locked || panelOpen) return;
   try { const pr = canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {}
 });
 document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; updateHint(); });
@@ -665,7 +795,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointerup', () => { dragging = false; });
 addEventListener('mousemove', e => { if (locked || dragging) look(e.movementX, e.movementY); });
-function updateHint() { $('hint').hidden = !started || locked || isTouch; $('cross').hidden = !locked; }
+function updateHint() { $('hint').hidden = !started || locked || isTouch || panelOpen; $('cross').hidden = !locked || view === 'third'; }
 
 // touch: joystick on the left pad, drag anywhere else to look
 const touchLook = new Map();
@@ -685,7 +815,8 @@ $('jump').addEventListener('pointerleave', () => { jumpHeld = false; });
 const tod = $('tod');
 tod.addEventListener('input', () => setHour(parseFloat(tod.value)));
 function toggleAuto() { autoTime = !autoTime; $('auto').setAttribute('aria-pressed', autoTime); }
-function toggleFly() { P.fly = !P.fly; P.vy = 0; $('fly').setAttribute('aria-pressed', P.fly); }
+function toggleFly() { P.fly = !P.fly; P.vy = 0; $('fly').setAttribute('aria-pressed', P.fly); if (P.fly) P.y += 2; }
+$('charBtn').addEventListener('click', () => { if (started) toggleCharPanel(); });
 $('auto').addEventListener('click', toggleAuto);
 $('fly').addEventListener('click', toggleFly);
 $('snd').addEventListener('click', () => { Sound.toggle(); $('snd').setAttribute('aria-pressed', Sound.on); });
@@ -743,7 +874,14 @@ function frame() {
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
   if (autoTime) { let h = parseFloat(tod.value) + dt * (14.6 / 600); if (h > 19.6) h = 5; tod.value = h; setHour(h); }
   if (started) tick(dt);
-  else { introYaw += dt * 0.025; camera.position.set(P.x, P.y + 1.2, P.z); camera.rotation.set(0.02, yaw + Math.sin(introYaw) * 0.35, 0); }
+  else {
+    introYaw += dt * 0.06;
+    const feet = P.y - 1.7, a = Char.face + Math.PI * 0.75 + Math.sin(introYaw) * 0.5;
+    if (Char.model) { Char.model.position.set(P.x, feet, P.z); Char.model.rotation.y = Char.face + MODEL_YAW; }
+    camera.position.set(P.x + Math.sin(a) * 4.2, feet + 1.5, P.z + Math.cos(a) * 4.2);
+    camera.lookAt(P.x, feet + 1.25, P.z);
+  }
+  animateCharacter(dt);
   const sp = grassU.uSpacing.value;
   grassU.uCenter.value.set(Math.round(camera.position.x / sp) * sp, Math.round(camera.position.z / sp) * sp);
   grassU.uTime.value = t; cloudU.uTime.value = t;
@@ -760,11 +898,12 @@ setTimeout(() => {
   P.x = spawn.x; P.z = spawn.z; P.y = heightAt(spawn.x, spawn.z) + 1.7;
   yaw = Math.atan2(spawn.x, spawn.z);
   buildWater(); buildTrees(spawn); buildRocks(spawn); buildGrass();
+  Char.face = yaw + Math.PI; buildCharacterPanel(); loadCharacter();
   setHour(parseFloat(tod.value));
   window.__ready = true; window.__P = P; window.__setYaw = v => { yaw = v; };
   const go = $('go'); go.disabled = false; go.textContent = 'Enter the valley';
   go.addEventListener('click', () => {
-    started = true; $('intro').hidden = true;
+    started = true; $('intro').hidden = true; pitch = -0.12;
     if (isTouch) { $('joy').hidden = false; $('jump').hidden = false; }
     else { try { const pr = canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} }
     canvas.focus(); updateHint();
