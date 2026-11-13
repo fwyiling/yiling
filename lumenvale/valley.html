@@ -104,6 +104,7 @@ body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:n
   </div>
 </div>
 
+<script src="assets/character.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -632,7 +633,7 @@ try { Object.assign(CHAR, JSON.parse(localStorage.getItem('lumenvale-char') || '
 const Char = { model: null, mixer: null, actions: {}, weights: { idle: 1, walk: 0, run: 0 }, bodyMat: null, visorMat: null, baseH: 1.8, face: 0, speed: 0 };
 const MODEL_YAW = Math.PI; // the rig faces -Z
 function loadCharacter() {
-  new GLTFLoader().load('assets/Soldier.glb', gltf => {
+  const onModel = gltf => {
     const m = gltf.scene;
     m.traverse(o => {
       if (o.isMesh) {
@@ -649,7 +650,14 @@ function loadCharacter() {
     }
     Char.model = m; scene.add(m);
     applyLook();
-  }, undefined, err => { console.error('Character failed to load', err); view = 'first'; });
+  };
+  const fail = err => { console.error('Character failed to load', err); view = 'first'; };
+  try {
+    const b64 = window.CHARACTER_GLB; if (!b64) throw new Error('character data missing');
+    const bin = atob(b64), buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    new GLTFLoader().parse(buf.buffer, '', onModel, fail);
+  } catch (e) { fail(e); }
 }
 function applyLook() {
   $('hOut').textContent = (Char.baseH * CHAR.height).toFixed(2) + ' m';
