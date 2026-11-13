@@ -216,10 +216,29 @@ float triNoise(vec3 p, vec3 n, float s){ vec3 w = pow(abs(n), vec3(4.0)); w /= (
 float crack(vec2 p){ vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++){ vec2 g = vec2(float(x), float(y)); vec2 r = g + hash22(i + g) - f; float d = dot(r, r); if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
   return 1.0 - smoothstep(0.0, 0.07, sqrt(d2) - sqrt(d1)); }
+float voro(vec2 p){ vec2 i = floor(p), f = fract(p); float d1 = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++){ vec2 g = vec2(float(x), float(y)); vec2 r = g + hash22(i + g) - f; d1 = min(d1, dot(r, r)); }
+  return sqrt(d1); }
+float rockH(vec3 wp, vec3 n, float det){
+  vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z + 1e-5);
+  float warp = fbm3(wp.xz * 0.02) * 6.0;
+  float lf = fract((wp.y + warp) * 0.5); float ledges = (smoothstep(0.0, 0.3, lf) - smoothstep(0.7, 1.0, lf)) * 0.4;
+  float lumps = fbm3(wp.yz * 0.11) * w.x + fbm3(wp.xz * 0.11 + 5.0) * w.y + fbm3(wp.xy * 0.11 + 9.0) * w.z;
+  float fine = vnoise(wp.yz * 1.5) * w.x + vnoise(wp.xz * 1.5) * w.y + vnoise(wp.xy * 1.5) * w.z;
+  float cr = crack(vec2(wp.x + wp.z, wp.y * 0.6) * 0.3);
+  return ledges + lumps + (fine * 0.1 - cr * 0.3) * det;
+}
 vec3 dryGrass(vec2 xz){ float n = fbm5(xz * 0.03), m = vnoise(xz * 0.4);
   return mix(vec3(0.20, 0.15, 0.07), vec3(0.42, 0.33, 0.16), n) * (0.75 + 0.5 * m); }
 `;
-const TERRAIN_GLSL = `
+const FRAG_GLSL = `
+vec3 bumpN(vec3 pos, vec3 n, float hgt){
+  vec3 dpdx = dFdx(pos), dpdy = dFdy(pos); float dhx = dFdx(hgt), dhy = dFdy(hgt);
+  vec3 r1 = cross(dpdy, n), r2 = cross(n, dpdx); float det = dot(dpdx, r1);
+  vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+  return normalize(abs(det) * n - grad);
+}`;
+const TERRAIN_GLSL_OLD = `
 vec3 wasteAlbedo(vec3 wp, vec3 n, vec3 m, out float rough){
   float h = wp.y, slope = 1.0 - n.y;
   float n1 = fbm5(wp.xz * 0.01), n2 = fbm5(wp.xz * 0.12), n3 = vnoise(wp.xz * 1.7), n4 = vnoise(wp.xz * 6.0);
@@ -248,6 +267,81 @@ vec3 wasteAlbedo(vec3 wp, vec3 n, vec3 m, out float rough){
   rough = mix(0.97, 0.9, r);
   return col;
 }`;
+const TERRAIN_GLSL = `
+vec3 wasteAlbedo(vec3 wp, vec3 n, vec3 m, vec3 ao, float scorch, out float rough, out float bh, out float bhFar){
+  float h = wp.y, slope = 1.0 - n.y;
+  float n1 = fbm5(wp.xz * 0.01), n2 = fbm5(wp.xz * 0.12), n3 = vnoise(wp.xz * 1.7), n4 = vnoise(wp.xz * 6.0);
+  float aa = clamp(1.0 - length(fwidth(wp.xz)) * 0.9, 0.0, 1.0);
+  vec3 g = mix(vec3(0.25, 0.185, 0.12), vec3(0.40, 0.30, 0.19), n1) * (0.84 + 0.3 * n2) * (0.9 + 0.2 * n4);
+  float gravelAmt = smoothstep(0.42, 0.72, fbm3(wp.xz * 0.025 + 11.0)) * (1.0 - m.y) * (1.0 - m.x);
+  float peb = 1.0 - voro(wp.xz * 2.4); peb *= peb;
+  float peb2 = 1.0 - voro(wp.xz * 6.5 + 3.0); peb2 *= peb2;
+  g = mix(g, vec3(0.16, 0.13, 0.10) * (0.65 + 0.7 * peb), gravelAmt * smoothstep(0.15, 0.55, peb) * 0.75 * aa);
+  g *= 0.94 + 0.12 * peb2 * aa;
+  g = mix(g, vec3(0.06, 0.055, 0.05), smoothstep(0.67, 0.74, fbm5(wp.xz * 0.006 + 17.0)) * 0.6);
+  g = mix(g, dryGrass(wp.xz) * 0.8, m.z * 0.5);
+  float rip = sin(dot(wp.xz, vec2(0.94, 0.33)) * 2.6 + fbm3(wp.xz * 0.07) * 9.0) * 0.5 + 0.5; rip *= rip;
+  vec3 sandC = vec3(0.50, 0.37, 0.22) * (0.9 + 0.12 * n3) * (0.93 + 0.1 * rip * aa);
+  g = mix(g, sandC, m.y);
+  float cr = (crack(wp.xz * 0.32) * 0.8 + crack(wp.xz * 1.1) * 0.45) * aa;
+  vec3 mud = vec3(0.48, 0.43, 0.36) * (0.88 + 0.16 * n2);
+  mud = mix(mud, vec3(0.16, 0.13, 0.10), clamp(cr, 0.0, 1.0));
+  mud = mix(mud, vec3(0.62, 0.60, 0.55), smoothstep(0.6, 0.8, n1) * 0.4);
+  g = mix(g, mud, m.x);
+  bh = fbm3(wp.xz * 0.6) * 0.07 + n4 * 0.012 + rip * 0.045 * m.y + (peb * 0.035 * gravelAmt + peb2 * 0.012) * (1.0 - m.y) - clamp(cr, 0.0, 1.0) * 0.03 * m.x;
+  float path = smoothstep(0.3, 0.65, ao.z + (fbm3(wp.xz * 0.45) - 0.5) * 0.45);
+  g = mix(g, vec3(0.29, 0.23, 0.165) * (0.85 + 0.2 * n2), path * 0.75);
+  bh = mix(bh, -0.03 + n4 * 0.01, path * 0.8);
+  g = mix(g, vec3(0.035, 0.032, 0.03) * (0.8 + 0.4 * n3), clamp(scorch, 0.0, 1.0) * 0.92);
+  float r = smoothstep(0.26, 0.4, slope + (n2 - 0.5) * 0.14);
+  vec3 col = g; bhFar = 0.0;
+  if (r > 0.01) {
+    float rh = rockH(wp, n, aa);
+    float tn = triNoise(wp, n, 0.12), tn2 = triNoise(wp, n, 1.1);
+    vec3 rock = mix(vec3(0.19, 0.105, 0.06), vec3(0.42, 0.27, 0.16), tn) * (0.8 + 0.32 * tn2);
+    float band = vnoise(vec2(h * 0.45 + tn * 2.5, fbm3(wp.xz * 0.004) * 3.0)) * 2.0 - 1.0;
+    rock *= 0.9 + 0.1 * band;
+    rock = mix(rock, vec3(0.46, 0.39, 0.31) * (0.8 + 0.3 * tn2), smoothstep(0.5, 0.9, band) * 0.25);
+    float varnish = smoothstep(0.45, 0.85, vnoise(vec2((wp.x + wp.z) * 0.33, wp.y * 0.025)) + fbm3(vec2(wp.x - wp.z, wp.y) * 0.05) * 0.3 - 0.15);
+    rock = mix(rock, rock * vec3(0.32, 0.27, 0.25), varnish * 0.75 * smoothstep(0.35, 0.7, slope));
+    rock *= 0.7 + 0.45 * clamp(rh * 0.9 + 0.2, 0.0, 1.0);
+    col = mix(g, rock, r);
+    bhFar = rh * r; bh *= 1.0 - r;
+  }
+  col *= ao.x * (1.0 + ao.y * 0.35);
+  rough = mix(mix(0.97, 0.88, r), 0.85, path);
+  return col;
+}`;
+function terrainMaterial() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
+  mat.onBeforeCompile = s => {
+    s.vertexShader = 'attribute vec3 aMask;\nattribute vec3 aAO;\nattribute float aAux;\nvarying vec3 vMask;\nvarying vec3 vAO;\nvarying float vAux;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + s.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\nvMask = aMask; vAO = aAO; vAux = aAux;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);');
+    s.fragmentShader = 'varying vec3 vMask;\nvarying vec3 vAO;\nvarying float vAux;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + NOISE_GLSL + FRAG_GLSL + TERRAIN_GLSL + '\n' + s.fragmentShader
+      .replace('#include <map_fragment>', 'float tRough, tBump, tBumpFar;\ndiffuseColor.rgb = wasteAlbedo(vWPos, normalize(vWNrm), vMask, vAO, vAux, tRough, tBump, tBumpFar);')
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        float vdist = length(vViewPosition);
+        normal = bumpN(-vViewPosition, normal, tBump * (1.0 - smoothstep(25.0, 120.0, vdist)) + tBumpFar * (1.0 - smoothstep(250.0, 700.0, vdist)));`);
+  };
+  return mat;
+}
+let TERRAIN_MAT = null;
+function rockMaterial() {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93 });
+  m.onBeforeCompile = s => {
+    injectWorld(s);
+    s.fragmentShader = FRAG_GLSL + '\n' + s.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        vec3 nnr = normalize(vWNrm); float rh = rockH(vWPos * 1.3, nnr, clamp(1.0 - length(fwidth(vWPos)) * 0.7, 0.0, 1.0));
+        float varn = smoothstep(0.5, 0.85, vnoise(vec2((vWPos.x + vWPos.z) * 0.5, vWPos.y * 0.06)));
+        diffuseColor.rgb *= 0.7 + 0.45 * clamp(rh * 0.9 + 0.2, 0.0, 1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.35, 0.3, 0.28), varn * 0.6 * (1.0 - abs(nnr.y)));`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        normal = bumpN(-vViewPosition, normal, (rh * 0.35 + vnoise(vWPos.xz * 6.0 + vWPos.y * 4.0) * 0.02) * (1.0 - smoothstep(60.0, 300.0, length(vViewPosition))));`);
+  };
+  return m;
+}
 function keepOutwardNormals(shader) {
   shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>',
     THREE.ShaderChunk.normal_fragment_begin.replaceAll('normal *= faceDirection;', ''));
@@ -276,7 +370,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-const FOG_BASE = 0.0011;
+const FOG_BASE = 0.00085;
 scene.fog = new THREE.FogExp2(0xb59a78, FOG_BASE);
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 20000);
 camera.rotation.order = 'YXZ';
@@ -337,6 +431,88 @@ function nearestRoad(x, z) {
 }
 
 
+
+/* ================= terrain detail: cavity AO, worn paths, scorch, craters ================= */
+const PATHS = [], CRATERS = [], VIGNETTES = [];
+function computeTerrainAux() {
+  const ao = new Float32Array(V * V * 3), scorch = new Float32Array(V * V);
+  const S = new Float64Array((V + 1) * (V + 1));
+  for (let j = 0; j < V; j++) { let row = 0; for (let i = 0; i < V; i++) { row += Hm[j * V + i]; S[(j + 1) * (V + 1) + i + 1] = S[j * (V + 1) + i + 1] + row; } }
+  const box = (i, j, R) => { const i0 = Math.max(0, i - R), i1 = Math.min(V - 1, i + R), j0 = Math.max(0, j - R), j1 = Math.min(V - 1, j + R);
+    return (S[(j1 + 1) * (V + 1) + i1 + 1] - S[j0 * (V + 1) + i1 + 1] - S[(j1 + 1) * (V + 1) + i0] + S[j0 * (V + 1) + i0]) / ((i1 - i0 + 1) * (j1 - j0 + 1)); };
+  for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+    const k = j * V + i, h = Hm[k], c1 = box(i, j, 1) - h, c3 = box(i, j, 4) - h;
+    ao[k * 3] = clamp(1 - Math.max(0, c3) * 0.045 - Math.max(0, c1) * 0.08, 0.5, 1);
+    ao[k * 3 + 1] = clamp(-c3 * 0.04 - c1 * 0.05, 0, 1);
+  }
+  const mark = (x0, z0, x1, z1, R, fn) => {
+    const i0 = Math.max(0, Math.floor((Math.min(x0, x1) - R + HALF) / STEP)), i1 = Math.min(N, Math.ceil((Math.max(x0, x1) + R + HALF) / STEP));
+    const j0 = Math.max(0, Math.floor((Math.min(z0, z1) - R + HALF) / STEP)), j1 = Math.min(N, Math.ceil((Math.max(z0, z1) + R + HALF) / STEP));
+    const dx = x1 - x0, dz = z1 - z0, L2 = dx * dx + dz * dz || 1;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = -HALF + i * STEP, z = -HALF + j * STEP, t = clamp(((x - x0) * dx + (z - z0) * dz) / L2, 0, 1);
+      fn(j * V + i, Math.hypot(x - x0 - dx * t, z - z0 - dz * t));
+    }
+  };
+  for (const pth of PATHS) for (let q = 1; q < pth.length; q++) mark(pth[q - 1][0], pth[q - 1][1], pth[q][0], pth[q][1], 7, (k, d) => { ao[k * 3 + 2] = Math.max(ao[k * 3 + 2], 1 - smooth(1.0, 5.5, d)); });
+  for (const c of CRATERS) mark(c.x, c.z, c.x, c.z, c.r * 1.6, (k, d) => { scorch[k] = Math.max(scorch[k], 1 - smooth(c.r * 0.5, c.r * 1.5, d)); });
+  for (const v of VIGNETTES) if (v.type === 'drone' || v.type === 'wasp' || v.type === 'rocket') mark(v.x, v.z, v.x, v.z, 9, (k, d) => { scorch[k] = Math.max(scorch[k], (1 - smooth(1.5, 8, d)) * 0.8); });
+  return { ao, scorch };
+}
+function planDetail(r) {
+  // craters
+  for (let t = 0; t < 3000 && CRATERS.length < 8; t++) {
+    const x = (r() * 2 - 1) * 820, z = (r() * 2 - 1) * 820, rad = 6 + r() * 9;
+    if (slopeAt(x, z) > 0.15 || nearestRoad(x, z).d < rad + 15 || !Object.values(SITES).every(o => Math.hypot(o.x - x, o.z - z) > o.r * 1.7 + rad + 20)) continue;
+    if (!CRATERS.every(c => Math.hypot(c.x - x, c.z - z) > 120)) continue;
+    CRATERS.push({ x, z, r: rad });
+    const R = rad * 1.8, depth = rad * 0.28;
+    for (let j = Math.max(1, Math.floor((z - R + HALF) / STEP)); j <= Math.min(N - 1, Math.ceil((z + R + HALF) / STEP)); j++)
+      for (let i = Math.max(1, Math.floor((x - R + HALF) / STEP)); i <= Math.min(N - 1, Math.ceil((x + R + HALF) / STEP)); i++) {
+        const d = Math.hypot(-HALF + i * STEP - x, -HALF + j * STEP - z) / rad;
+        Hm[j * V + i] += d < 1 ? -depth * (1 - d * d) : depth * 0.35 * Math.exp(-((d - 1.15) ** 2) * 6);
+      }
+  }
+  // small story spots, spaced out so each has room to breathe
+  const tries = 9000;
+  for (let t = 0; t < tries && VIGNETTES.length < 30; t++) {
+    let x = (r() * 2 - 1) * 860, z = (r() * 2 - 1) * 860;
+    if (Math.hypot(x, z) > 880 || slopeAt(x, z) > 0.16) continue;
+    if (!Object.values(SITES).every(o => Math.hypot(o.x - x, o.z - z) > o.r * 1.6 + 35)) continue;
+    if (!VIGNETTES.every(v => Math.hypot(v.x - x, v.z - z) > 95)) continue;
+    if (!CRATERS.every(c => Math.hypot(c.x - x, c.z - z) > c.r * 2 + 10)) continue;
+    const nr = nearestRoad(x, z), lake = lakeAt(x, z), sand = sandAt(x, z);
+    let pool, ry = r() * 6.28;
+    if (nr.i >= 0 && nr.d < 30) {
+      const rd = road[nr.i], side = ((x - rd.x) * -rd.tz + (z - rd.z) * rd.tx) > 0 ? 1 : -1, off = 11 * side;
+      x = rd.x - rd.tz * off; z = rd.z + rd.tx * off; ry = Math.atan2(-rd.tz, rd.tx) + (side > 0 ? Math.PI : 0);
+      if (Math.hypot(x - road[SPAWN_IDX].x, z - road[SPAWN_IDX].z) < 25) continue;
+      pool = ['busstop', 'checkpoint', 'bus', 'busstop'];
+    } else if (nr.d < 14) continue;
+    else if (lake > 0.8) pool = ['drone', 'wasp', 'rocket', 'drone'];
+    else if (sand > 0.5) pool = ['bus', 'rocket', 'cache', 'drone', 'camp'];
+    else pool = ['camp', 'graves', 'well', 'fence', 'cache', 'drone', 'wasp', 'poles', 'camp', 'graves'];
+    VIGNETTES.push({ x, z, type: pool[Math.floor(r() * pool.length)], ry });
+  }
+  // footpaths: between landmarks, and from each story spot to somewhere people would come from
+  const meander = (a, b) => {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(2, Math.floor(L / 6)), px = -(b[1] - a[1]) / L, pz = (b[0] - a[0]) / L, ph = r() * 10, out = [];
+    for (let i = 0; i <= n; i++) { const t = i / n, w = Math.sin(t * Math.PI) * (Math.sin(t * 7 + ph) * 6 + Math.sin(t * 17 + ph * 2) * 2); out.push([lerp(a[0], b[0], t) + px * w, lerp(a[1], b[1], t) + pz * w]); }
+    return out;
+  };
+  const S = SITES, town = road[clamp(SPAWN_IDX + 95, 0, road.length - 1)];
+  const link = (a, b) => { if (a && b && Math.hypot(a[0] - b[0], a[1] - b[1]) < 650) PATHS.push(meander(a, b)); };
+  const at = st => st ? [st.x, st.z] : null;
+  link(at(S.camp), [town.x, town.z]); link(at(S.camp), at(S.refinery)); link([town.x, town.z], at(S.graveyard)); link(at(S.camp), at(S.graveyard)); link(at(S.titan), at(S.crash)); link(at(S.dishes), at(S.refinery));
+  for (const v of VIGNETTES) {
+    if (['busstop', 'checkpoint'].includes(v.type)) continue;
+    let best = null, bd = 300;
+    for (const k in S) { const d = Math.hypot(S[k].x - v.x, S[k].z - v.z); if (d < bd) { bd = d; best = [S[k].x, S[k].z]; } }
+    if (!best) for (const w of VIGNETTES) { const d = Math.hypot(w.x - v.x, w.z - v.z); if (w !== v && d < 240 && d < bd) { bd = d; best = [w.x, w.z]; } }
+    if (best && r() < 0.8) PATHS.push(meander([v.x, v.z], best));
+  }
+}
+
 /* ================= points of interest: planning ================= */
 const SITES = {};
 let SPAWN_IDX = 0;
@@ -392,6 +568,7 @@ function planSites() {
     const e = 3, gx = heightAt(bb.x + e, bb.z) - heightAt(bb.x - e, bb.z), gz = heightAt(bb.x, bb.z + e) - heightAt(bb.x, bb.z - e);
     SITES.bunker = { x: bb.x, z: bb.z, r: 10, h: heightAt(bb.x, bb.z), face: Math.atan2(-gx, -gz) };
   }
+  planDetail(r);
 }
 
 function buildTerrain() {
@@ -432,17 +609,13 @@ function buildTerrain() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aMask', new THREE.BufferAttribute(msk, 3));
+  const aux = computeTerrainAux();
+  geo.setAttribute('aAO', new THREE.BufferAttribute(aux.ao, 3));
+  geo.setAttribute('aAux', new THREE.BufferAttribute(aux.scorch, 1));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   terrainNormals = geo.attributes.normal.array;
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
-  mat.onBeforeCompile = s => {
-    s.vertexShader = 'attribute vec3 aMask;\nvarying vec3 vMask;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + s.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\nvMask = aMask;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);');
-    s.fragmentShader = 'varying vec3 vMask;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + NOISE_GLSL + TERRAIN_GLSL + '\n' + s.fragmentShader
-      .replace('#include <map_fragment>', 'float tRough;\ndiffuseColor.rgb = wasteAlbedo(vWPos, normalize(vWNrm), vMask, tRough);')
-      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;');
-  };
+  TERRAIN_MAT = terrainMaterial(); const mat = TERRAIN_MAT;
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true; mesh.castShadow = true;
   scene.add(mesh);
@@ -639,7 +812,7 @@ function deadTreeGeo(seed) {
   branch(new V3(0, -0.4, 0), new V3((r() - 0.5) * 0.25, 1, (r() - 0.5) * 0.25).normalize(), 2.4 + r() * 1.2, 0.24, 3);
   return merge(parts);
 }
-function rockGeometry(seed) {
+function rockGeometry(seed, strata = false) {
   const sn = makeSimplex(seed);
   let g = new THREE.IcosahedronGeometry(1, 4); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g);
   const p = g.attributes.position;
@@ -647,6 +820,7 @@ function rockGeometry(seed) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const n = 1 + 0.3 * sn(x * 1.1 + z * 0.7, y * 1.1 - z * 0.4) + 0.12 * sn(x * 3.3 + 9, y * 3.1 + z * 2.7) + 0.04 * sn(x * 9 - y * 3, z * 9);
     x *= n * 1.15; y *= n * 0.72; z *= n;
+    if (strata) { y = lerp(y, Math.round(y * 3.2) / 3.2, 0.55); x *= 1.15; }
     if (y < -0.1) y = -0.1 + (y + 0.1) * 0.15;
     p.setXYZ(i, x, y, z);
   }
@@ -691,6 +865,7 @@ function initMats() {
   MATS.rust = rustMat(); MATS.rust.color.setHex(0x8a5a40);
   MATS.paintWhite = rustMat(); MATS.paintWhite.color.setHex(0xc9c3b6);
   MATS.paintRed = rustMat(); MATS.paintRed.color.setHex(0x8e2a1e);
+  MATS.paintYellow = rustMat(); MATS.paintYellow.color.setHex(0xb08a2a);
   MATS.sheet = rustMat('diffuseColor.rgb *= 0.78 + 0.22 * smoothstep(0.2, 0.8, abs(fract((vWPos.x + vWPos.z) * 3.0) - 0.5) * 2.0);'); MATS.sheet.color.setHex(0x8c8478); MATS.sheet.side = THREE.DoubleSide;
   MATS.dish = rustMat(); MATS.dish.color.setHex(0xcfcac0); MATS.dish.side = THREE.DoubleSide;
   MATS.wood = new THREE.MeshStandardMaterial({ color: 0x4a3a2b, roughness: 1 });
@@ -1165,7 +1340,16 @@ function populate(spawnIdx) {
     const floors = state === 'intact' ? 2 + Math.floor(r() * 6) : 2 + Math.floor(r() * 5), bx = 2 + Math.floor(r() * 4), bz = 2 + Math.floor(r() * 2), rad = Math.max(bx, bz) * 2.6 + 5;
     if (slopeAt(x, z) > 0.12 || nearestRoad(x, z).d < rad + 3 || !freeSpot(x, z, rad)) continue;
     const ry = yawAlong(rd) + (r() - 0.5) * 0.1 + (side === toCenter ? Math.PI : 0);
-    makeBlock(r, floors, bx, bz, state, style).place(x, heightAt(x, z) - 0.4, z, ry);
+    const sinkB = r() < 0.35 ? 1.2 + r() * 2.6 : 0;
+    makeBlock(r, floors, bx, bz, state, style).place(x, heightAt(x, z) - 0.4 - sinkB, z, ry);
+    const W2 = bx * 4.2, D2 = bz * 4.2, cs = Math.cos(ry), sn2 = Math.sin(ry), toW = (lx, lz) => [x + lx * cs + lz * sn2, z - lx * sn2 + lz * cs];
+    const nd = (sinkB ? 4 : 1) + Math.floor(r() * 3);
+    for (let q2 = 0; q2 < nd; q2++) {
+      const side = Math.floor(r() * 4), along = (r() - 0.5) * 0.8;
+      const [lx, lz, rot] = side === 0 ? [along * W2, -D2 / 2 - 1.6, 0] : side === 1 ? [along * W2, D2 / 2 + 1.6, 0] : side === 2 ? [-W2 / 2 - 1.6, along * D2, Math.PI / 2] : [W2 / 2 + 1.6, along * D2, Math.PI / 2];
+      const [dx2, dz2] = toW(lx, lz);
+      addDrift(dx2, dz2, 3 + r() * 4, 0.9 + sinkB * 0.7 + r() * 0.8, 2.2 + r() * 1.8, ry + rot, 0.25);
+    }
     spots.push([x, z, rad]); built++;
   }
 
@@ -1338,7 +1522,22 @@ function populate(spawnIdx) {
 
   /* rocks: sunk into slopes so nothing floats */
   {
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93 }), sets = [[], [], []];
+    const mat = rockMaterial(), sets = [[], [], []], crags = [[], []];
+    const up = new V3(0, 1, 0), nv = new V3(), qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qi = new THREE.Quaternion();
+    for (let t = 0; t < 60000 && crags[0].length + crags[1].length < (isTouch ? 600 : 1300); t++) {
+      const x = (r() * 2 - 1) * 950, z = (r() * 2 - 1) * 950, sl = slopeAt(x, z);
+      if (sl < 0.3 || sl > 0.9 || nearestRoad(x, z).d < 12 || !Object.values(SITES).every(o => Math.hypot(o.x - x, o.z - z) > o.r * 1.4)) continue;
+      const e2 = 2, gx = (heightAt(x + e2, z) - heightAt(x - e2, z)) / (2 * e2), gz = (heightAt(x, z + e2) - heightAt(x, z - e2)) / (2 * e2);
+      nv.set(-gx, 1, -gz).normalize(); qa.setFromUnitVectors(up, nv); qi.identity().slerp(qa, 0.55); qb.setFromAxisAngle(up, r() * 6.28); qi.multiply(qb);
+      const sz = 3 + Math.pow(r(), 1.6) * 10;
+      crags[Math.floor(r() * 2)].push(m4.compose(ps.set(x, heightAt(x, z) - sz * 0.45, z), qi.clone(), sc.set(sz, sz * (0.6 + r() * 0.5), sz * (0.7 + r() * 0.5))).clone());
+      if (r() < 0.5) { // talus: boulders tumble to the foot of the slope
+        let bx = x, bz = z; for (let k = 0; k < 10; k++) { bx -= gx * 4; bz -= gz * 4; if (slopeAt(bx, bz) < 0.2) break; }
+        for (let k = 0; k < 3; k++) { const tx = bx + (r() - 0.5) * 10, tz = bz + (r() - 0.5) * 10, s2 = 0.4 + Math.pow(r(), 2) * 2.2; if (nearestRoad(tx, tz).d < 8 || !freeSpot(tx, tz, s2)) continue; e.set((r() - 0.5) * 0.6, r() * 6.28, (r() - 0.5) * 0.6); q.setFromEuler(e); sets[Math.floor(r() * 3)].push(m4.compose(ps.set(tx, heightAt(tx, tz) - s2 * 0.2, tz), q, sc.set(s2, s2 * (0.7 + r() * 0.5), s2)).clone()); if (s2 > 0.8) addCircle(tx, tz, s2 * 0.85); }
+      }
+      if (sz > 5) addCircle(x, z, sz * 0.5);
+    }
+    crags.forEach((list, k) => { const im = new THREE.InstancedMesh(rockGeometry(300 + k * 17, true), mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im); });
     for (let t = 0; t < 30000 && sets[0].length + sets[1].length + sets[2].length < 700; t++) {
       const x = (r() * 2 - 1) * 960, z = (r() * 2 - 1) * 960, h = heightAt(x, z), sl = slopeAt(x, z);
       if (sl > 0.55 || lakeAt(x, z) > 0.5 || nearestRoad(x, z).d < 7) continue;
@@ -1411,6 +1610,7 @@ function placePOIs(r) {
     makeBlock(r, 1, 3, 2, 'shell', 'brutal').place(sx, heightAt(sx, sz) - 0.4, sz, ry);
     spots.push([x, z, 14]);
   }
+  placeVignettes(r);
   ADS.forEach((ad, i) => { const ri = clamp(SPAWN_IDX + (i - 1) * 85 + 20, 5, road.length - 5); placeBillboard(road[ri], i % 2 ? 1 : -1, ad, 50 + i); });
   buildClutter(r);
 }
@@ -1424,6 +1624,7 @@ function buildGrass() {
     const k = j * V + i, x = -HALF + i * STEP, z = -HALF + j * STEP, sl = 1 - terrainNormals[k * 3 + 1];
     const scrub = smooth(-0.1, 0.35, fbm(snB, x * 0.008 + 33, z * 0.008, 2)), nr = nearestRoad(x, z);
     data[k * 4] = Hm[k];
+    data[k * 4 + 2] = (0.3 + 0.7 * smooth(0.08, 0.35, sl)) * (1 - maskLake[k] * 0.85) * (1 - smooth(0.3, 0.7, maskSand[k])) * smooth(-0.3, 0.2, fbm(snA, x * 0.02 + 9, z * 0.02, 2)) * (nr.i >= 0 ? smooth(4.5, 6, nr.d) : 1);
     data[k * 4 + 1] = (1 - smooth(0.16, 0.26, sl)) * (1 - maskLake[k]) * (1 - smooth(0.2, 0.5, maskSand[k])) * scrub * 0.6 * (nr.i >= 0 ? smooth(4.5, 7, nr.d) : 1);
   }
   const tex = new THREE.DataTexture(data, V, V, THREE.RGBAFormat, THREE.FloatType);
@@ -1472,8 +1673,226 @@ function buildGrass() {
     keepOutwardNormals(s);
   };
   grass = new THREE.Mesh(geo, mat); grass.frustumCulled = false; grass.receiveShadow = true; scene.add(grass);
+  buildPebbles(tex);
 }
 
+function buildPebbles(tex) {
+  const parts = [], r = mulberry(17);
+  for (let i = 0; i < 4; i++) { const s2 = 0.025 + r() * 0.06, g = new THREE.IcosahedronGeometry(1, 1); g.scale(s2 * (1 + r() * 0.6), s2 * (0.5 + r() * 0.4), s2); g.translate((r() - 0.5) * 0.35, s2 * 0.2, (r() - 0.5) * 0.35); parts.push(g.toNonIndexed()); }
+  const base = merge(parts); base.deleteAttribute('uv'); base.computeVertexNormals();
+  const geo = new THREE.InstancedBufferGeometry(); geo.setAttribute('position', base.attributes.position); geo.setAttribute('normal', base.attributes.normal);
+  const G = isTouch ? 90 : 130, sp = 0.5, offs = new Float32Array(G * G * 2);
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { offs[(j * G + i) * 2] = (i - G / 2) * sp; offs[(j * G + i) * 2 + 1] = (j - G / 2) * sp; }
+  geo.setAttribute('aOffset', new THREE.InstancedBufferAttribute(offs, 2)); geo.instanceCount = G * G;
+  const U = { uCenter: { value: new THREE.Vector2() }, uHM: { value: tex }, uHalf: { value: HALF }, uStep: { value: STEP }, uN: { value: V } };
+  PEBBLE_U = U;
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 });
+  mat.onBeforeCompile = s => {
+    Object.assign(s.uniforms, U);
+    s.vertexShader = `attribute vec2 aOffset; uniform vec2 uCenter; uniform float uHalf, uStep, uN; uniform sampler2D uHM; varying vec3 vPebCol;
+    ${NOISE_GLSL}
+    vec3 sampleHM3(vec2 w){ vec2 g = clamp((w + uHalf) / uStep, vec2(0.0), vec2(uN - 1.001)); ivec2 i = ivec2(floor(g)); vec2 f = fract(g);
+      vec4 a = texelFetch(uHM, i, 0), b = texelFetch(uHM, i + ivec2(1,0), 0), c = texelFetch(uHM, i + ivec2(0,1), 0), d = texelFetch(uHM, i + ivec2(1,1), 0);
+      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y).rgb; }
+    ` + s.vertexShader
+      .replace('#include <beginnormal_vertex>', `
+        vec2 cellW = aOffset + uCenter; vec2 key = floor(cellW / 0.5 + 0.5);
+        float r1 = hash12(key + 3.1), r2 = hash12(key + 17.9), r3 = hash12(key + 41.7), r4 = hash12(key + 8.8);
+        float ang = r1 * 6.2831, ca = cos(ang), sa = sin(ang);
+        vec3 objectNormal = vec3(normal.x * ca - normal.z * sa, normal.y, normal.x * sa + normal.z * ca);`)
+      .replace('#include <begin_vertex>', `
+        vec2 wp = cellW + (vec2(r2, r3) - 0.5) * 0.8;
+        vec3 hm = sampleHM3(wp);
+        float fade = 1.0 - smoothstep(16.0, 26.0, length(wp - cameraPosition.xz));
+        float sc = step(r4, hm.z * 0.9) * fade * (0.6 + r1 * 1.1);
+        vec3 p = position * sc; vec3 rp = vec3(p.x * ca - p.z * sa, p.y, p.x * sa + p.z * ca);
+        vec3 transformed = vec3(wp.x, hm.x - 0.02, wp.y) + rp;
+        vPebCol = mix(vec3(0.09, 0.07, 0.05), vec3(0.24, 0.18, 0.12), r2) * (0.8 + 0.4 * vnoise(wp * 0.2));`);
+    s.fragmentShader = 'varying vec3 vPebCol;\n' + s.fragmentShader.replace('#include <color_fragment>', 'diffuseColor.rgb *= vPebCol;');
+  };
+  const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false; scene.add(m);
+}
+let PEBBLE_U = null;
+
+/* ================= sand drifts (share the terrain material, so they blend in) ================= */
+const DRIFTS = [], dgrid = new Map();
+function addDrift(x, z, sx, sy, sz, ry = 0, sink = 0.3) {
+  const d = { x, z, sx, sy, sz, ry, y: heightAt(x, z) - sy * sink, c: Math.cos(ry), s: Math.sin(ry) };
+  DRIFTS.push(d);
+  const R = Math.max(sx, sz);
+  for (let a = Math.floor((x - R) / 10); a <= Math.floor((x + R) / 10); a++) for (let b = Math.floor((z - R) / 10); b <= Math.floor((z + R) / 10); b++) { const k = a * 10000 + b; if (!dgrid.has(k)) dgrid.set(k, []); dgrid.get(k).push(d); }
+}
+function driftTop(x, z) {
+  const l = dgrid.get(Math.floor(x / 10) * 10000 + Math.floor(z / 10)); if (!l) return -1e9;
+  let top = -1e9;
+  for (const d of l) { const dx = x - d.x, dz = z - d.z, lx = dx * d.c - dz * d.s, lz = dx * d.s + dz * d.c, e = (lx / d.sx) ** 2 + (lz / d.sz) ** 2; if (e < 1) top = Math.max(top, d.y + d.sy * Math.sqrt(1 - e) * 0.92); }
+  return top;
+}
+const groundAt = (x, z) => Math.max(heightAt(x, z), driftTop(x, z));
+function buildDrifts() {
+  if (!DRIFTS.length) return;
+  const sn = makeSimplex(5), list = [];
+  for (const d of DRIFTS) {
+    let g = new THREE.IcosahedronGeometry(1, 3); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g);
+    const p = g.attributes.position, ox = d.x * 0.01;
+    for (let i = 0; i < p.count; i++) { let x = p.getX(i), y = p.getY(i), z = p.getZ(i); const n = 1 + sn(x * 1.3 + ox, z * 1.3 + y) * 0.12; if (y < 0) y *= 0.08; p.setXYZ(i, x * n, y * n, z * n); }
+    g.applyMatrix4(_m.compose(_p.set(d.x, d.y, d.z), _q.setFromEuler(_e.set(0, d.ry, 0)), _s.set(d.sx, d.sy, d.sz)));
+    g.computeVertexNormals();
+    const n = p.count, m3 = new Float32Array(n * 3), a3 = new Float32Array(n * 3), x1 = new Float32Array(n);
+    for (let i = 0; i < n; i++) { m3[i * 3 + 1] = 1; a3[i * 3] = 1; }
+    g.setAttribute('aMask', new THREE.BufferAttribute(m3, 3)); g.setAttribute('aAO', new THREE.BufferAttribute(a3, 3)); g.setAttribute('aAux', new THREE.BufferAttribute(x1, 1));
+    list.push(g);
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(list, false), TERRAIN_MAT); mesh.receiveShadow = true; mesh.castShadow = true; scene.add(mesh);
+}
+
+/* ================= tyre-track ribbons ================= */
+function buildTracks() {
+  const pos = [], uv = [], idx = [];
+  let base = 0;
+  const S = SITES, routes = [];
+  if (S.camp) { let rd = road[0], bd = 1e18; for (const q2 of road) { const d = (q2.x - S.camp.x) ** 2 + (q2.z - S.camp.z) ** 2; if (d < bd) { bd = d; rd = q2; } } routes.push([[rd.x, rd.z], [S.camp.x, S.camp.z]]); }
+  if (S.camp && S.refinery) routes.push([[S.camp.x, S.camp.z], [S.refinery.x, S.refinery.z]]);
+  if (S.crash) { let rd = road[0], bd = 1e18; for (const q2 of road) { const d = (q2.x - S.crash.x) ** 2 + (q2.z - S.crash.z) ** 2; if (d < bd) { bd = d; rd = q2; } } routes.push([[rd.x, rd.z], [S.crash.x, S.crash.z]]); }
+  for (const [a, b] of routes) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.floor(L / 3), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, ph = Math.random() * 9;
+    const pts = []; for (let i = 0; i <= n; i++) { const t = i / n, w = Math.sin(t * Math.PI) * Math.sin(t * 5 + ph) * 14; pts.push([lerp(a[0], b[0], t) - dz * w, lerp(a[1], b[1], t) + dx * w]); }
+    for (let i = 0; i < pts.length; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(pts.length - 1, i + 1)], tx = p1[0] - p0[0], tz = p1[1] - p0[1], tl = Math.hypot(tx, tz) || 1, px = -tz / tl, pz = tx / tl;
+      for (const c of [-1.3, 0, 1.3]) { const x = pts[i][0] + px * c, z = pts[i][1] + pz * c; pos.push(x, groundAt(x, z) + 0.05, z); uv.push((c + 1.3) / 2.6, i * 3); }
+      if (i > 0) { const b0 = base + (i - 1) * 3, a0 = base + i * 3; for (let k = 0; k < 2; k++) idx.push(b0 + k, b0 + k + 1, a0 + k, b0 + k + 1, a0 + k + 1, a0 + k); }
+    }
+    base += pts.length * 3;
+  }
+  if (!pos.length) return;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.95, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  m.onBeforeCompile = s2 => {
+    injectWorld(s2);
+    s2.vertexShader = 'varying vec2 vRUv;\n' + s2.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRUv = uv;');
+    s2.fragmentShader = 'varying vec2 vRUv;\n' + s2.fragmentShader.replace('#include <map_fragment>', `
+      float u = vRUv.x, rut = (1.0 - smoothstep(0.05, 0.11, abs(u - 0.22))) + (1.0 - smoothstep(0.05, 0.11, abs(u - 0.78)));
+      float tread = step(0.5, fract(vRUv.y * 2.2 + u * 0.3));
+      diffuseColor.rgb = vec3(0.15, 0.115, 0.08) * (0.8 + 0.3 * tread);
+      diffuseColor.a = rut * 0.6 * smoothstep(0.25, 0.6, vnoise(vWPos.xz * 0.25) + 0.3);`);
+  };
+  const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.renderOrder = 1; scene.add(mesh);
+}
+
+/* ================= story spots ================= */
+function vigDrone(r, k, wasp) {
+  if (wasp) {
+    k.add('mecha', sphAt(0.8, 0, 0.6, 0, 1, 0.75, 1.1, 12)); k.add('glowRed', sphAt(0.14, 0, 0.7, 0.85));
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.78, ex = Math.cos(a) * 1.9, ez = Math.sin(a) * 1.9, broken = i === 2; k.add('mecha', beam(new V3(0, 0.6, 0), new V3(ex, broken ? 0.1 : 0.7, ez), 0.1, 0.08, 5)); if (!broken) k.add('metal', torusAt(0.75, 0.05, ex, 0.75, ez, Math.PI / 2 + 0.2, 0, 0.1)); else k.add('metal', torusAt(0.75, 0.05, ex * 1.8, 0.06, ez * 1.6, Math.PI / 2, 0, 0)); }
+    k.circle(0, 0, 1);
+    return;
+  }
+  k.add('mecha', sphAt(1.3, 0, 2.0, 0, 1.2, 0.8, 1.0, 14)); k.add('hazard', boxAt(1.6, 0.25, 0.1, 0, 2.3, 1.02)); k.add('glowRed', sphAt(0.22, 0, 2.15, 1.25));
+  k.add('metal', beam(new V3(0.5, 2.8, -0.4), new V3(0.7, 4.4, -0.8), 0.04, 0.03, 4));
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + 0.78, hip = new V3(Math.cos(a) * 1.0, 1.9, Math.sin(a) * 0.9), knee = new V3(Math.cos(a) * 2.4, i === 1 ? 0.6 : 2.8, Math.sin(a) * 2.2), foot = new V3(Math.cos(a) * 3.0, 0, Math.sin(a) * 2.8);
+    k.add('mecha', beam(hip, knee, 0.22, 0.17, 6)); k.add('mecha', sphAt(0.26, knee.x, knee.y, knee.z));
+    if (i !== 3) k.add('mecha', beam(knee, foot, 0.17, 0.12, 6)); else k.add('mecha', beam(knee, knee.clone().add(new V3(0.3, -0.8, 0.2)), 0.17, 0.12, 6));
+    k.circle(foot.x, foot.z, 0.3);
+  }
+  k.circle(0, 0, 1.4);
+}
+function vigCamp(r, k) {
+  k.add('tarpA', cylAt(1.5, 1.5, 3.2, 0, 0.55, 0, 0.3, 0.2, Math.PI / 2 + 0.25, 3)); k.circle(0, 0, 1.4);
+  k.add('tarpB', cylAt(0.28, 0.28, 1.9, 2.2, 0.28, 1.2, 0, 0.6, Math.PI / 2, 8));
+  for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28; k.add('concrete', sphAt(0.22, 3 + Math.cos(a) * 0.75, 0.1, -1.5 + Math.sin(a) * 0.75, 1, 0.7, 1, 6)); }
+  k.add('cable', cylAt(0.65, 0.65, 0.04, 3, 0.03, -1.5, 0, 0, 0, 12));
+  for (let i = 0; i < 2; i++) k.add('wood', cylAt(0.07, 0.07, 1, 3, 0.1, -1.5, Math.PI / 2, i * 1.3, 0.1, 5));
+  k.add('tarpC', boxAt(0.45, 0.6, 0.3, 1.2, 0.3, -2.6, 0.2, 0.7, 0.4)); k.add('wood', boxAt(0.7, 0.55, 0.5, -1.8, 0.27, -1.2, 0, 0.4, 0));
+  for (let i = 0; i < 4; i++) k.add('metal', cylAt(0.05, 0.05, 0.12, 2.2 + r() * 1.6, 0.06, -0.4 - r() * 1.4, r() < 0.5 ? Math.PI / 2 : 0, r() * 3, 0, 6));
+}
+function vigGraves(r, k) {
+  const n = 3 + Math.floor(r() * 4);
+  for (let i = 0; i < n; i++) {
+    const x = (i - n / 2) * 1.8, z = (r() - 0.5) * 0.6, tilt = (r() - 0.5) * 0.25;
+    k.add('wood', boxAt(0.12, 1.4, 0.1, x, 0.7, z - 0.9, tilt, 0, tilt * 0.5)); k.add('wood', boxAt(0.7, 0.1, 0.1, x, 1.05, z - 0.9, tilt, 0, tilt * 0.5));
+    k.add('concrete', lumpAt(r() * 50, x, 0, z, 0.55, 0.3, 1.0));
+    if (i === 1) k.add('metal', sphAt(0.2, x, 1.45, z - 0.9, 1, 0.6, 1.1, 10));
+  }
+  for (let i = -1; i <= n; i++) k.add('wood', boxAt(0.08, 0.7, 0.08, (i - n / 2 + 0.5) * 1.8, 0.35, 1.4, (r() - 0.5) * 0.2, 0, 0));
+}
+function vigBus(r, k) {
+  k.add('paintYellow', boxAt(11, 2.4, 2.5, 0, 1.6, 0)); k.add('paintYellow', boxAt(11, 0.25, 2.3, 0, 2.95, 0));
+  for (let i = 0; i < 6; i++) { k.add('glass', boxAt(1.4, 0.8, 0.05, -4 + i * 1.7, 2.2, 1.27)); k.add('glass', boxAt(1.4, 0.8, 0.05, -4 + i * 1.7, 2.2, -1.27)); }
+  k.add('glass', boxAt(0.05, 1, 2.1, 5.52, 2.1, 0));
+  for (const [x, z] of [[3.8, 1.2], [3.8, -1.2], [-3.6, 1.2]]) k.add('cable', cylAt(0.5, 0.5, 0.3, x, 0.5, z, Math.PI / 2, 0, 0, 10));
+  k.box(0, 0, 5.5, 1.25);
+}
+function vigBusStop(r, k) {
+  for (const x of [-1.6, 1.6]) { k.add('metal', boxAt(0.1, 2.5, 0.1, x, 1.25, -0.7)); k.add('metal', boxAt(0.1, 2.5, 0.1, x, 1.25, 0.6)); k.circle(x, -0.7, 0.1); }
+  k.add('sheet', boxAt(3.6, 0.08, 1.8, 0, 2.55, -0.05, 0.08, 0, 0)); k.add('glass', boxAt(3.2, 1.6, 0.04, 0, 1.4, -0.72)); k.add('wood', boxAt(2.6, 0.08, 0.45, 0, 0.5, -0.4));
+  k.add('metal', beam(new V3(2.4, 0, 0.6), new V3(2.4, 2.6, 0.6), 0.04)); k.add('paintRed', cylAt(0.4, 0.4, 0.05, 2.4, 2.75, 0.6, Math.PI / 2, 0, 0, 16));
+}
+function vigCheckpoint(r, k) {
+  for (let i = 0; i < 9; i++) { const x = -4 + i * 1.0; for (let y = 0; y < 3; y++) if (!(y === 2 && r() < 0.3)) k.add('tarpA', sphAt(0.5, x + (y % 2) * 0.5, 0.2 + y * 0.33, 1.5, 1, 0.38, 0.6, 7)); }
+  k.box(0, 1.5, 4.5, 0.4);
+  k.add('sheet', boxAt(1.6, 2.4, 1.6, 5.2, 1.2, 1.4)); k.add('rust', boxAt(2, 0.1, 2, 5.2, 2.45, 1.4)); k.box(5.2, 1.4, 0.8, 0.8);
+  k.add('hazard', boxAt(0.12, 0.12, 6, 4.4, 1.0, -2, 0, 0, 0.0)); k.add('metal', boxAt(0.3, 1.1, 0.3, 4.4, 0.55, 1.0));
+  k.add('metal', beam(new V3(-5, 0, 2), new V3(-5, 2.2, 2), 0.05)); k.add('paintWhite', boxAt(1.6, 1.0, 0.06, -5, 2.3, 2.03));
+}
+function vigWell(r, k) {
+  k.add('concrete', cylAt(1.1, 1.1, 0.9, 0, 0.45, 0, 0, 0, 0, 14)); k.add('cable', cylAt(0.85, 0.85, 0.05, 0, 0.88, 0, 0, 0, 0, 14)); k.circle(0, 0, 1.1);
+  k.add('metal', beam(new V3(-1.1, 0, 0), new V3(-1.1, 2.2, 0), 0.06)); k.add('metal', beam(new V3(1.1, 0, 0), new V3(1.1, 2.2, 0), 0.06)); k.add('wood', cylAt(0.1, 0.1, 2.4, 0, 2.1, 0, 0, 0, Math.PI / 2, 8));
+  k.add('rust', boxAt(2.2, 0.5, 0.7, 2.4, 0.25, 0.4)); k.add('rust', cylAt(0.22, 0.18, 0.35, -1.6, 0.17, 0.9, 0.4, 0, 1.2, 8));
+}
+function vigFence(r, k) {
+  const n = 12 + Math.floor(r() * 6);
+  for (let i = 0; i < n; i++) {
+    const x = i * 3 - n * 1.5, fallen = r() < 0.15;
+    k.add('metal', boxAt(0.08, 2.2, 0.08, x, fallen ? 0.1 : 1.1, 0, 0, 0, fallen ? 1.4 : (r() - 0.5) * 0.12));
+    if (!fallen && i < n - 1) for (const y of [0.5, 1.1, 1.7]) k.add('cable', boxAt(3, 0.02, 0.02, x + 1.5, y - (r() * 0.08), 0));
+    if (i % 5 === 2) k.add('paintRed', boxAt(0.9, 0.6, 0.03, x + 1.5, 1.4, 0.05));
+  }
+}
+function vigCache(r, k) {
+  k.add('metal', boxAt(1.4, 0.8, 0.9, 0, 0.4, 0)); k.add('hazard', boxAt(1.42, 0.12, 0.92, 0, 0.6, 0)); k.add('metal', boxAt(1.4, 0.08, 0.9, 0, 0.95, -0.35, -0.9, 0, 0)); k.circle(0, 0, 0.8);
+  k.add('metal', beam(new V3(1.2, 0, 0.5), new V3(1.2, 3.2, 0.5), 0.03)); k.add('tarpC', boxAt(0.9, 0.55, 0.02, 1.65, 2.9, 0.5));
+  k.add('glowAmber', sphAt(0.07, 0.5, 0.86, 0.2));
+}
+function vigPoles(r, k) {
+  const n = 5, tops = [];
+  for (let i = 0; i < n; i++) { const x = i * 22 - 44, tilt = (r() - 0.5) * 0.25, h = 8; k.add('wood', beam(new V3(x, -0.5, 0), new V3(x + Math.sin(tilt) * h, h, 0), 0.16, 0.12, 6)); const tx = x + Math.sin(tilt) * h; k.add('wood', boxAt(2.4, 0.12, 0.12, tx, h - 0.6, 0)); tops.push(new V3(tx, h - 0.5, 0)); k.circle(x, 0, 0.2); }
+  for (let i = 0; i < n - 1; i++) for (const off of [-1, 1]) { const a = tops[i].clone().add(new V3(0, 0, 0)), b = tops[i + 1].clone(); a.x += off * 1.1 * 0 ; const pts = []; for (let s2 = 0; s2 <= 12; s2++) { const t = s2 / 12, pp = new V3(lerp(tops[i].x, tops[i + 1].x, t) + off * 0, lerp(a.y, b.y, t) - 1.6 * 4 * t * (1 - t), off * 1.1); pts.push(pp); } k.add('cable', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.02, 3).toNonIndexed()); }
+}
+function vigRocket(r, k) {
+  k.add('paintWhite', cylAt(2.2, 2.2, 12, 0, 1.4, 0, 0, 0, Math.PI / 2, 16)); k.add('hazard', cylAt(2.25, 2.25, 1.2, -3, 1.4, 0, 0, 0, Math.PI / 2, 16));
+  k.add('metal', cylAt(1.4, 2.0, 2.4, -7.2, 1.4, 0, 0, 0, Math.PI / 2, 12));
+  for (let i = 0; i < 3; i++) { const a = i * 2.09 + 0.4; k.add('paintRed', boxAt(2.6, 0.12, 1.8, 5.2, 1.4 + Math.sin(a) * 2.6, Math.cos(a) * 2.6, a, 0, 0)); }
+  k.add('cable', cylAt(2.1, 2.1, 0.1, 6.0, 1.4, 0, 0, 0, Math.PI / 2, 16));
+  for (let x = -5; x <= 5; x += 2.5) k.circle(x, 0, 2.2, 1.4);
+}
+function placeVignettes(r) {
+  for (const v of VIGNETTES) {
+    const k = new Kit(), y = heightAt(v.x, v.z);
+    let sinkY = 0;
+    switch (v.type) {
+      case 'drone': vigDrone(r, k, false); break;
+      case 'wasp': vigDrone(r, k, true); break;
+      case 'camp': vigCamp(r, k); break;
+      case 'graves': vigGraves(r, k); break;
+      case 'bus': vigBus(r, k); sinkY = 0.5; break;
+      case 'busstop': vigBusStop(r, k); break;
+      case 'checkpoint': vigCheckpoint(r, k); break;
+      case 'well': vigWell(r, k); break;
+      case 'fence': vigFence(r, k); break;
+      case 'cache': vigCache(r, k); break;
+      case 'poles': vigPoles(r, k); break;
+      case 'rocket': vigRocket(r, k); sinkY = 1.2; break;
+    }
+    const tilt = v.type === 'bus' ? (r() - 0.5) * 0.2 : v.type === 'wasp' ? (r() - 0.5) * 0.5 : 0;
+    k.place(v.x, y - sinkY, v.z, v.ry, { rz: tilt });
+    const c = Math.cos(v.ry), s2 = Math.sin(v.ry), W = (lx, lz) => [v.x + lx * c + lz * s2, v.z - lx * s2 + lz * c];
+    if (v.type === 'bus') { const [a, b] = W(1, 2.2); addDrift(a, b, 6, 1.9, 2.6, v.ry, 0.25); const [a2, b2] = W(4, -1.8); addDrift(a2, b2, 3.5, 1.2, 2.2, v.ry + 0.4, 0.3); }
+    if (v.type === 'rocket') { const [a, b] = W(-2, 2.6); addDrift(a, b, 6.5, 2.4, 3, v.ry, 0.2); }
+    if (v.type === 'cache' || v.type === 'drone') { const [a, b] = W(-1.5, -1.5); addDrift(a, b, 2.4, 0.7, 1.6, v.ry + 0.7, 0.3); }
+    spots.push([v.x, v.z, 8]);
+  }
+}
 /* ================= dust ================= */
 function dotTexture(soft) {
   const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
@@ -1687,7 +2106,7 @@ function tick(dt) {
   if (panelOpen) { mx = 0; mz = 0; }
   const len = Math.hypot(mx, mz); if (len > 1) { mx /= len; mz /= len; }
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw), run = keys.ShiftLeft || keys.ShiftRight;
-  const gy = heightAt(P.x, P.z);
+  const gy = groundAt(P.x, P.z);
   if (P.fly) {
     const sp = run ? 140 : 45, cp = Math.cos(pitch);
     P.x += (fx * cp * mz + rx * mx) * sp * dt; P.z += (fz * cp * mz + rz * mx) * sp * dt; P.y += Math.sin(pitch) * mz * sp * dt;
@@ -1696,10 +2115,10 @@ function tick(dt) {
   } else {
     const sp = run ? 6.2 : 2.3, mvx = fx * mz + rx * mx, mvz = fz * mz + rz * mx;
     if (len > 0.1) { const tgt = Math.atan2(mvx, mvz); let d = tgt - Char.face; d = Math.atan2(Math.sin(d), Math.cos(d)); Char.face += d * (1 - Math.exp(-dt * 12)); }
-    const nx = P.x + mvx * sp * dt, nz = P.z + mvz * sp * dt, ngy = heightAt(nx, nz), step = Math.hypot(nx - P.x, nz - P.z);
+    const nx = P.x + mvx * sp * dt, nz = P.z + mvz * sp * dt, ngy = groundAt(nx, nz), step = Math.hypot(nx - P.x, nz - P.z);
     if (!(P.ground && ngy - gy > step * 1.2 + 0.02)) { const p = { x: nx, z: nz }; collide(p); P.x = p.x; P.z = p.z; }
     P.vy -= 20 * dt; P.y += P.vy * dt;
-    const floor = heightAt(P.x, P.z) + 1.7;
+    const floor = groundAt(P.x, P.z) + 1.7;
     if (P.y <= floor || (P.ground && P.y - floor < 0.5 && P.vy <= 0)) { P.y = floor; P.vy = 0; P.ground = true; } else P.ground = false;
     if ((keys.Space || jumpHeld) && P.ground) { P.vy = 6.0; P.ground = false; }
     if (P.ground && len > 0.1) P.bob += sp * dt * 1.7;
@@ -1874,6 +2293,7 @@ function frame() {
   smokeU.uTime.value = t; smokeU.uFog.value.copy(scene.fog.color); smokeU.uScale.value = innerHeight * DPR * 0.5 / Math.tan(camera.fov * 0.5 * DEG);
   const sp = grassU.uSpacing.value;
   grassU.uCenter.value.set(Math.round(camera.position.x / sp) * sp, Math.round(camera.position.z / sp) * sp);
+  if (PEBBLE_U) PEBBLE_U.uCenter.value.set(Math.round(camera.position.x / 0.5) * 0.5, Math.round(camera.position.z / 0.5) * 0.5);
   grassU.uTime.value = t; cloudU.uTime.value = t; grade.uniforms.uTime.value = t;
   sun.target.position.copy(camera.position);
   sun.position.copy(sun.target.position).addScaledVector(sunDir, 400);
@@ -1889,12 +2309,14 @@ setTimeout(() => {
   yaw = Math.atan2(-sp.tx, -sp.tz); Char.face = yaw + Math.PI;
   initMats();
   populate(spawnIdx);
+  buildDrifts();
+  buildTracks();
   buildSmoke();
   buildGrass();
   seedDust();
   buildCharacterPanel(); loadCharacter();
   setHour(parseFloat(tod.value));
-  window.__ready = true; window.__P = P; window.__SITES = SITES; window.__road = road; window.__SPAWN = SPAWN_IDX; window.__setYaw = v => { yaw = v; };
+  window.__ready = true; window.__P = P; window.__SITES = SITES; window.__VIG = VIGNETTES; window.__hAt = heightAt; window.__road = road; window.__SPAWN = SPAWN_IDX; window.__setYaw = v => { yaw = v; };
   const go = $('go'); go.disabled = false; go.textContent = 'Step outside';
   go.addEventListener('click', () => {
     started = true; $('intro').hidden = true; pitch = -0.1;
