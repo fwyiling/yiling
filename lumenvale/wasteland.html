@@ -115,6 +115,7 @@ body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:n
 </div>
 
 <script src="assets/character.js"></script>
+<script src="assets/scans.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -312,19 +313,90 @@ vec3 wasteAlbedo(vec3 wp, vec3 n, vec3 m, vec3 ao, float scorch, out float rough
   rough = mix(mix(0.97, 0.88, r), 0.85, path);
   return col;
 }`;
+const TERRAIN_TEX_GLSL = `
+uniform sampler2D tRockD, tRockN, tGrD, tGrN, tSandD, tSandN, tMudD, tMudN;
+vec3 nmapS(sampler2D t, vec2 uv){ return texture2D(t, uv).xyz * 2.0 - 1.0; }
+void planarS(sampler2D tD, sampler2D tN, vec2 xz, float sc, out vec3 c, out vec3 nt){
+  vec2 uv1 = xz * sc, uv2 = mat2(0.8, -0.6, 0.6, 0.8) * xz * sc * 0.37 + 0.31;
+  float b = smoothstep(0.3, 0.7, vnoise(xz * 0.03)) * 0.65;
+  c = mix(texture2D(tD, uv1).rgb, texture2D(tD, uv2).rgb, b);
+  nt = normalize(mix(nmapS(tN, uv1), nmapS(tN, uv2), b));
+}
+vec3 wasteSurface(vec3 wp, vec3 nW, vec3 m, vec3 ao, float scorch, out float rough, out vec3 nOut){
+  float n1 = fbm5(wp.xz * 0.008), n2 = fbm5(wp.xz * 0.05);
+  vec3 cG, nG, cS, nS, cM, nM;
+  planarS(tGrD, tGrN, wp.xz, 0.2, cG, nG);
+  planarS(tSandD, tSandN, wp.xz, 0.14, cS, nS);
+  planarS(tMudD, tMudN, wp.xz, 0.22, cM, nM);
+  cG *= mix(vec3(0.9, 0.85, 0.78), vec3(1.1, 1.0, 0.88), n1) * (0.85 + 0.3 * n2);
+  cS *= vec3(1.15, 0.98, 0.8) * (0.9 + 0.2 * n2);
+  cM *= vec3(1.05, 0.98, 0.9);
+  vec3 col = mix(cG, cG * vec3(0.96, 0.93, 0.78), m.z * 0.4), nt = nG;
+  col = mix(col, cS, m.y); nt = normalize(mix(nt, nS, m.y));
+  col = mix(col, cM, m.x); nt = normalize(mix(nt, nM, m.x));
+  float path = smoothstep(0.3, 0.65, ao.z + (fbm3(wp.xz * 0.45) - 0.5) * 0.45);
+  col = mix(col, col * vec3(0.8, 0.72, 0.64), path * 0.6); nt = normalize(mix(nt, vec3(0.0, 0.0, 1.0), path * 0.5));
+  col = mix(col, vec3(0.035, 0.032, 0.03), clamp(scorch, 0.0, 1.0) * 0.9);
+  vec3 nGround = normalize(nW + vec3(nt.x, 0.0, -nt.y));
+  float slope = 1.0 - nW.y, r = smoothstep(0.24, 0.4, slope + (n2 - 0.5) * 0.14);
+  vec3 nRock = nGround;
+  if (r > 0.01) {
+    vec3 w = pow(abs(nW), vec3(4.0)); w /= (w.x + w.y + w.z);
+    float sc = 1.0 / 13.0;
+    vec2 ux = wp.zy * sc, uy = wp.xz * sc, uz = wp.xy * sc;
+    vec3 cR = texture2D(tRockD, ux).rgb * w.x + texture2D(tRockD, uy).rgb * w.y + texture2D(tRockD, uz).rgb * w.z;
+    vec3 cR2 = texture2D(tRockD, ux * 0.29 + 0.5).rgb * w.x + texture2D(tRockD, uy * 0.29 + 0.5).rgb * w.y + texture2D(tRockD, uz * 0.29 + 0.5).rgb * w.z;
+    cR = mix(cR, cR2, 0.35) * (0.82 + 0.36 * fbm5(wp.xz * 0.02 + wp.y * 0.013));
+    vec3 tx = nmapS(tRockN, ux), ty = nmapS(tRockN, uy), tz = nmapS(tRockN, uz);
+    vec3 sg = sign(nW);
+    nRock = normalize(nW + vec3(0.0, tx.y, tx.x * sg.x) * w.x + vec3(ty.x, 0.0, -ty.y) * w.y + vec3(tz.x * sg.z, tz.y, 0.0) * w.z);
+    col = mix(col, cR, r);
+  }
+  nOut = normalize(mix(nGround, nRock, r));
+  col *= ao.x * (1.0 + ao.y * 0.25);
+  rough = mix(0.95, 0.9, r);
+  return col;
+}`;
+const TEX = {};
+function fallbackTex(rgb) { const t = new THREE.DataTexture(new Uint8Array([...rgb, 255]), 1, 1); t.needsUpdate = true; return t; }
+async function loadTerrainTextures() {
+  const L = new THREE.TextureLoader(), names = { Rock: 'cliff_side', Gr: 'dry_ground_rocks', Sand: 'aerial_beach_01', Mud: 'mud_cracked_dry_03' };
+  await Promise.all(Object.entries(names).flatMap(([k, f]) => [['D', 'diff'], ['N', 'nor']].map(async ([sfx, t]) => {
+    try { const tx = await L.loadAsync(`assets/tex/${f}_${t}.jpg`); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 8; if (sfx === 'D') tx.colorSpace = THREE.SRGBColorSpace; TEX['t' + k + sfx] = tx; }
+    catch (e) { console.error('texture', f, e); TEX['t' + k + sfx] = fallbackTex(sfx === 'D' ? [150, 115, 80] : [128, 128, 255]); }
+  })));
+}
 function terrainMaterial() {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
   mat.onBeforeCompile = s => {
+    for (const k in TEX) s.uniforms[k] = { value: TEX[k] };
     s.vertexShader = 'attribute vec3 aMask;\nattribute vec3 aAO;\nattribute float aAux;\nvarying vec3 vMask;\nvarying vec3 vAO;\nvarying float vAux;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + s.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\nvMask = aMask; vAO = aAO; vAux = aAux;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);');
-    s.fragmentShader = 'varying vec3 vMask;\nvarying vec3 vAO;\nvarying float vAux;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + NOISE_GLSL + FRAG_GLSL + TERRAIN_GLSL + '\n' + s.fragmentShader
-      .replace('#include <map_fragment>', 'float tRough, tBump, tBumpFar;\ndiffuseColor.rgb = wasteAlbedo(vWPos, normalize(vWNrm), vMask, vAO, vAux, tRough, tBump, tBumpFar);')
+    s.fragmentShader = 'varying vec3 vMask;\nvarying vec3 vAO;\nvarying float vAux;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n' + NOISE_GLSL + TERRAIN_TEX_GLSL + '\n' + s.fragmentShader
+      .replace('#include <map_fragment>', 'float tRough; vec3 tNw;\ndiffuseColor.rgb = wasteSurface(vWPos, normalize(vWNrm), vMask, vAO, vAux, tRough, tNw);')
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-        float vdist = length(vViewPosition);
-        normal = bumpN(-vViewPosition, normal, tBump * (1.0 - smoothstep(25.0, 120.0, vdist)) + tBumpFar * (1.0 - smoothstep(250.0, 700.0, vdist)));`);
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize((viewMatrix * vec4(tNw, 0.0)).xyz);');
   };
   return mat;
+}
+/* ---- photo-scanned models (Poly Haven, CC0) ---- */
+const SCAN = {};
+async function loadScans() {
+  const loader = new GLTFLoader(), src = window.SCANS || {};
+  await Promise.all(Object.keys(src).map(k => new Promise(res => {
+    try {
+      const bin = atob(src[k]), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      loader.parse(buf.buffer, '', g => {
+        g.scene.updateMatrixWorld(true); let mesh = null; g.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
+        if (mesh) { const geo = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld); geo.computeBoundingBox(); SCAN[k] = { geo, mat: mesh.material }; }
+        res();
+      }, e => { console.error('scan', k, e); res(); });
+    } catch (e) { console.error('scan', k, e); res(); }
+  })));
+}
+function unitScan(k) { // centred, largest dimension = 2 (drop-in for the old procedural rock)
+  const g = SCAN[k].geo.clone(), b = g.boundingBox, c = new V3(), sz = new V3(); b.getCenter(c); b.getSize(sz);
+  g.translate(-c.x, -c.y, -c.z); g.scale(2 / Math.max(sz.x, sz.y, sz.z), 2 / Math.max(sz.x, sz.y, sz.z), 2 / Math.max(sz.x, sz.y, sz.z)); return g;
 }
 let TERRAIN_MAT = null;
 function rockMaterial() {
@@ -1298,11 +1370,11 @@ function buildClutter(r) {
   }
   const mk = (geo, mat, list, cols) => { if (!list.length) return; const im = new THREE.InstancedMesh(geo, mat, list.length), c = new THREE.Color(); list.forEach((mm, i) => { im.setMatrixAt(i, mm); if (cols) im.setColorAt(i, c.setHex(cols[i])); }); im.castShadow = im.receiveShadow = true; scene.add(im); };
   const drumMat = rustMat('diffuseColor.rgb *= 0.85 + 0.15 * step(0.5, fract(vObj.y * 3.4));');
-  mk(drumGeo, drumMat, drums, drumCols);
+  if (SCAN.barrel) mk(SCAN.barrel.geo, SCAN.barrel.mat, drums, drumCols.map(c => [0xffffff, 0xc8d0ff, 0xe0d8c8, 0xffe0c0, 0xb0b8a0][c % 5])); else mk(drumGeo, drumMat, drums, drumCols);
   mk(drumGeo, new THREE.MeshStandardMaterial({ color: 0x3a4a10, emissive: 0x7aff20, emissiveIntensity: 0.35, roughness: 0.6 }), toxicDrums);
   mk(tireGeo, new THREE.MeshStandardMaterial({ color: 0x151414, roughness: 0.95 }), tires);
   mk(crateGeo, MATS.wood, crates);
-  mk(barrierGeo, concreteOf(0xd8d2c4), barriers);
+  if (SCAN.barrier) mk(SCAN.barrier.geo, SCAN.barrier.mat, barriers); else mk(barrierGeo, concreteOf(0xd8d2c4), barriers);
 }
 
 function poolMat() {
@@ -1502,6 +1574,19 @@ function populate(spawnIdx) {
     }
   }
 
+  /* scanned dead quiver-tree trunks: stumps and fallen logs */
+  if (SCAN.trunk) {
+    const list = [];
+    for (let t = 0; t < 20000 && list.length < 220; t++) {
+      const x = (r() * 2 - 1) * 940, z = (r() * 2 - 1) * 940;
+      if (lakeAt(x, z) > 0.3 || slopeAt(x, z) > 0.3 || nearestRoad(x, z).d < 8 || !freeSpot(x, z, 1.5)) continue;
+      const fallen = r() < 0.55, s3 = 0.8 + r() * 1.1;
+      e.set(fallen ? 0 : (r() - 0.5) * 0.2, r() * 6.28, fallen ? Math.PI / 2 + (r() - 0.5) * 0.1 : (r() - 0.5) * 0.2); q.setFromEuler(e);
+      list.push(m4.compose(ps.set(x, heightAt(x, z) + (fallen ? 0.12 * s3 : -0.1), z), q, sc.set(s3, s3 * (fallen ? 1.2 + r() : 0.6 + r() * 0.8), s3)).clone());
+      if (!fallen) addCircle(x, z, 0.2 * s3);
+    }
+    const im = new THREE.InstancedMesh(SCAN.trunk.geo, SCAN.trunk.mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im);
+  }
   /* dead trees */
   {
     const bark = new THREE.MeshStandardMaterial({ color: 0x4f453c, roughness: 1 });
@@ -1522,23 +1607,32 @@ function populate(spawnIdx) {
 
   /* rocks: sunk into slopes so nothing floats */
   {
-    const mat = rockMaterial(), sets = [[], [], []], crags = [[], []];
+    const mat = rockMaterial(), sets = [[], [], []], crags = [[], []], hasScan = SCAN.cliffA && SCAN.boulderA;
     const up = new V3(0, 1, 0), nv = new V3(), qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qi = new THREE.Quaternion();
-    for (let t = 0; t < 60000 && crags[0].length + crags[1].length < (isTouch ? 600 : 1300); t++) {
+    for (let t = 0; t < 60000 && crags[0].length + crags[1].length < (hasScan ? (isTouch ? 220 : 420) : (isTouch ? 600 : 1300)); t++) {
       const x = (r() * 2 - 1) * 950, z = (r() * 2 - 1) * 950, sl = slopeAt(x, z);
       if (sl < 0.3 || sl > 0.9 || nearestRoad(x, z).d < 12 || !Object.values(SITES).every(o => Math.hypot(o.x - x, o.z - z) > o.r * 1.4)) continue;
       const e2 = 2, gx = (heightAt(x + e2, z) - heightAt(x - e2, z)) / (2 * e2), gz = (heightAt(x, z + e2) - heightAt(x, z - e2)) / (2 * e2);
-      nv.set(-gx, 1, -gz).normalize(); qa.setFromUnitVectors(up, nv); qi.identity().slerp(qa, 0.55); qb.setFromAxisAngle(up, r() * 6.28); qi.multiply(qb);
       const sz = 3 + Math.pow(r(), 1.6) * 10;
-      crags[Math.floor(r() * 2)].push(m4.compose(ps.set(x, heightAt(x, z) - sz * 0.45, z), qi.clone(), sc.set(sz, sz * (0.6 + r() * 0.5), sz * (0.7 + r() * 0.5))).clone());
+      if (hasScan) { // scanned rock faces: open side looks downhill, back buried in the slope
+        const gl = Math.hypot(gx, gz) || 1, dx = -gx / gl, dz = -gz / gl, ryc = Math.atan2(-dx, -dz) + (r() - 0.5) * 0.5;
+        e.set((r() - 0.5) * 0.15, ryc, (r() - 0.5) * 0.15); q.setFromEuler(e);
+        const k2 = r() < 0.55 ? 0 : 1, s3 = (k2 ? 0.9 : 1.6) * (0.9 + Math.pow(r(), 1.5) * 2.0);
+        (window.__CRAGS = window.__CRAGS || []).push([x, z, s3]);
+        crags[k2].push(m4.compose(ps.set(x - dx * 1.5, heightAt(x, z) - 1.2 * s3, z - dz * 1.5), q, sc.set(s3, s3 * (0.8 + r() * 0.5), s3)).clone());
+      } else {
+        nv.set(-gx, 1, -gz).normalize(); qa.setFromUnitVectors(up, nv); qi.identity().slerp(qa, 0.55); qb.setFromAxisAngle(up, r() * 6.28); qi.multiply(qb);
+        crags[Math.floor(r() * 2)].push(m4.compose(ps.set(x, heightAt(x, z) - sz * 0.45, z), qi.clone(), sc.set(sz, sz * (0.6 + r() * 0.5), sz * (0.7 + r() * 0.5))).clone());
+      }
       if (r() < 0.5) { // talus: boulders tumble to the foot of the slope
         let bx = x, bz = z; for (let k = 0; k < 10; k++) { bx -= gx * 4; bz -= gz * 4; if (slopeAt(bx, bz) < 0.2) break; }
         for (let k = 0; k < 3; k++) { const tx = bx + (r() - 0.5) * 10, tz = bz + (r() - 0.5) * 10, s2 = 0.4 + Math.pow(r(), 2) * 2.2; if (nearestRoad(tx, tz).d < 8 || !freeSpot(tx, tz, s2)) continue; e.set((r() - 0.5) * 0.6, r() * 6.28, (r() - 0.5) * 0.6); q.setFromEuler(e); sets[Math.floor(r() * 3)].push(m4.compose(ps.set(tx, heightAt(tx, tz) - s2 * 0.2, tz), q, sc.set(s2, s2 * (0.7 + r() * 0.5), s2)).clone()); if (s2 > 0.8) addCircle(tx, tz, s2 * 0.85); }
       }
       if (sz > 5) addCircle(x, z, sz * 0.5);
     }
-    crags.forEach((list, k) => { const im = new THREE.InstancedMesh(rockGeometry(300 + k * 17, true), mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im); });
-    for (let t = 0; t < 30000 && sets[0].length + sets[1].length + sets[2].length < 700; t++) {
+    if (hasScan) { SCAN.cliffA.mat.color.setHex(0xf0c8a4); SCAN.cliffB.mat.color.setHex(0xf0c8a4); SCAN.boulderA.mat.color.setHex(0xe8cdb0); SCAN.boulderB.mat.color.setHex(0xe8cdb0); }
+    crags.forEach((list, k) => { const im = hasScan ? new THREE.InstancedMesh(SCAN[k ? 'cliffB' : 'cliffA'].geo, SCAN[k ? 'cliffB' : 'cliffA'].mat, list.length) : new THREE.InstancedMesh(rockGeometry(300 + k * 17, true), mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im); });
+    for (let t = 0; t < 30000 && sets[0].length + sets[1].length + sets[2].length < 500; t++) {
       const x = (r() * 2 - 1) * 960, z = (r() * 2 - 1) * 960, h = heightAt(x, z), sl = slopeAt(x, z);
       if (sl > 0.55 || lakeAt(x, z) > 0.5 || nearestRoad(x, z).d < 7) continue;
       if (r() > 0.05 + smooth(0.12, 0.4, sl) * 0.45) continue;
@@ -1548,7 +1642,8 @@ function populate(spawnIdx) {
       sets[Math.floor(r() * 3)].push(m4.compose(ps.set(x, h - s * (0.12 + sl * 1.3), z), q, sc.set(s, s * (0.7 + r() * 0.6), s)).clone());
       if (s > 0.7) addCircle(x, z, s * 0.9);
     }
-    sets.forEach((list, k) => { const im = new THREE.InstancedMesh(rockGeometry(100 + k * 13), mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im); });
+    const bGeo = hasScan ? [unitScan('boulderA'), unitScan('boulderB')] : null;
+    sets.forEach((list, k) => { const im = hasScan ? new THREE.InstancedMesh(bGeo[k % 2], SCAN[k % 2 ? 'boulderB' : 'boulderA'].mat, list.length) : new THREE.InstancedMesh(rockGeometry(100 + k * 13), mat, list.length); list.forEach((mm, i) => im.setMatrixAt(i, mm)); im.castShadow = im.receiveShadow = true; scene.add(im); });
   }
   placePOIs(r);
 }
@@ -1673,7 +1768,7 @@ function buildGrass() {
     keepOutwardNormals(s);
   };
   grass = new THREE.Mesh(geo, mat); grass.frustumCulled = false; grass.receiveShadow = true; scene.add(grass);
-  buildPebbles(tex);
+  // pebbles now come from the scanned ground texture
 }
 
 function buildPebbles(tex) {
@@ -2301,7 +2396,8 @@ function frame() {
   composer.render();
   requestAnimationFrame(frame);
 }
-setTimeout(() => {
+setTimeout(async () => {
+  await Promise.all([loadTerrainTextures(), loadScans()]);
   buildTerrain();
   buildRoadMesh();
   const spawnIdx = SPAWN_IDX, sp = road[spawnIdx];
