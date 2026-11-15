@@ -66,6 +66,13 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(-
 .swatches button[aria-pressed="true"]{border-color:var(--sun)}
 .swatches button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 #charDone{align-self:flex-start;color:var(--ink);background:var(--sun)}
+#credits{position:fixed;z-index:9;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,6,4,.6);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px}
+#credits .box{max-width:620px;width:100%;max-height:80vh;overflow:auto;background:rgba(14,11,8,.92);border:1px solid var(--line);border-top:3px solid var(--sun);padding:22px;display:flex;flex-direction:column;gap:12px}
+#credits h2{font-family:var(--display);font-weight:500;letter-spacing:.16em;text-transform:uppercase;margin:0;font-size:20px}
+#credits ul{margin:0;padding-left:18px;font-size:12px;line-height:1.7;color:#d8ccb8}
+#credits a{color:var(--sun)}
+#credits p{margin:0;font-size:12px;color:var(--muted)}
+#loadNote{font-size:12px;color:var(--muted);min-height:1em}
 #joy{position:fixed;z-index:6;left:max(28px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 86px);width:110px;height:110px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.2);touch-action:none}
 #joy i{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(255,255,255,.35)}
 #jump{position:fixed;z-index:6;right:max(28px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 100px);width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--text);font:500 12px var(--display);letter-spacing:.12em;text-transform:uppercase}
@@ -92,6 +99,7 @@ body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:n
   <button class="btn" id="fly" aria-pressed="false">Fly</button>
   <button class="btn" id="charBtn" aria-pressed="false">Character</button>
   <button class="btn" id="snd" aria-pressed="false">Sound</button>
+  <button class="btn" id="credBtn">Credits</button>
 </div>
 <aside id="charPanel" hidden aria-label="Character">
   <h2>Your scavenger</h2>
@@ -101,6 +109,12 @@ body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:n
   <div class="field"><label class="lbl" for="cheight">Height <output id="hOut">1.80 m</output></label><input id="cheight" type="range" min="0.92" max="1.08" step="0.01" value="1"></div>
   <button class="btn" id="charDone">Done</button>
 </aside>
+<div id="credits" hidden><div class="box">
+  <h2>Credits</h2>
+  <p>3D models from Sketchfab, used under Creative Commons Attribution (CC BY 4.0). Scanned rocks, plants and terrain textures from Poly Haven (CC0). Player character from the three.js examples (Mixamo).</p>
+  <ul id="credList"></ul>
+  <button class="btn" id="credClose" style="align-self:flex-start;color:var(--ink);background:var(--sun)">Close</button>
+</div></div>
 <div id="joy" hidden><i></i></div>
 <button id="jump" hidden>Jump</button>
 
@@ -110,6 +124,7 @@ body.photo .hud,body.photo #joy,body.photo #jump,body.photo #charPanel{display:n
     <h1>Dustline</h1>
     <p>The lake dried up a long time ago. What's left is a broken highway, the shell of a town, and dust that never settles. Search the ruins, cross the lakebed, and keep an eye on your dosimeter.</p>
     <button id="go" disabled>Generating sector…</button>
+    <span id="loadNote"></span>
     <small>Desktop works best. Click the world to capture the mouse, Esc to let go.</small>
   </div>
 </div>
@@ -586,7 +601,7 @@ function planDetail(r) {
 }
 
 /* ================= points of interest: planning ================= */
-const SITES = {};
+const SITES = {}, SITES_EXTRA = {};
 let SPAWN_IDX = 0;
 function flattenSite(st) {
   const R = st.r * 1.7, i0 = Math.max(1, Math.floor((st.x - R + HALF) / STEP)), i1 = Math.min(N - 1, Math.ceil((st.x + R + HALF) / STEP));
@@ -618,6 +633,11 @@ function planSites() {
     if (flat) flattenSite(st); else st.h = heightAt(st.x, st.z);
     SITES[name] = st; return st;
   };
+  { // level pad for the gas station beside the highway
+    const rd = road[clamp(SPAWN_IDX - 60, 0, road.length - 1)], x = rd.x - rd.tz * 26, z = rd.z + rd.tx * 26;
+    const gs = { x, z, r: 19, h: Math.max(rd.h, heightAt(x, z) * 0.3 + rd.h * 0.7), ry: Math.atan2(-rd.tz, rd.tx) };
+    flattenSite(gs); SITES_EXTRA.gas = gs;
+  }
   const ahead = road[clamp(SPAWN_IDX + 175, 0, road.length - 1)];
   pick('camp', ahead.x - ahead.tz * 80, ahead.z + ahead.tx * 80, 120, 28, (x, z) => lakeAt(x, z) < 0.3);
   pick('graveyard', 30, -40, 160, 45, (x, z) => lakeAt(x, z) > 0.9, false);
@@ -1697,7 +1717,7 @@ function placePOIs(r) {
       }
     }
   }
-  { // gas station on the highway, west of spawn
+  if (!SFM.gas) { // gas station on the highway, west of spawn (fallback when the scanned model is unavailable)
     const gi = clamp(SPAWN_IDX - 60, 0, road.length - 1), rd = road[gi], side = 1, off = 17 * side;
     const x = rd.x - rd.tz * off, z = rd.z + rd.tx * off, ry = Math.atan2(-rd.tz, rd.tx);
     makeGas(r).place(x, heightAt(x, z) - 0.1, z, ry);
@@ -1706,6 +1726,7 @@ function placePOIs(r) {
     spots.push([x, z, 14]);
   }
   placeVignettes(r);
+  placeSketchfab(r);
   ADS.forEach((ad, i) => { const ri = clamp(SPAWN_IDX + (i - 1) * 85 + 20, 5, road.length - 5); placeBillboard(road[ri], i % 2 ? 1 : -1, ad, 50 + i); });
   buildClutter(r);
 }
@@ -1988,6 +2009,158 @@ function placeVignettes(r) {
     spots.push([v.x, v.z, 8]);
   }
 }
+
+/* ================= Sketchfab models (CC BY) ================= */
+const SF_CREDITS = [
+  ['Abandoned Brick Building', 'AspectStudios', 'https://sketchfab.com/3d-models/abandoned-brick-building-4f5ce406ce4e42ee8c8713259818953e'],
+  ["Post-Apocalyptic Ruin 'Southside'", '-X-ScornGames', 'https://sketchfab.com/3d-models/postapocalyptic-ruinsouthside-00bf0909f6b24f9dac9daa86966cb2f6'],
+  ['Abandoned Building / Shop / Old House', 'YadroGames', 'https://sketchfab.com/3d-models/abandoned-building-shop-old-house-0ed14367314946b298d9a58db66da040'],
+  ['Abandoned Gas Station', 'NZP3D', 'https://sketchfab.com/3d-models/abandoned-gas-station-3df532f761f945768ab487616fb6d656'],
+  ['Zombie Hazmat', 'LxNazarov', 'https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04'],
+  ['Robot Police Unit (animated)', 'Jungle Jim', 'https://sketchfab.com/3d-models/robot-police-unit-animated-36bc284bf5b84a6597db8f6db053c095'],
+  ['Terror Engine - Medusa', 'Jazba', 'https://sketchfab.com/3d-models/terror-engine-medusa-ca8cb5485de84c4ea4642240ea8307fc'],
+  ['Pirozhok Scan Retopo (Free Scan)', 'Renafox', 'https://sketchfab.com/3d-models/pirozhok-scan-retopo-free-scan-07bc48134b364d4f8a43d288b3a0282d'],
+  ['Crashed Abandoned Car - Game Ready', 'Rashad Ibrahimli', 'https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011'],
+  ['M725 Military Ambulance', 'Renafox', 'https://sketchfab.com/3d-models/m725-military-ambulance-fbeafdb305114e4eb331d1b69d5fe094'],
+  ['Scrap metal (lowpoly)', 'Zuckergelee', 'https://sketchfab.com/3d-models/scrap-metal-lowpoly-439ed4e66a87433ca0a76b9351f91da7'],
+  ['Rusted Water Tower', 'axemcb', 'https://sketchfab.com/3d-models/rusted-water-tower-c3c883f1e4694754809e33761f25aea8'],
+  ['Barbed Wire Fence', 'John Doe', 'https://sketchfab.com/3d-models/barbed-wire-fence-f1c1c8e8052a41b7aa10e4a60fa0bcb9'],
+  ['Helicopter Crashed (T2)', 'BimboCattibo90', 'https://sketchfab.com/3d-models/helicopter-crashed-t2-c19f1a1ebdeb4ebf877bb9b47f06eb8c'],
+  ['Ribcage and Pelvis', 'chummy-island', 'https://sketchfab.com/3d-models/ribcage-and-pelvis-9b24894e318d4f37b7a10692d77b8343'],
+];
+const SF_NAMES = ['gas', 'shop', 'brick', 'southside', 'watertower', 'heli', 'ambulance', 'carscan', 'carcrash', 'scrap', 'wire', 'ribcage', 'hazmat', 'robot', 'medusa'];
+const SFM = {};
+function loadScriptTag(src) { return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = rej; document.head.append(el); }); }
+async function loadSketchfab(onProgress) {
+  const loader = new GLTFLoader(); let done = 0;
+  await Promise.all(SF_NAMES.map(async n => {
+    try {
+      await loadScriptTag(`assets/sf/${n}.js`);
+      const b64 = (window.SFDATA || {})[n]; if (!b64) throw new Error('no data');
+      const bin = atob(b64), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      delete window.SFDATA[n];
+      SFM[n] = await new Promise((res, rej) => loader.parse(buf.buffer, '', res, rej));
+      SFM[n].scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = !o.isSkinnedMesh; } });
+    } catch (e) { console.error('sketchfab', n, e); }
+    onProgress && onProgress(++done, SF_NAMES.length);
+  }));
+}
+// clone a model, scale it to a real-world size, centre it on its footprint and stand it on y = 0
+function sfInstance(name, opt) {
+  const g = SFM[name]; if (!g) return null;
+  const obj = opt.skinned ? cloneSkinned(g.scene) : g.scene.clone(true);
+  obj.updateMatrixWorld(true);
+  let b = new THREE.Box3().setFromObject(obj, true), sz = b.getSize(new V3()), k = 1;
+  if (opt.height) k = opt.height / sz.y; else if (opt.length) k = opt.length / Math.max(sz.x, sz.z);
+  if (opt.maxFoot) k = Math.min(k === 1 && !opt.height && !opt.length ? 1e9 : k, opt.maxFoot / Math.max(sz.x, sz.z));
+  obj.scale.multiplyScalar(k); obj.updateMatrixWorld(true);
+  b = new THREE.Box3().setFromObject(obj, true); const c = b.getCenter(new V3());
+  obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= b.min.y;
+  const wrap = new THREE.Group(); wrap.add(obj);
+  return { wrap, obj, size: b.getSize(new V3()) };
+}
+function sfPlace(name, x, z, ry, opt = {}) {
+  const it = sfInstance(name, opt); if (!it) return null;
+  it.wrap.position.set(x, (opt.y !== undefined ? opt.y : heightAt(x, z)) - (opt.sink || 0), z);
+  it.wrap.rotation.set(opt.rx || 0, ry, opt.rz || 0);
+  scene.add(it.wrap);
+  if (opt.collide) addBox(x, z, it.size.x / 2 * 0.92, it.size.z / 2 * 0.92, ry);
+  return it;
+}
+const CREATURES = [];
+function spawnCreature(name, x, z, opt) {
+  const it = sfPlace(name, x, z, Math.random() * 6.28, { skinned: true, height: opt.height });
+  if (!it) return;
+  const g = SFM[name], mixer = new THREE.AnimationMixer(it.obj);
+  const find = re => g.animations.find(a => re.test(a.name));
+  const walk = find(/walk/i) || g.animations[0], idle = find(/idle/i) || walk;
+  const aw = walk ? mixer.clipAction(walk) : null, ai = idle ? mixer.clipAction(idle) : null;
+  if (aw) { aw.play(); aw.time = Math.random() * 2; }
+  if (ai && ai !== aw) { ai.play(); ai.setEffectiveWeight(0); }
+  CREATURES.push({ it, mixer, aw, ai, home: [x, z], rad: opt.rad, speed: opt.speed, tgt: null, wait: Math.random() * 4, wIdle: 0, ry: it.wrap.rotation.y });
+}
+function updateCreatures(dt) {
+  for (const c of CREATURES) {
+    const p = c.it.wrap.position;
+    if (!c.tgt && (c.wait -= dt) <= 0) { const a = Math.random() * 6.28, d = Math.sqrt(Math.random()) * c.rad; c.tgt = [c.home[0] + Math.cos(a) * d, c.home[1] + Math.sin(a) * d]; }
+    let moving = false;
+    if (c.tgt) {
+      const dx = c.tgt[0] - p.x, dz = c.tgt[1] - p.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.8) { c.tgt = null; c.wait = 2 + Math.random() * 6; }
+      else {
+        moving = true; const st = Math.min(dist, c.speed * dt); p.x += dx / dist * st; p.z += dz / dist * st;
+        let want = Math.atan2(dx, dz), d = Math.atan2(Math.sin(want - c.ry), Math.cos(want - c.ry)); c.ry += d * Math.min(1, dt * 4); c.it.wrap.rotation.y = c.ry;
+      }
+    }
+    p.y = groundAt(p.x, p.z);
+    c.wIdle = lerp(c.wIdle, moving ? 0 : 1, Math.min(1, dt * 4));
+    if (c.ai && c.ai !== c.aw) { c.ai.setEffectiveWeight(c.wIdle); c.aw.setEffectiveWeight(1 - c.wIdle); } else if (c.aw) c.aw.timeScale = moving ? 1 : 0.15;
+    const near = Math.hypot(p.x - camera.position.x, p.z - camera.position.z) < 160;
+    if (near) c.mixer.update(dt);
+    c.it.wrap.visible = near || Math.hypot(p.x - camera.position.x, p.z - camera.position.z) < 400;
+  }
+}
+function placeSketchfab(r) {
+  if (!Object.keys(SFM).length) return false;
+  const S = SITES, ok = n => !!SFM[n];
+  const roadSide = (i, off) => { const rd = road[clamp(i, 0, road.length - 1)]; return { x: rd.x - rd.tz * off, z: rd.z + rd.tx * off, ry: Math.atan2(-rd.tz, rd.tx), rd }; };
+  // gas station on the highway, west of spawn
+  if (ok('gas') && SITES_EXTRA.gas) { const g = SITES_EXTRA.gas; window.__GAS = [g.x, g.z]; sfPlace('gas', g.x, g.z, g.ry + Math.PI, { maxFoot: 32, y: g.h, sink: 0.25 }); spots.push([g.x, g.z, 18]); }
+  // town centrepieces: real building models among the generated blocks
+  const townSpots = [];
+  for (let t = 0; t < 400 && townSpots.length < 9; t++) {
+    const i = SPAWN_IDX + 35 + Math.floor(r() * 120), side = r() < 0.5 ? 1 : -1, off = side * (22 + r() * 50), g = roadSide(i, off);
+    if (slopeAt(g.x, g.z) > 0.12 || nearestRoad(g.x, g.z).d < 14 || !freeSpot(g.x, g.z, 11)) continue;
+    townSpots.push(g); spots.push([g.x, g.z, 11]); (window.__SF = window.__SF || []).push([g.x, g.z]);
+  }
+  const townModels = ['shop', 'brick', 'southside', 'brick', 'southside', 'watertower', 'brick', 'shop', 'southside'];
+  townSpots.forEach((g, i) => {
+    const n = townModels[i % townModels.length]; if (!ok(n)) return;
+    const opt = n === 'shop' ? { maxFoot: 26 } : n === 'brick' ? { length: 12 + r() * 4 } : n === 'southside' ? { length: 18 + r() * 6 } : { height: 15 };
+    const it = sfPlace(n, g.x, g.z, g.ry + (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 0.1, { ...opt, collide: true, sink: 0.2 });
+    if (it && n !== 'watertower') addDrift(g.x + (r() - 0.5) * it.size.x, g.z + (r() - 0.5) * it.size.z, 3 + r() * 3, 1 + r(), 2.4, g.ry, 0.3);
+  });
+  // a stalled convoy: ambulance and wrecks nose to tail on the shoulder, plus scattered wrecks on the highway
+  if (ok('ambulance')) { const c = roadSide(SPAWN_IDX + 210, 6); sfPlace('ambulance', c.x, c.z, c.ry + 0.12, { length: 6.4, collide: true }); for (let k = 1; k <= 3; k++) { const w = roadSide(SPAWN_IDX + 210 + k * 3, 5.5 + (r() - 0.5)); sfPlace(k % 2 ? 'carscan' : 'carcrash', w.x, w.z, w.ry + (r() - 0.5) * 0.5, { length: 4.6, collide: true }); } }
+  for (let k = 0; k < 18; k++) {
+    const i = Math.floor(r() * road.length), off = (r() < 0.5 ? -1 : 1) * (r() < 0.6 ? 2.2 : 7.5), w = roadSide(i, off);
+    if (Math.hypot(w.x - road[SPAWN_IDX].x, w.z - road[SPAWN_IDX].z) < 15 || !freeSpot(w.x, w.z, 3)) continue;
+    sfPlace(r() < 0.5 ? 'carscan' : 'carcrash', w.x, w.z, w.ry + (off < 0 ? Math.PI : 0) + (r() - 0.5) * 0.8, { length: 4.6, collide: true }); spots.push([w.x, w.z, 3]);
+  }
+  // crashed helicopter on the dunes, still smoking
+  if (ok('heli')) {
+    for (let t = 0; t < 2000; t++) {
+      const x = (r() * 2 - 1) * 700, z = (r() * 2 - 1) * 700;
+      if (slopeAt(x, z) > 0.12 || nearestRoad(x, z).d < 60 || !freeSpot(x, z, 25) || lakeAt(x, z) > 0.3) continue;
+      sfPlace('heli', x, z, r() * 6.28, { length: 17, collide: true, rz: 0.12, sink: 0.4 }); SMOKE.push([x + 2, heightAt(x, z) + 2, z, 32, 1.5, 0.85]); spots.push([x, z, 20]);
+      for (let k = 0; k < 6; k++) { const a = r() * 6.28, d = 10 + r() * 22; if (ok('scrap')) sfPlace('scrap', x + Math.cos(a) * d, z + Math.sin(a) * d, r() * 6, { length: 2 + r() * 2 }); }
+      break;
+    }
+  }
+  // scrap piles around the camp and the town
+  if (ok('scrap')) {
+    if (S.camp) for (let k = 0; k < 8; k++) { const a = r() * 6.28, d = 6 + r() * 15; sfPlace('scrap', S.camp.x + Math.cos(a) * d, S.camp.z + Math.sin(a) * d, r() * 6, { length: 2.2 + r() * 2.5 }); }
+    townSpots.forEach(g => { if (r() < 0.7) sfPlace('scrap', g.x + (r() - 0.5) * 24, g.z + (r() - 0.5) * 24, r() * 6, { length: 2 + r() * 3 }); });
+  }
+  if (ok('watertower') && S.camp) sfPlace('watertower', S.camp.x - 30, S.camp.z + 8, r() * 6, { height: 13, collide: true });
+  // barbed wire around the bunker and refinery
+  if (ok('wire')) {
+    const fence = (cx, cz, R, gapA) => { const n = Math.round(Math.PI * 2 * R / 1.9); for (let i = 0; i < n; i++) { const a = i / n * 6.283; if (Math.abs(Math.atan2(Math.sin(a - gapA), Math.cos(a - gapA))) < 0.25 || r() < 0.08) continue; const x = cx + Math.cos(a) * R, z = cz + Math.sin(a) * R; sfPlace('wire', x, z, -a + Math.PI / 2, { length: 1.95, rz: r() < 0.1 ? 0.5 : (r() - 0.5) * 0.08 }); addBox(x, z, 0.95, 0.1, -a + Math.PI / 2); } };
+    if (S.refinery) fence(S.refinery.x, S.refinery.z, 62, Math.atan2(-S.refinery.z, -S.refinery.x));
+    if (S.bunker) fence(S.bunker.x + Math.sin(S.bunker.face) * 14, S.bunker.z + Math.cos(S.bunker.face) * 14, 14, S.bunker.face + Math.PI);
+  }
+  // bones: at the graves, on the lakebed, near the toxic pools
+  if (ok('ribcage')) {
+    VIGNETTES.filter(v => v.type === 'graves' || v.type === 'camp').forEach(v => sfPlace('ribcage', v.x + 3, v.z - 2, r() * 6, { length: 1.1, rz: 1.4 }));
+    toxicPools.forEach(p => { for (let k = 0; k < 2; k++) { const a = r() * 6.28, d = p.r + 2 + r() * 6; sfPlace('ribcage', p.x + Math.cos(a) * d, p.z + Math.sin(a) * d, r() * 6, { length: 1 + r() * 0.8, rz: 1.4 }); } });
+  }
+  // creatures: hazmat ghouls by the pools, machines near the spire and dishes, a Medusa in the graveyard
+  if (ok('hazmat')) toxicPools.forEach((p, i) => { for (let k = 0; k < (i < 3 ? 2 : 1); k++) spawnCreature('hazmat', p.x + (r() - 0.5) * 20, p.z + (r() - 0.5) * 20, { height: 1.8, rad: 28, speed: 0.9 }); });
+  if (ok('robot')) { for (const st of [S.spire, S.dishes, S.refinery]) if (st) spawnCreature('robot', st.x + 20, st.z + 15, { height: 2.6, rad: 45, speed: 1.4 }); }
+  if (ok('medusa') && S.graveyard) { spawnCreature('medusa', S.graveyard.x + 25, S.graveyard.z, { height: 3.4, rad: 55, speed: 1.6 }); spawnCreature('medusa', S.graveyard.x - 30, S.graveyard.z + 20, { height: 3.0, rad: 55, speed: 1.6 }); }
+  return true;
+}
+
 /* ================= dust ================= */
 function dotTexture(soft) {
   const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
@@ -2287,6 +2460,9 @@ function toggleFly() { P.fly = !P.fly; P.vy = 0; $('fly').setAttribute('aria-pre
 $('auto').addEventListener('click', toggleAuto);
 $('fly').addEventListener('click', toggleFly);
 $('charBtn').addEventListener('click', () => { if (started) toggleCharPanel(); });
+$('credList').innerHTML = SF_CREDITS.map(([t, a, u]) => `<li><a href="${u}" target="_blank" rel="noopener">${t}</a> by ${a}</li>`).join('') + '<li>Terrain textures, rocks and trunks: Poly Haven (CC0)</li>';
+$('credBtn').addEventListener('click', () => { $('credits').hidden = false; if (document.pointerLockElement) document.exitPointerLock(); });
+$('credClose').addEventListener('click', () => { $('credits').hidden = true; });
 $('snd').addEventListener('click', () => { Sound.toggle(); $('snd').setAttribute('aria-pressed', Sound.on); });
 
 /* ================= sound: wind, metal, geiger ================= */
@@ -2385,6 +2561,7 @@ function frame() {
   for (const sp2 of SPINNERS) { sp2.m.rotateZ(-sp2.sp * dt); if (sp2.wob) sp2.m.rotateZ(Math.sin(t * 0.6) * sp2.wob * dt); }
   for (const v of VULTURES) { const a = t * v.sp + v.ph; v.g.position.set(v.cx + Math.cos(a) * v.rad, v.y + Math.sin(a * 2.3) * 3, v.cz + Math.sin(a) * v.rad); v.g.rotation.set(0, -a, 0.35); const flap = Math.sin(t * 6 + v.ph) > 0.6 ? Math.sin(t * 14 + v.ph) * 0.5 : 0.08; v.L.rotation.z = flap; v.R.rotation.z = -flap; }
   updateNPCs(dt);
+  updateCreatures(dt);
   smokeU.uTime.value = t; smokeU.uFog.value.copy(scene.fog.color); smokeU.uScale.value = innerHeight * DPR * 0.5 / Math.tan(camera.fov * 0.5 * DEG);
   const sp = grassU.uSpacing.value;
   grassU.uCenter.value.set(Math.round(camera.position.x / sp) * sp, Math.round(camera.position.z / sp) * sp);
@@ -2397,7 +2574,9 @@ function frame() {
   requestAnimationFrame(frame);
 }
 setTimeout(async () => {
-  await Promise.all([loadTerrainTextures(), loadScans()]);
+  const note = $('loadNote');
+  await Promise.all([loadTerrainTextures(), loadScans(), loadSketchfab((d, n) => { note.textContent = `Loading models ${d}/${n}`; })]);
+  note.textContent = '';
   buildTerrain();
   buildRoadMesh();
   const spawnIdx = SPAWN_IDX, sp = road[spawnIdx];
@@ -2412,7 +2591,7 @@ setTimeout(async () => {
   seedDust();
   buildCharacterPanel(); loadCharacter();
   setHour(parseFloat(tod.value));
-  window.__ready = true; window.__P = P; window.__SITES = SITES; window.__VIG = VIGNETTES; window.__hAt = heightAt; window.__road = road; window.__SPAWN = SPAWN_IDX; window.__setYaw = v => { yaw = v; };
+  window.__ready = true; window.__P = P; window.__SITES = SITES; window.__POOLS = toxicPools; window.__VIG = VIGNETTES; window.__hAt = heightAt; window.__road = road; window.__SPAWN = SPAWN_IDX; window.__setYaw = v => { yaw = v; };
   const go = $('go'); go.disabled = false; go.textContent = 'Step outside';
   go.addEventListener('click', () => {
     started = true; $('intro').hidden = true; pitch = -0.1;
