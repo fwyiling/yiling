@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      1.5.0
-// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. No overlays, no features, nothing on screen.
+// @version      1.6.0
+// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom, full map radar with names, Aim Assist.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "1.5.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "1.6.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -787,6 +787,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     }
     h += '<div style="opacity:.6;font-size:12px;letter-spacing:.12em;margin-top:12px">' + BRAND + '</div>';
     rows().forEach(function(r) { h += row(r.name, 'data-studio="' + r.k + '"', r.on); });
+    if (window.__studioExt) h += window.__studioExt.rows(row);
     PANEL.innerHTML = h;
     PANEL.addEventListener("change", function(e) {
       var t = e.target, on = !!t.checked, g = t.getAttribute("data-game"), k2 = t.getAttribute("data-studio");
@@ -795,6 +796,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     });
     PANEL.addEventListener("keydown", function(e) { e.stopPropagation(); });
     (document.body || document.documentElement).appendChild(PANEL);
+    if (window.__studioExt) window.__studioExt.bind(PANEL);
   }
   // F9: a small readout (FPS, drops, quality step), for checking
   var HUD = null;
@@ -802,7 +804,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   try {
     window.addEventListener("keydown", function(e) {
       if (e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
-      var t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      var t = e.target; if (t && (t.tagName === "INPUT" && t.type !== "checkbox" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.key === "\\") { e.preventDefault(); e.stopPropagation(); panel(); }
       else if (e.key === "Escape" && PANEL) { e.preventDefault(); e.stopPropagation(); panel(); }
       else if (e.key === "]") { e.preventDefault(); e.stopPropagation(); allOff(); }
@@ -819,4 +821,3871 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }
     }, true);
   } catch (e) {}
+})();
+// ---- Studio: Syndicate's FOV zoom, full map radar with names, and Aim Assist ----
+// The socket hook goes in at once (before the game connects); the features
+// start once the page is up. Each has its switch in the \ panel, and ]
+// (all mods off) takes them off too.
+(function() {
+  "use strict";
+  if (window.__studioExt) return;
+  var LS = function(k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var FEAT = {
+    fov:        { key: "AEGIS_fov",        def: "1" },
+    radarzoom:  { key: "AEGIS_radarzoom",  def: "0" },
+    radarnames: { key: "AEGIS_radarnames", def: "1" },
+    radaricons: { key: "AEGIS_radaricons", def: "0" },
+    radartier:  { key: "AEGIS_radartier",  def: "1" },
+    aim:        { key: "STUDIO_aim",       def: "0" }
+  };
+  var FEAT_V = {};
+  function featOn(f) {
+    if (!FEAT[f]) return false;
+    if (window.__studio && window.__studio.allOff) return false;
+    var v = FEAT_V[f];
+    if (v === undefined) v = FEAT_V[f] = (LS(FEAT[f].key) || FEAT[f].def) === "1";
+    return v;
+  }
+  function featSet(f, on) {
+    FEAT_V[f] = !!on;
+    try { localStorage.setItem(FEAT[f].key, on ? "1" : "0"); } catch (e) {}
+  }
+
+  // ---- game state off the wire ----
+  var _nativeAB = Blob.prototype.arrayBuffer;
+  // one copy of each game message's bytes, however many listeners read it
+  function _synBytes(blob) { return blob.__synAB || (blob.__synAB = _nativeAB.call(blob)); }
+  var _aegisShips = {}, _aegisNames = {}, _aegisWS = null;
+  var _aegisTeamOf = {}, _aegisHueOf = {}, _aegisMapHalf = 400;
+  // Control messages (the steering word) never go out faster than 90 in any
+  // second, whoever sends them (the game or Aim Assist): more than ~120 a
+  // second gets an IP ban. Over the limit, the newest word waits.
+  var _ctlTimes = [], _ctlPend = null, _ctlTimer = 0, CTL_MAX = 90;
+  function _synCtlSend(ws, d) {
+    var now = performance.now();
+    while (_ctlTimes.length && now - _ctlTimes[0] >= 1000) _ctlTimes.shift();
+    if (_ctlTimes.length < CTL_MAX && !_ctlPend) {
+      _ctlTimes.push(now);
+      try { return Object.getPrototypeOf(ws).send.call(ws, d); } catch (e) { return; }
+    }
+    _ctlPend = { ws: ws, d: d };
+    if (!_ctlTimer) _ctlTimer = setTimeout(function flush() {
+      _ctlTimer = 0;
+      var n2 = performance.now();
+      while (_ctlTimes.length && n2 - _ctlTimes[0] >= 1000) _ctlTimes.shift();
+      if (_ctlTimes.length >= CTL_MAX) { _ctlTimer = setTimeout(flush, Math.max(1, 1000 - (n2 - _ctlTimes[0]) + 1)); return; }
+      var P = _ctlPend; _ctlPend = null;
+      if (P && P.ws.readyState === 1) { _ctlTimes.push(n2); try { Object.getPrototypeOf(P.ws).send.call(P.ws, P.d); } catch (e) {} }
+    }, Math.max(1, 1000 - (now - (_ctlTimes[0] || now)) + 1));
+  }
+  window.__synCtlSend = _synCtlSend;
+  // Ship status packets (type 0) by ship id.
+  var _synStat = {};
+  window.__synShipStat = _synStat;
+  function _synShipStatus(b) {
+    if (b.length < 48 || b[0] !== 0) return;
+    var dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    var tf = dv.getUint16(14, true), code = tf & 0x3FF;
+    var r = dv.getFloat32(32, true);
+    _synStat[b[1]] = {
+      id: b[1], alive: (b[2] & 1) === 1, up: (b[2] & 2) === 2, code: code, tier: Math.floor(code / 100),
+      x: dv.getFloat32(16, true), y: dv.getFloat32(20, true), vx: dv.getFloat32(24, true), vy: dv.getFloat32(28, true),
+      angle: ((r * 180 / Math.PI) % 360 + 360) % 360, shield: dv.getUint16(42, true),
+      crystals: dv.getUint16(46, true), score: b.length >= 52 ? dv.getUint32(48, true) : 0, ts: Date.now(),
+      inv: (tf & 0x8000) !== 0, healing: (tf & 0x400) !== 0, gen: dv.getUint16(44, true), steer: dv.getUint16(12, true) % 360,
+      glide: (tf & 0x4000) !== 0, side: b[2] & 32 ? 1 : b[2] & 64 ? -1 : 0, stun: b[40], spin: dv.getFloat32(36, true), tick: dv.getUint32(8, true),
+      stime: dv.getUint32(4, true)
+    };
+    _synClock(_synStat[b[1]]);
+    if (window.__synAimStat) try { window.__synAimStat(_synStat[b[1]]); } catch (e) {}
+  }
+  // How old a ship's state really is: the least-delayed packets set the
+  // offset between the server's clock and ours.
+  var _synClkOff = null, _synClkAt = 0, _synClkOdd = 0, _synClkBad = false;
+  function _synClock(s) {
+    var v = s.ts - s.stime;
+    if (!(s.stime > 0) || _synClkBad) return;
+    if (_synClkOff != null && v - _synClkOff > 1500) { if (++_synClkOdd >= 6) { _synClkBad = true; _synClkOff = null; return; } } else _synClkOdd = 0;
+    if (_synClkOff == null || Math.abs(v - _synClkOff) > 5000) { _synClkOff = v; _synClkAt = s.ts; return; }
+    if (v < _synClkOff) _synClkOff = v; else _synClkOff += Math.min(v - _synClkOff, (s.ts - _synClkAt) * .0005);
+    _synClkAt = s.ts;
+  }
+  function synAge(s, now) {
+    now = now || Date.now();
+    var byArrival = now - s.ts;
+    if (_synClkOff == null || !(s.stime > 0)) return byArrival;
+    var a = now - (s.stime + _synClkOff);
+    return a >= byArrival - 5 && a - byArrival < 3000 ? a : byArrival;
+  }
+  window.__synAge = synAge;
+  // Lasers in flight (type 100 volleys: laser id -> shooter).
+  var _synLaserOwner = {}, _synLaserN = 0;
+  function _synCombat(b) {
+    var t = b[0], now = Date.now();
+    if (t === 100) {
+      if (b.length < 40) return;
+      if (window.__synAimVolley) try { window.__synAimVolley(b); } catch (e) {}
+      if (window.__synDodgeVolley) try { window.__synDodgeVolley(b); } catch (e) {}
+      for (var o = 8; o + 32 <= b.length; o += 32) { _synLaserOwner[b[o + 24] | b[o + 25] << 8] = [b[1], now]; _synLaserN++; }
+      if (_synLaserN > 3000) {
+        for (var k in _synLaserOwner) if (now - _synLaserOwner[k][1] > 5000) delete _synLaserOwner[k];
+        _synLaserN = 0;
+      }
+      return;
+    }
+    if (b.length < (t === 101 ? 13 : 12)) return;
+    if (window.__synDodgeGone) try { window.__synDodgeGone(b[2] | b[3] << 8); } catch (e) {}
+  }
+  var SHIP_TTL = 6e3, NAME_THROTTLE = 4e3, BOT_ZERO_TTL = 5e3;
+  // Names for radar ids: each id asked at most 3 times, 4 requests a second.
+  var _aegisNameReq = {}, _aegisNameTries = {}, _aegisNameBucket = { t: 0, n: 0 };
+  function requestName(id) {
+    try {
+      if (!_aegisWS || _aegisWS.readyState !== 1 || _aegisNames[id]) return;
+      var now = Date.now();
+      if (_aegisNameReq[id] && now - _aegisNameReq[id] < NAME_THROTTLE) return;
+      if ((_aegisNameTries[id] || 0) >= 3) return;
+      if (now - _aegisNameBucket.t > 1000) { _aegisNameBucket.t = now; _aegisNameBucket.n = 0; }
+      if (_aegisNameBucket.n >= 4) return;
+      _aegisNameBucket.n++;
+      _aegisNameTries[id] = (_aegisNameTries[id] || 0) + 1;
+      _aegisNameReq[id] = now;
+      _aegisWS.send(JSON.stringify({ name: "get_name", data: { id: Number(id) } }));
+    } catch (e) {}
+  }
+  function onBinary(b) {
+    if (b[0] === 0) _synShipStatus(b);
+    else if (b[0] === 100 || b[0] === 101 || b[0] === 103) _synCombat(b);
+    else if (b[0] === 255) {
+      for (var sy = 1; sy < b.length; ) {
+        var sl = b[sy++];
+        if (sy + sl <= b.length) {
+          var st = b[sy];
+          if (sl >= 48 && st === 0) _synShipStatus(b.subarray(sy, sy + sl));
+          else if (st === 100 || st === 101 || st === 103) _synCombat(b.subarray(sy, sy + sl));
+        }
+        sy += sl;
+      }
+    }
+    // radar contacts (200; 201 once survival starts)
+    if (b[0] !== 200 && b[0] !== 201 || b.length < 10) return;
+    var count = b[1];
+    if (count < 1) return;
+    var recSize = Math.floor((b.length - 2) / count);
+    if (recSize < 5) return;
+    var ts = Date.now();
+    for (var i = 0; i < count; i++) {
+      var off = 2 + i * recSize, id = b[off];
+      if (id <= 0) continue;
+      var bx = b[off + 1], by = b[off + 2];
+      var alive = recSize >= 4 ? (b[off + 3] & 1) === 1 : true;
+      if (!alive) { delete _aegisShips[id]; continue; }
+      var x = (bx < 128 ? bx : bx - 256) * (_aegisMapHalf / 128);
+      var y = (by < 128 ? by : by - 256) * (_aegisMapHalf / 128);
+      var rTier = recSize >= 8 ? 1 + ((b[off + 3] >> 5) & 7) : null;
+      var rCode = rTier != null ? 100 * rTier + 1 + b[off + 7] : null;
+      var prev = _aegisShips[id];
+      if (prev) {
+        prev.tier = rTier; prev.code = rCode;
+        var dt = (ts - prev.ts) / 1e3;
+        if (dt > .02 && dt < 3) {
+          var nvx = (x - prev.x) / dt, nvy = (y - prev.y) / dt;
+          prev.vx = prev.vx === undefined ? nvx : prev.vx * .5 + nvx * .5;
+          prev.vy = prev.vy === undefined ? nvy : prev.vy * .5 + nvy * .5;
+        }
+        prev.x = x; prev.y = y; prev.ts = ts;
+        if (x === 0 && y === 0) { if (prev.zeroSince == null) prev.zeroSince = ts; } else prev.zeroSince = null;
+      } else {
+        _aegisShips[id] = { tier: rTier, code: rCode, x: x, y: y, curX: x, curY: y, vx: 0, vy: 0, ts: ts, zeroSince: x === 0 && y === 0 ? ts : null };
+      }
+    }
+  }
+  function onText(t, ws, u) {
+    if (typeof t !== "string" || t.charAt(0) !== "{") return;
+    var j;
+    try { j = JSON.parse(t); } catch (e) { return; }
+    if (!j || !j.data) return;
+    if (j.name === "player_name") {
+      _aegisNames[j.data.id] = j.data.player_name;
+      if (typeof j.data.friendly === "number") _aegisTeamOf[j.data.id] = j.data.friendly;
+      if (typeof j.data.hue === "number") _aegisHueOf[j.data.id] = j.data.hue;
+    } else if (j.name === "entered") {
+      if (typeof j.data.team === "number") window.__synMyTeam = j.data.team;
+      if (typeof j.data.shipid === "number") window.__synMyShipId = j.data.shipid;
+    } else if (j.name === "welcome") {
+      // a new game: ship ids are reused, so last game's names and teams go
+      _aegisTeamOf = {}; _aegisNames = {}; _aegisNameTries = {}; _aegisHueOf = {};
+      window.__synMyTeam = null; window.__synMyShipId = null;
+      for (var sk in _synStat) delete _synStat[sk];
+      _synClkOff = null; _synClkOdd = 0; _synClkBad = false;
+      window.__synWelcome = { data: j.data, url: u, ws: ws, ts: Date.now() };
+      window.__synGameWS = ws;
+      if (j.data.size > 0) _aegisMapHalf = Math.round(j.data.size / 2);
+    }
+  }
+  (function hookWS() {
+    var OrigWS = window.WebSocket;
+    function PatchedWS(url, proto) {
+      var ws = proto ? new OrigWS(url, proto) : new OrigWS(url);
+      var u = String(url || "");
+      if (/dankdmitron\.dev|pixelmelt\.dev/i.test(u)) return ws;
+      if (!(/starblast|neuronality/i.test(u) || (/^wss?:\/\/\d{1,3}(?:\.\d{1,3}){3}/i.test(u) && !/127\.0\.0\.1/.test(u)))) return ws;
+      // (the game also opens latency-probe sockets: a socket is the game's
+      // for sure once it sends the join request)
+      if (!_aegisWS || _aegisWS.readyState > 1) _aegisWS = ws;
+      ws.send = function(d) {
+        if (typeof d === "string" && d.indexOf('"ojct:4"') !== -1) { _aegisWS = ws; window.__synGameWS = ws; }
+        // Aim Assist: the heading in each control message is swapped for the solved aim
+        if (typeof d === "number" || typeof d === "string" && /^\d+$/.test(d)) {
+          var ad = d;
+          if (featOn("aim") && window.__synAimRewrite) { try { ad = window.__synAimRewrite(d, ws); } catch (e) { ad = d; } }
+          return _synCtlSend(ws, ad);
+        }
+        return Object.getPrototypeOf(ws).send.apply(ws, arguments);
+      };
+      ws.addEventListener("message", function(evt) {
+        var d = evt.data;
+        if (d instanceof Blob) _synBytes(d).then(function(buf) { try { onBinary(new Uint8Array(buf)); } catch (e) {} }).catch(function() {});
+        else if (d instanceof ArrayBuffer) { try { onBinary(new Uint8Array(d)); } catch (e) {} }
+        else onText(d, ws, u);
+      });
+      ws.addEventListener("close", function() { if (_aegisWS === ws) _aegisWS = null; });
+      return ws;
+    }
+    PatchedWS.prototype = OrigWS.prototype;
+    PatchedWS.OPEN = OrigWS.OPEN;
+    PatchedWS.CLOSED = OrigWS.CLOSED;
+    PatchedWS.CONNECTING = OrigWS.CONNECTING;
+    PatchedWS.CLOSING = OrigWS.CLOSING;
+    Object.defineProperty(PatchedWS, "name", { value: "WebSocket" });
+    window.WebSocket = PatchedWS;
+  })();
+
+  // ---- the game's own state ----
+  var _hashTrusted = false;
+  window.addEventListener("hashchange", function() { _hashTrusted = true; });
+  function inGame() {
+    if (_hashTrusted && /^#\d+/.test(location.hash)) return true;
+    if (_aegisWS && _aegisWS.readyState === 1 && document.querySelector("canvas")) return true;
+    try {
+      var ex = window.module && window.module.exports && window.module.exports.settings;
+      if (ex) for (var k in ex) {
+        var g = ex[k];
+        if (g && g.pending_respawn && "player_name" in g) return true;
+        if (g && g.mode && g.mode.id && g.mode.id !== "welcome") { _hashTrusted = true; return true; }
+      }
+    } catch (e) {}
+    return false;
+  }
+  window.__SB_GAME__ = null;
+  setInterval(function() {
+    try {
+      var s = window.module && window.module.exports && window.module.exports.settings;
+      if (!s) return;
+      for (var k in s) {
+        var obj = s[k];
+        if (!obj || !obj.mode || !obj.display || !obj.names || typeof obj.size !== "number") continue;
+        var d = obj.display;
+        for (var dk in d) {
+          try {
+            var v = d[dk];
+            if (v && typeof v.render === "function" && v.domElement && v.domElement.isConnected) { window.__SB_GAME__ = obj; return; }
+          } catch (e2) {}
+        }
+      }
+    } catch (e) {}
+  }, 500);
+  function getGS() {
+    try {
+      var sb = window.__SB_GAME__;
+      if (sb && sb.mode && sb.names && "player_name" in sb) return sb;
+    } catch (e) {}
+    try {
+      var ex = window.module && window.module.exports;
+      if (!ex) return null;
+      var src = ex.settings || ex, keys = Object.keys(src);
+      for (var i = 0; i < keys.length; i++) {
+        try { var v = src[keys[i]]; if (v && v.mode && v.names && "player_name" in v) return v; } catch (e) {}
+      }
+    } catch (e) {}
+    return null;
+  }
+  function getMyStatus(g) {
+    if (!g) return null;
+    var keys = Object.keys(g);
+    for (var i = 0; i < keys.length; i++) {
+      try { var v = g[keys[i]]; if (v && v.status && typeof v.status.x === "number") return v.status; } catch (e) {}
+    }
+    return null;
+  }
+  function getActiveCamera() {
+    try {
+      var g = window.__SB_GAME__ || getGS();
+      if (!g) return null;
+      var keys = Object.keys(g);
+      for (var i = 0; i < keys.length; i++) {
+        var v = g[keys[i]];
+        if (v && typeof v === "object" && !Array.isArray(v)) {
+          var vk = Object.keys(v);
+          for (var j = 0; j < vk.length; j++) {
+            try { var c = v[vk[j]]; if (c && c.isPerspectiveCamera) return c; } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  function getScreenXform(g) {
+    try {
+      var canvas = document.querySelector("#canvaswrapper canvas");
+      if (!canvas || !(g && g.display && g.display.width > 0 && g.display.height > 0)) return null;
+      var rect = canvas.getBoundingClientRect();
+      if (!(rect.width > 0) || !(rect.height > 0)) return null;
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    } catch (e) { return null; }
+  }
+  function worldToScreenPx(cam, wx, wy, g) {
+    if (!cam || !cam.matrixWorldInverse || !cam.projectionMatrix) return null;
+    var vi = cam.matrixWorldInverse.elements, pj = cam.projectionMatrix.elements;
+    var vx = vi[0] * wx + vi[4] * wy + vi[12], vy = vi[1] * wx + vi[5] * wy + vi[13], vz = vi[2] * wx + vi[6] * wy + vi[14], vw = vi[3] * wx + vi[7] * wy + vi[15];
+    var cx = pj[0] * vx + pj[4] * vy + pj[8] * vz + pj[12] * vw, cy = pj[1] * vx + pj[5] * vy + pj[9] * vz + pj[13] * vw, cw = pj[3] * vx + pj[7] * vy + pj[11] * vz + pj[15] * vw;
+    if (cw <= 1e-4) return null;
+    var xf = g && getScreenXform(g);
+    if (xf) return { x: xf.left + (cx / cw * .5 + .5) * xf.width, y: xf.top + (-cy / cw * .5 + .5) * xf.height };
+    return { x: (cx / cw * .5 + .5) * window.innerWidth, y: (-cy / cw * .5 + .5) * window.innerHeight };
+  }
+  // Aim Assist reads its hold key here (Q unless set in the \ panel)
+  if (!window.__aegisGetKeybinds) window.__aegisGetKeybinds = function() {
+    return { aimassist: { key: LS("STUDIO_aim_key") || "q", on: featOn("aim") }, duelpilot: { key: "", on: false } };
+  };
+
+  function start() {
+    (function fovZoom() {
+      var MIN_FOV = 1, MAX_FOV = 170, T_MIN = .4, T_MAX = 3, SENS = 9e-4, TAU = 170;
+      var _fovFactor = 1, _fovTarget = 1, _fovInstalled = false, _nativeZoom = false;
+      window.__synFovFactor = function() { return featOn("fov") && !_nativeZoom ? _fovFactor : 1; };
+      function clamp(v, lo, hi) {
+        return Math.max(lo, Math.min(hi, v));
+      }
+      function install(T) {
+        if (!T || !T.PerspectiveCamera || _fovInstalled) return;
+        _fovInstalled = true;
+        var oU = T.PerspectiveCamera.prototype.updateProjectionMatrix;
+        T.PerspectiveCamera.prototype.updateProjectionMatrix = function() {
+          // (spectator mode runs its own zoom)
+          if (!featOn("fov") || _nativeZoom || (window.__synSpectator && window.__synSpectator.isOn())) return oU.call(this);
+          var keepFov = this.fov, keepFar = this.far;
+          this.fov = clamp(keepFov * _fovFactor, MIN_FOV, MAX_FOV);
+          this.far = keepFar * Math.max(1, _fovFactor);
+          var r = oU.call(this);
+          this.fov = keepFov;
+          this.far = keepFar;
+          return r;
+        };
+        var last = performance.now();
+        (function tick(now) {
+          var a = 1 - Math.exp(-(now - last) / TAU);
+          last = now;
+          _fovFactor += (_fovTarget - _fovFactor) * a;
+          window.__aegisFovFactor = featOn("fov") && !_nativeZoom ? _fovFactor : 1;
+          var val = document.getElementById("aegis-zoom-val");
+          if (val) val.textContent = (1 / _fovFactor).toFixed(2) + "×";
+          requestAnimationFrame(tick);
+        })(last);
+        console.log("[Studio] FOV hook installed on THREE.PerspectiveCamera");
+      }
+      (function watch() {
+        if (window.THREE && window.THREE.PerspectiveCamera) install(window.THREE); else setTimeout(watch, 100);
+      })();
+      window.addEventListener("wheel", function(e) {
+        if (window.__synSpectator && window.__synSpectator.isOn()) return;
+        if (!featOn("fov") || !inGame()) return;
+        if (e.target && e.target.closest && e.target.closest("#aegis-hud,#aegis-radar-wrap,#aegis-bots-win")) return;
+        _nativeZoom = false;
+        var dir = e.deltaY > 0 ? 1 : -1;
+        _fovTarget = clamp(_fovTarget * Math.exp(dir * Math.abs(e.deltaY) * SENS), T_MIN, T_MAX);
+      }, {
+        passive: true
+      });
+      document.addEventListener("keydown", function(e) {
+        if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+        if (!inGame() || !featOn("fov")) return;
+        if (e.key === "0") {
+          e.preventDefault();
+          _nativeZoom = !_nativeZoom;
+          _fovTarget = 1;
+          _fovFactor = 1;
+        }
+      });
+    })();
+    (function aimAssist() {
+      var CFG_KEY = "STUDIO_aim_cfg", CFG_DEF = { act: "both", confirm: 120, targets: "aim", cone: 45, autofire: "big", gate: true, others: true, marker: true, qsnap: true, drag: true, dodge: false, dodgeHow: "auto", dodgeMin: 0, kb: false, kbTurn: true, steady: false };
+      function readCfg() {
+        var c = {};
+        try { c = JSON.parse(localStorage.getItem(CFG_KEY) || "{}") || {}; } catch (e) {}
+        for (var k in CFG_DEF) if (c[k] == null) c[k] = CFG_DEF[k];
+        return c;
+      }
+      var C = readCfg();
+      addEventListener("syn-aim-cfg", function() { C = readCfg(); });
+      addEventListener("storage", function(e) { if (e.key === CFG_KEY) C = readCfg(); });
+      var A = {
+        keyHeld: false, snap: false, forceLock: null, forced: false, sentWord: null, flags: null, userDeg: null, userFire: false, numeric: true, ws: null,
+        lock: null, cand: null, candSince: 0, graceUntil: 0, shot: null, aim: null, fire: false, engaged: false,
+        sentDeg: null, sentFire: null, sentAt: 0, speed: 0, k: 1, kN: 0, tracks: {}, lastSolve: null,
+        gun: { fwd: 0, n: 0 }, ship: { code: null, maxRec: 0, maxVol: 0, genMax: 0, regen: 0 },
+        my: { gen: null, genTs: 0, turn: 0, hist: [] }, pulse: { on: false, start: 0, cool: 0, big0: 0 }, lastBigAt: 0, bigShots: 0
+      };
+      window.__synAim = A;
+      A.cfg = function() { return C; };
+      var DT = 1 / 120, HULL = 2.2;
+      function wrap(d) {
+        var size = _aegisMapHalf * 2;
+        if (!(size > 0)) return d;
+        d = (d % size + size) % size;
+        return d > size / 2 ? d - size : d;
+      }
+      function sdiff(a, b) { return ((a - b) % 360 + 540) % 360 - 180; }
+      function angDiff(a, b) { return Math.abs(sdiff(a, b)); }
+      function myId() {
+        if (typeof window.__synMyShipId === "number") return window.__synMyShipId;
+        var gs = getGS(), st = gs && getMyStatus(gs);
+        return st ? st.id : null;
+      }
+      function ping() { var gs = getGS(); return gs && typeof gs.ping === "number" ? gs.ping : 80; }
+      // (the game's own rule: a bolt slower than 100 lives 2 s, a faster one
+      // -2 ln(1 - 63/S) s, i.e. it stops at 63)
+      function laserLife(S) { return S >= 100 ? -2 * Math.log(1 - 63 / S) : 2; }
+      function reach(S) { return S >= 100 ? 63 : S * (1 - Math.exp(-1)); }
+      // Motion models: 0 straight, 1 fading turn (a juke), 2 held turn
+      // (circling), 3 changing speed (burn or brake, fading).
+      var TAU = [0, .6, 4, .5];
+      function stateOf(x, y, vx, vy, w, ac) { return { x: x, y: y, h: Math.atan2(vy, vx), sp: Math.hypot(vx, vy) * 60, w: w || 0, ac: ac || 0 }; }
+      function copyQ(q) { var o = {}; for (var k in q) o[k] = q[k]; return o; }
+      // 4, the engine: the game's own ship physics (ShipPhysics, as the bots
+      // run it): the nose turns towards the steering angle in the status
+      // packet, and with the engine on the velocity closes on top speed along
+      // the nose by the ship's inertia every tick; off, it bleeds away.
+      // Per ship: speed, rotation, accel at level 1 (ships.rs).
+      var ENG = {101: [125, 110, 100], 201: [110, 80, 110], 202: [110, 70, 90], 301: [105, 60, 80], 302: [100, 50, 100], 303: [120, 35, 90], 304: [80, 40, 70], 401: [75, 90, 75], 402: [85, 60, 60], 403: [75, 50, 90], 404: [80, 50, 110], 405: [90, 40, 50], 406: [75, 40, 80], 501: [70, 50, 60], 502: [70, 120, 150], 503: [80, 50, 90], 504: [90, 70, 110], 505: [110, 35, 140], 506: [85, 70, 90], 507: [70, 50, 80], 508: [70, 40, 90], 601: [70, 30, 70], 602: [75, 50, 80], 603: [85, 60, 80], 604: [95, 50, 80], 605: [90, 40, 90], 606: [85, 50, 80], 607: [75, 50, 55], 608: [70, 30, 130], 609: [70, 30, 80], 701: [45, 20, 150], 702: [110, 50, 90], 703: [80, 25, 105], 704: [75, 25, 95]};
+      // The mode's movement options (welcome message): strafe power (RCS
+      // sideways thrust; 0 = none), speed_mod, friction_ratio (coasting).
+      var _mode = null, _modeAt = 0;
+      function MODE() {
+        var now = Date.now();
+        if (_mode && now - _modeAt < 1000) return _mode;
+        var m = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode || {};
+        _modeAt = now;
+        return (_mode = { strafe: +m.strafe > 0 ? Math.min(1, +m.strafe) : 0, speed: +m.speed_mod > 0 ? +m.speed_mod : 1, fric: +m.friction_ratio > 0 ? +m.friction_ratio : 1 });
+      }
+      A.mode = MODE;
+      // Hull radius per ship (ships.rs): what a bolt has to pass to miss.
+      var RAD = {101: 1.856, 201: 3.33, 202: 2.804, 301: 2.851, 302: 2.343, 303: 2.823, 304: 3.834, 401: 4.646, 402: 3.514, 403: 4.352, 404: 3.427, 405: 3.553, 406: 4.922, 501: 4.83, 502: 5.299, 503: 5.051, 504: 3.38, 505: 3.78, 506: 3.96, 507: 5.01, 508: 4.187, 601: 6.064, 602: 5.858, 603: 3.573, 604: 3.586, 605: 3.621, 613: 3.621, 606: 4.524, 607: 4.676, 608: 5.888, 609: 4.449, 701: 9.054, 702: 6.807, 703: 10.53, 704: 8.225};
+      A.RAD = RAD;
+      function engState(src, tr) {
+        var d = ENG[src.code] || [ 100, 50, 90 ], sp = Math.hypot(src.vx, src.vy), M = MODE();
+        // top speed: the ship's own, upgrades included, as measured from how
+        // it gathers speed under thrust (tr.topEst); before that is known,
+        // never slower than it has been seen going. On RCS (glide) the game
+        // keeps the speed exactly unless it is above the ship's top speed.
+        var est = tr && tr.topEst || 0, top = est ? Math.max(est, .004 * d[0] * M.speed) : Math.max(.004 * d[0] * M.speed, sp, tr && tr.vtop || 0);
+        return { x: src.x, y: src.y, vx: src.vx, vy: src.vy, r: src.r, aim: src.aim, up: src.up,
+          glide: !!src.glide || !!(tr && tr.gInf && !src.up), side: src.side || 0, stun: src.stun || 0, M: M,
+          top: top, gcap: est ? Math.max(top * 1.01, Math.min(sp, top * 1.01)) : Math.max(top, sp), inr: Math.exp(Math.log(.5) / (3000 / d[2])), turn: .15 * d[1] / 100,
+          h: Math.atan2(src.vy, src.vx), sp: sp * 60, w: 0, ac: 0 };
+      }
+      function step(m, q, dt) {
+        if (m === 4) {
+          // (ShipPhysics.IlIOl: knocked back, it neither turns nor steers;
+          // gliding (RCS off) with no thrust it keeps its speed, slowed only
+          // above top speed; strafing thrusts across the nose; coasting
+          // brakes by inertia ^ friction_ratio)
+          var n = dt * 60, M = q.M || MODE(), sd = M.strafe > 0 ? q.side || 0 : 0;
+          if (!(q.stun > 0)) {
+            var dd = Math.atan2(Math.sin(q.aim - q.r), Math.cos(q.aim - q.r));
+            if (Math.abs(dd) < 5 * q.turn) q.r += dd * (1 - Math.pow(.8, n)); else q.r += (dd > 0 ? 1 : -1) * Math.min(Math.abs(dd), q.turn * n);
+          }
+          var f = Math.pow(q.inr, n);
+          if (q.stun > 0 || q.glide && !q.up && !sd) {
+            if (Math.hypot(q.vx, q.vy) > (q.gcap || q.top)) { q.vx *= f; q.vy *= f; }
+            if (q.stun > 0) q.stun = Math.max(0, q.stun - n);
+          } else {
+            var tx = 0, ty = 0;
+            if (q.up) { tx = q.top * Math.cos(q.r); ty = q.top * Math.sin(q.r); }
+            if (sd) {
+              tx -= q.top * Math.sin(q.r) * M.strafe * sd; ty += q.top * Math.cos(q.r) * M.strafe * sd;
+              var tl = Math.hypot(tx, ty); if (tl > q.top) { tx = tx / tl * q.top; ty = ty / tl * q.top; }
+            }
+            var ii = q.up ? f : Math.pow(q.inr, n * M.fric);
+            q.vx = tx + (q.vx - tx) * ii; q.vy = ty + (q.vy - ty) * ii;
+          }
+          q.x += q.vx * n; q.y += q.vy * n;
+          return;
+        }
+        if ((m === 1 || m === 2) && q.w) { q.h += q.w * dt; q.w *= Math.exp(-dt / TAU[m]); }
+        if (m === 3 && q.ac) { q.sp = Math.max(0, q.sp + q.ac * dt); q.ac *= Math.exp(-dt / TAU[3]); }
+        q.x += Math.cos(q.h) * q.sp * dt; q.y += Math.sin(q.h) * q.sp * dt;
+      }
+      // The shot from o (own fire spot) with own velocity v (per tick) at
+      // target state q (at fire time, mutated). Returns { deg, t, x, y, hit }:
+      // heading, flight time and meeting point, or the closest pass.
+      function solve(o, v, q, m, S, k) {
+        var life = laserLife(S), pg = null, prx = 0, pry = 0, best = null;
+        for (var t = DT; t <= life + 1e-9; t += DT) {
+          step(m, q, DT);
+          var rx = wrap(q.x - o.x) - 60 * k * v.x * t, ry = wrap(q.y - o.y) - 60 * k * v.y * t;
+          var gap = Math.hypot(rx, ry) - S * (1 - Math.exp(-t / 2));
+          if (gap <= 0) {
+            var f = pg != null && pg - gap > 0 ? pg / (pg - gap) : 1;
+            var ax = prx + (rx - prx) * f, ay = pry + (ry - pry) * f;
+            return { deg: (Math.atan2(ay, ax) * 180 / Math.PI + 360) % 360, t: t - DT * (1 - f), x: q.x, y: q.y, hit: true };
+          }
+          if (!best || gap < best.gap) best = { gap: gap, deg: (Math.atan2(ry, rx) * 180 / Math.PI + 360) % 360, t: t, x: q.x, y: q.y, hit: false };
+          pg = gap; prx = rx; pry = ry;
+        }
+        return best;
+      }
+      // Closest pass of a bolt fired at `deg` (to pick the whole degree).
+      function missAt(deg, o, v, q, m, S, k) {
+        var life = laserLife(S), c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180), best = 1e9;
+        for (var t = DT; t <= life + 1e-9; t += DT) {
+          step(m, q, DT);
+          var D = S * (1 - Math.exp(-t / 2));
+          var dx = wrap(q.x - o.x) - c * D - 60 * k * v.x * t, dy = wrap(q.y - o.y) - s * D - 60 * k * v.y * t;
+          var d = Math.hypot(dx, dy);
+          if (d < best) best = d;
+        }
+        return best;
+      }
+      A.solve = solve;
+      // Per ship: turn rate and speed change, and the self-check (every ~0.1 s
+      // each model predicts where the ship is now from ~0.4 s ago).
+      window.__synAimStat = function(s) {
+        if (s.id === myId()) { ownStat(s); if (document.hidden && A.pump && C.dodge) try { A.pump(true); } catch (e) {} }
+        var tr = A.tracks[s.id];
+        if (!tr || !s.alive) { A.tracks[s.id] = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, ts: s.ts, w: 0, ac: 0, T: 0, hist: [], e: [0, 0, 0, 0, 0], n: 0, chk: -1, vtop: 0, r: null, up: false, glide: false, slide: 0 }; return; }
+        tr.vtop = Math.max((tr.vtop || 0) * .999, Math.hypot(s.vx, s.vy));
+        // packets arrive bunched, so the time between them comes from how far
+        // the ship went at its speed (the arrival times only when it sits still)
+        var sp0 = Math.hypot(tr.vx, tr.vy), sp1 = Math.hypot(s.vx, s.vy), dtR = (s.ts - tr.ts) / 1000;
+        var dt = sp0 + sp1 > .1 ? Math.hypot(wrap(s.x - tr.x), wrap(s.y - tr.y)) / ((sp0 + sp1) * 30) : dtR;
+        if (dt < .008 && dtR < .5) return;
+        if (dt > .5 || dtR > 1) { tr.x = s.x; tr.y = s.y; tr.vx = s.vx; tr.vy = s.vy; tr.ts = s.ts; tr.hist = []; tr.T = 0; tr.chk = -1; return; }
+        if (sp0 > .05 && sp1 > .05) {
+          var dh = Math.atan2(s.vy, s.vx) - Math.atan2(tr.vy, tr.vx);
+          dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+          tr.w = tr.w * .6 + Math.max(-6, Math.min(6, dh / dt)) * .4;
+        } else tr.w *= .5;
+        tr.ac = tr.ac * .6 + Math.max(-400, Math.min(400, (sp1 - sp0) * 60 / dt)) * .4;
+        // Strafing (modes with RCS strafe): the server sends no strafe keys
+        // for other ships, so a sideways push across the nose that the engine
+        // (or coasting) can not explain is taken as one, as the bots do it
+        var M = MODE(), slide = s.side || 0;
+        if (!slide && M.strafe > 0 && tr.r != null && !(s.stun > 0)) {
+          var dg = ENG[s.code] || [ 100, 50, 90 ], inr = Math.exp(Math.log(.5) / (3000 / dg[2])), nT = Math.max(1, dt * 60);
+          var top = Math.max(.004 * dg[0] * M.speed, sp0), evx = tr.vx, evy = tr.vy;
+          if (tr.up) { var ff = Math.pow(inr, nT), ttx = top * Math.cos(tr.r), tty = top * Math.sin(tr.r); evx = ttx + (evx - ttx) * ff; evy = tty + (evy - tty) * ff; }
+          else if (!tr.glide) { var fc = Math.pow(inr, nT * M.fric); evx *= fc; evy *= fc; }
+          var ax = (s.vx - evx) / nT, ay = (s.vy - evy) / nT, rr = s.angle * Math.PI / 180;
+          var lat = -Math.sin(rr) * ax + Math.cos(rr) * ay, thr = .25 * (1 - inr) * top * M.strafe;
+          slide = lat > thr ? 1 : lat < -thr ? -1 : tr.slide && lat * tr.slide > -.3 * thr ? tr.slide : 0;
+        }
+        // the ship's real top speed: under thrust the game moves its velocity
+        // toward top along the nose each tick, v1 = v0 f + top (1 - f), so two
+        // packets give top (upgrades included); and RCS (glide) when the flag
+        // is not sent: engine off, yet no slowing down as coasting would
+        var dgE = ENG[s.code] || [ 100, 50, 90 ], inrE = Math.exp(Math.log(.5) / (3000 / dgE[2])), nTE = Math.max(1, dt * 60);
+        if (tr.code !== s.code) { tr.code = s.code; tr.topEst = 0; }
+        if (tr.up && s.up && !(s.stun > 0) && tr.r != null && !slide) {
+          var fE = Math.pow(inrE, nTE), rE = s.angle * Math.PI / 180, cE = Math.cos(rE), sE = Math.sin(rE);
+          if (1 - fE > .03) {
+            var v0E = tr.vx * cE + tr.vy * sE, v1E = s.vx * cE + s.vy * sE, eE = (v1E - v0E * fE) / (1 - fE);
+            if (eE > .05 && eE < 3 && Math.abs(-s.vx * sE + s.vy * cE) < .5 * eE) tr.topEst = tr.topEst ? tr.topEst * .6 + eE * .4 : eE;
+          }
+        }
+        if (s.up || s.glide || s.stun > 0 || sp0 < .05) tr.gInf = false;
+        else {
+          var fcE = Math.pow(inrE, nTE * M.fric), ratio = sp1 / sp0;
+          if (1 - fcE > .01) { if (ratio > 1 - (1 - fcE) * .3) tr.gInf = true; else if (ratio < 1 - (1 - fcE) * .7) tr.gInf = false; }
+        }
+        if (tr.up !== !!s.up || tr.glide !== !!s.glide) tr.flagAt = tr.T;
+        tr.slide = slide; tr.r = s.angle * Math.PI / 180; tr.up = !!s.up; tr.glide = !!s.glide;
+        tr.x = s.x; tr.y = s.y; tr.vx = s.vx; tr.vy = s.vy; tr.ts = s.ts; tr.T += dt;
+        tr.hist.push({ T: tr.T, x: s.x, y: s.y, vx: s.vx, vy: s.vy, w: tr.w, ac: tr.ac, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: !!s.glide, side: slide, stun: s.stun || 0 });
+        while (tr.hist.length && tr.T - tr.hist[0].T > .8) tr.hist.shift();
+        if (tr.T - tr.chk < .1) return;
+        var e = null;
+        for (var i = 0; i < tr.hist.length && tr.T - tr.hist[i].T >= .35; i++) e = tr.hist[i];
+        if (!e) return;
+        var H = tr.T - e.T, n = Math.max(1, Math.round(H / DT));
+        for (var m = 0; m < 5; m++) {
+          var q = m === 4 ? engState(e, tr) : stateOf(e.x, e.y, e.vx, e.vy, e.w, e.ac);
+          for (var j = 0; j < n; j++) step(m, q, H / n);
+          var err = Math.hypot(wrap(s.x - q.x), wrap(s.y - q.y));
+          tr.e[m] = tr.n ? tr.e[m] * .85 + err * .15 : err;
+        }
+        tr.n++; tr.chk = tr.T;
+      };
+      function modelOf(tr) {
+        if (!tr) return 0;
+        // the engine model follows the game's own physics from the ship's
+        // keys (thrust, RCS, strafe), which the packets carry exactly: it
+        // leads just after they change (the other models still remember the
+        // old motion) and whenever it fits as well as they do
+        if (!window.__synAimNoEngine && tr.n >= 1) {
+          if (tr.flagAt != null && tr.T - tr.flagAt < .8) return 4;
+          var lo = Math.min(tr.e[0], tr.e[1], tr.e[2], tr.e[3]);
+          if (tr.e[4] <= lo * 1.25 + .05) return 4;
+        }
+        if (tr.n < 6) return 0;
+        var m = 1, top = window.__synAimNoEngine ? 4 : 5;
+        for (var i = 2; i < top; i++) if (tr.e[i] < tr.e[m]) m = i;
+        return tr.e[m] < tr.e[0] * .8 ? m : 0;
+      }
+      // Own ship: energy (level, refill rate, full bar) and turn rate.
+      function ownStat(s) {
+        var sh = A.ship, my = A.my;
+        if (sh.code !== s.code) { sh.code = s.code; sh.maxRec = 0; sh.maxVol = 0; sh.genMax = 0; sh.regen = 0; A.gun.n = 0; A.gun.fwd = 0; my.turn = 0; A.smallS = 0; A.smallAt = 0; A.bigPer = 0; }
+        if (typeof s.gen === "number") {
+          // refill rate over a quarter second or more of steady rise (packets
+          // arrive bunched; a shot or a full bar starts the window again)
+          if (my.gen == null || s.gen <= my.gen) my.gh = [];
+          my.gh = my.gh || [];
+          my.gh.push([s.ts, s.gen]);
+          var g0 = my.gh[0];
+          if (s.ts - g0[0] >= 250) {
+            var r = (s.gen - g0[1]) / ((s.ts - g0[0]) / 1000);
+            if (r > 0 && r < 2000) sh.regen = sh.regen ? sh.regen * .7 + r * .3 : r;
+            my.gh = [[s.ts, s.gen]];
+          }
+          if (s.gen > sh.genMax) sh.genMax = s.gen;
+          my.gen = s.gen; my.genTs = s.ts;
+        }
+        my.hist.push([s.ts, s.angle]);
+        while (my.hist.length > 2 && s.ts - my.hist[1][0] >= 250) my.hist.shift();
+        var h0 = my.hist[0];
+        if (s.ts - h0[0] >= 200) {
+          var rate = Math.abs(sdiff(s.angle, h0[1])) / ((s.ts - h0[0]) / 1000);
+          if (rate < 1500) my.turn = Math.max(my.turn * .998, rate);
+        }
+      }
+      // Our volleys: laser speed, inherited drift, the gun's spot on the hull,
+      // what one volley costs (a shot costs its damage) and when the biggest
+      // gun fired.
+      window.__synAimVolley = function(b) {
+        var me = myId();
+        if (me == null || b[1] !== me) return;
+        var dv = new DataView(b.buffer, b.byteOffset, b.byteLength), bestO = -1, bestD = -1, sum = 0, now = Date.now(), sh = A.ship;
+        for (var o = 8; o + 32 <= b.length; o += 32) { var d = b[o + 31]; sum += d; if (d > bestD) { bestD = d; bestO = o; } }
+        if (bestO < 0) return;
+        if (bestD > sh.maxRec) sh.maxRec = bestD;
+        if (sum > sh.maxVol) sh.maxVol = sum;
+        // Ships with guns of two kinds (the Condor's big gun and its quicker,
+        // slower-flying side guns, the A-Speedster...): the small guns' speed
+        // (by damage), and how often the big gun goes, so each shot can be led
+        // for the gun that fires it
+        var sS = 0, sW = 0;
+        for (var o2 = 8; o2 + 32 <= b.length; o2 += 32) {
+          var d2 = b[o2 + 31], sp2 = dv.getFloat32(o2 + 20, true);
+          if (d2 < sh.maxRec * .9 && sp2 > 10 && sp2 < 2000) { sS += sp2 * Math.max(1, d2); sW += Math.max(1, d2); }
+        }
+        if (sW > 0) { A.smallS = A.smallS ? A.smallS * .7 + sS / sW * .3 : sS / sW; A.smallAt = now; }
+        if (bestD >= sh.maxRec * .9) {
+          var gap = A.lastBigAt ? now - A.lastBigAt : 0;
+          // the big gun's reload: near the SHORTEST gap between its shots (a
+          // shorter gap pulls it 30% of the way, so one shortened by bunched
+          // packets doesn't stick; longer ones let it creep up 2%). It used
+          // to average the gaps, and a ship short of energy fires every ~3 s,
+          // so it learnt a 3 s "reload" (the Speedster's is 1 s) and then
+          // held its fire (and led for the small guns) that long.
+          if (gap > 150 && gap < 4000) A.bigPer = !A.bigPer ? gap : gap < A.bigPer ? A.bigPer * .7 + gap * .3 : Math.min(A.bigPer * 1.02, gap);
+          A.lastBigAt = now; A.bigShots++;
+        }
+        var S = dv.getFloat32(bestO + 20, true), dx = dv.getFloat32(bestO + 12, true), dy = dv.getFloat32(bestO + 16, true);
+        // (the biggest gun's speed: its shots are the ones that matter most)
+        if (bestD < sh.maxRec * .9) return;
+        if (S > 10 && S < 2000) A.speed = S;
+        var my = _synStat[me];
+        if (!my || now - my.ts > 400) return;
+        var v2 = my.vx * my.vx + my.vy * my.vy;
+        if (v2 > .04) {
+          var kk = Math.max(0, Math.min(1.5, (dx * my.vx + dy * my.vy) / v2));
+          A.k = A.kN ? A.k * .7 + kk * .3 : kk; A.kN++;
+        }
+        if (now - my.ts < 120) {
+          var ds = (now - my.ts) / 1000, a = my.angle * Math.PI / 180;
+          var rx = wrap(dv.getFloat32(bestO, true) - my.x - my.vx * 60 * ds), ry = wrap(dv.getFloat32(bestO + 4, true) - my.y - my.vy * 60 * ds);
+          var fw = rx * Math.cos(a) + ry * Math.sin(a), lat = -rx * Math.sin(a) + ry * Math.cos(a);
+          if (Math.abs(lat) < 2.5 && fw > -1 && fw < 8) { A.gun.fwd = A.gun.n ? A.gun.fwd * .8 + fw * .2 : fw; A.gun.n++; }
+        }
+      };
+      // When a command sent now lands: the state's real age (its server time,
+      // not when it arrived) plus the round trip. Other ships' states come
+      // only when their keys change, and with the keys known the game's
+      // physics flies them on exactly, so up to 2.5 s is followed (it was cut
+      // at 0.6 s, which put a ship that coasted for a second well behind
+      // where it was).
+      function lead(s) { return Math.min(2.5, Math.max(0, (synAge(s) + ping()) / 1000)); }
+      function own() {
+        var me = myId();
+        if (me == null) return null;
+        var s = _synStat[me];
+        if (s && s.alive && Date.now() - s.ts < 500) {
+          // where you will be when the shot leaves, and how fast you will be
+          // going (the bolt takes a share of that): your ship flown on by the
+          // game's physics with the keys being sent now, so RCS off (glide),
+          // strafing, braking and knock-back count, not a straight line
+          var L = lead(s), w = A.sentWord != null ? A.sentWord : A.flags != null && A.userDeg != null ? A.flags + A.userDeg : null;
+          var q = engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
+          if (w != null) { q.aim = (w % 4096 % 360) * Math.PI / 180; q.up = (w & 4096) !== 0; q.glide = (w & 16384) !== 0; q.side = w & 32768 ? 1 : w & 65536 ? -1 : 0; }
+          for (var i = 0, n = Math.max(1, Math.round(L / DT)); i < n; i++) step(4, q, L / n);
+          // (and how fast the nose is still turning then, per tick)
+          var q1 = copyQ(q); step(4, q1, 1 / 60);
+          return { id: me, x: q.x, y: q.y, v: { x: q.vx, y: q.vy }, r: q.r, w: Math.atan2(Math.sin(q1.r - q.r), Math.cos(q1.r - q.r)), s: s };
+        }
+        var gs = getGS(), st = gs && getMyStatus(gs);
+        return st && st.alive !== false ? { id: me, x: st.x, y: st.y, v: { x: 0, y: 0 }, s: null } : null;
+      }
+      // (for checks: a ship's chosen model and where it puts the ship T s from its last packet)
+      A.predict = function(id, T) {
+        var s = _synStat[id], tr = A.tracks[id]; if (!s) return null;
+        var m = modelOf(tr), q = m === 4 ? engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, tr ? tr.w : 0, tr ? tr.ac : 0);
+        for (var i = 0, n = Math.max(1, Math.round(T / DT)); i < n; i++) step(m, q, T / n);
+        return { m: m, e: tr && tr.e.map(function(x) { return +x.toFixed(3); }), x: q.x, y: q.y, vx: q.vx, vy: q.vy, sp: q.sp };
+      };
+      function onScreen(x, y) {
+        var cam = getActiveCamera();
+        if (!cam) return true;
+        var p = worldToScreenPx(cam, x, y, getGS());
+        return !!p && p.x > -20 && p.y > -20 && p.x < innerWidth + 20 && p.y < innerHeight + 20;
+      }
+      // Enemies we may shoot, with where they are from us.
+      function enemies(me) {
+        var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode, myTeam = null, out = [], now = Date.now();
+        // teammates count in team games only (survival also carries a
+        // "friendly" index, the same for everyone)
+        if (wm && (wm.id === "team" || Array.isArray(wm.teams) && wm.teams.length > 1)) myTeam = typeof window.__synMyTeam === "number" ? window.__synMyTeam : _aegisTeamOf[me.id];
+        var tag = window.__SYN_TAG || "≜ ";
+        for (var id in _synStat) {
+          var s = _synStat[id];
+          if (!s.alive || s.inv || synAge(s, now) > 2500 || s.id === me.id) continue;
+          if (typeof myTeam === "number" && _aegisTeamOf[s.id] === myTeam) continue;
+          var nm = _aegisNames[s.id];
+          if (nm && nm.indexOf(tag) === 0 || window.__synProfiles && window.__synProfiles[s.id]) continue;
+          var dx = wrap(s.x - me.x), dy = wrap(s.y - me.y);
+          out.push({ s: s, d: Math.hypot(dx, dy), deg: Math.atan2(dy, dx) * 180 / Math.PI });
+        }
+        return out;
+      }
+      // The shot at one ship: target moved to fire time by its best model,
+      // fired from the gun's spot, rounded to the better whole degree.
+      function shotAt(me, s, S, k, exact) {
+        var L = lead(s), tr = A.tracks[s.id], m = modelOf(tr);
+        // (only the engine model knows the keys; the fitted ones drift off sooner)
+        if (m !== 4) L = Math.min(L, 1);
+        var q = m === 4 ? engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, m ? tr.w : 0, m ? tr.ac : 0);
+        for (var i = 0, n = Math.max(1, Math.round(L / DT)); i < n; i++) step(m, q, L / n);
+        var q0 = copyQ(q), o = { x: me.x, y: me.y }, r = solve(o, me.v, copyQ(q0), m, S, k);
+        if (!r) return null;
+        var fw = A.gun.n >= 2 ? A.gun.fwd : 0;
+        if (fw > .3) {
+          o = { x: me.x + Math.cos(r.deg * Math.PI / 180) * fw, y: me.y + Math.sin(r.deg * Math.PI / 180) * fw };
+          r = solve(o, me.v, copyQ(q0), m, S, k) || r;
+        }
+        r.model = m; r.o = o; r.p = { x: q0.x, y: q0.y };
+        r.dist = S * (1 - Math.exp(-r.t / 2));
+        if (exact) {
+          var lo = Math.floor(r.deg), hi = lo + 1;
+          r.ideg = (missAt(lo, o, me.v, copyQ(q0), m, S, k) <= missAt(hi, o, me.v, copyQ(q0), m, S, k) ? lo : hi) % 360;
+        }
+        return r;
+      }
+      function active() {
+        return C.act !== "fire" && A.keyHeld || C.act !== "key" && A.userFire;
+      }
+      // The speed to lead for: the big gun's, unless the ship also has small
+      // guns of another speed and the big gun will not go with the next shot
+      // (still reloading, or the bar can not pay for it); then theirs.
+      function gunSpeed(now) {
+        var S = A.speed || 160;
+        if (!A.smallS || Math.abs(A.smallS - S) < 6 || now - A.smallAt > 4000) { A.gunKind = "big"; return S; }
+        var e = energyAt(), P = A.pulse;
+        var reloaded = !A.bigPer || now - A.lastBigAt >= A.bigPer - 60 - ping() * .5;
+        var paid = e == null || e >= A.ship.maxRec * .95;
+        var big = P.on || reloaded && paid;
+        A.gunKind = big ? "big" : "small";
+        return big ? S : A.smallS;
+      }
+      // Pick, confirm and keep the lock; choose who this shot goes to.
+      // Q: lock at once on the enemy nearest the cursor (or, with none on
+      // screen, nearest the ship)
+      function snapPick(me, list, R) {
+        var cam = getActiveCamera(), gs = getGS(), best = null, bd = 1e9;
+        list.forEach(function(e) {
+          var p = cam && worldToScreenPx(cam, e.s.x, e.s.y, gs);
+          if (!p || p.x < 0 || p.y < 0 || p.x > innerWidth || p.y > innerHeight) return;
+          var d = Math.hypot(p.x - drag.real.x, p.y - drag.real.y);
+          if (d < bd) { bd = d; best = e; }
+        });
+        if (best) return best;
+        list.forEach(function(e) { if (e.d <= R * 1.6 && e.d < bd) { bd = e.d; best = e; } });
+        return best;
+      }
+      function update() {
+        var now = Date.now(), me = own(), user = active(), forced = !user && A.forceLock != null ? A.forceLock : null, act = user || forced != null;
+        A.aim = null; A.shot = null; A.fire = false; A.lastSolve = null; A.forced = forced != null; A.tlpDeg = null;
+        if (user) A.graceUntil = now + 400;
+        // (True Laser Path steps in whenever no lock is in play, firing or
+        // not, so the nose is already right when the first shot goes)
+        function tlp() { try { if (me && forced == null) tlpAim(me, now); } catch (e) { A.tlpDeg = null; } }
+        if (!me || A.userDeg == null && forced == null || (!act && now > A.graceUntil)) { A.lock = null; A.cand = null; A.engaged = false; tlp(); return; }
+        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(A.speed || 160), list = enemies(me), byId = {};
+        list.forEach(function(e) { byId[e.s.id] = e; });
+        var L = null;
+        if (forced != null) {
+          // the autopilot's fight: its target, no confirming
+          A.lock = byId[forced] ? forced : null; A.cand = null; L = byId[forced] || null;
+        } else {
+          // the lock goes when its ship dies, shields up, or is far off
+          L = A.lock != null ? byId[A.lock] : null;
+          if (A.lock != null && (!L || L.d > R * 2.6 || C.targets === "screen" && !onScreen(L.s.x, L.s.y))) { A.lock = null; L = null; }
+          if (C.qsnap && A.keyHeld && C.act !== "fire") {
+            if (A.snap || A.lock == null) {
+              var sp = snapPick(me, list, R);
+              if (sp) { A.lock = sp.s.id; L = sp; A.snap = false; }
+            }
+            A.cand = null;
+          } else {
+            // who the cursor (or the screen) offers
+            var pick = null, ps = 1e9;
+            list.forEach(function(e) {
+              var ad = angDiff(e.deg, A.userDeg), sc;
+              if (C.targets === "screen") {
+                if (!onScreen(e.s.x, e.s.y)) return;
+                sc = e.d + ad * .25 + (e.d > R * 1.1 ? 100 : 0);
+              } else {
+                if (e.d > R * 1.6 || ad > C.cone && e.d > 6) return;
+                sc = ad + e.d * .15;
+              }
+              if (e.s.id === A.lock) sc -= 15;
+              if (sc < ps) { ps = sc; pick = e; }
+            });
+            // confirm: the same ship has to stay picked for the confirm time; a
+            // locked ship is only swapped for one the cursor sits on that long
+            if (user) {
+              var want = pick && pick.s.id !== A.lock ? pick.s.id : null;
+              if (A.lock != null && C.targets === "screen") want = null;
+              if (want != null) {
+                if (A.cand !== want) { A.cand = want; A.candSince = now; }
+                if (now - A.candSince >= C.confirm || A.lock == null && C.confirm <= 0) { A.lock = want; A.cand = null; L = byId[want]; }
+              } else A.cand = null;
+            }
+          }
+        }
+        A.engaged = act && A.lock != null;
+        if (!L) { tlp(); return; }
+        // the shot: the lock, or while it is out of reach any enemy in reach
+        var r = shotAt(me, L.s, S, k, true), shot = L;
+        if (r && !r.hit && C.others) {
+          var best = null;
+          list.forEach(function(e) {
+            if (e === L || e.d > R * 1.05) return;
+            var rr = shotAt(me, e.s, S, k, false);
+            if (rr && rr.hit && (!best || rr.t < best.r.t)) best = { e: e, r: rr };
+          });
+          if (best) { shot = best.e; r = shotAt(me, best.e.s, S, k, true); }
+        }
+        if (!r) return;
+        A.shot = shot.s.id;
+        A.aim = r.ideg;
+        // the nose: where the ship will point when this command lands. The
+        // window is the target's own hull (three quarters of its radius) as
+        // seen from here, so a small ship far off asks for a finer nose.
+        var hull = (RAD[shot.s.code] || HULL / .75) * .75;
+        var ms = me.s, aligned = false, tol = Math.max(.6, Math.atan2(hull, Math.max(r.dist, 1)) * 180 / Math.PI);
+        // ship playbook: Mercury holds its front pulse until the nose is near
+        // the middle of the target (3 seeds against a Condor: 8.1 -> 12.6
+        // damage/s; the same tried on the Howler and the X-3 lost damage)
+        var careful = AIM_CAREFUL[A.ship.code];
+        if (careful && (C.autofire === "big" || !need())) tol = Math.max(.6, tol * careful);
+        // Where the nose really is when the command lands: our ship flown on
+        // in the game's physics with the keys being sent (own()). The nose
+        // eases into its last few degrees (a fifth of the gap each tick), so
+        // assuming it turns at full rate all the way called shots "aligned"
+        // that left while it was still turning, and missed.
+        if (me.r != null) aligned = angDiff(me.r * 180 / Math.PI, r.deg) <= tol;
+        // Steady shots (from the Duel Pilot's recorded duels: shots that left
+        // with the nose still swinging across the target hit 53-73%, steady
+        // ones 80-96%): the nose still on the shot 3 ticks on, and had the
+        // press landed 6 ticks early (it reaches the server a few ticks
+        // either side of when it's meant to); past 10 away, not straight after
+        // a swing of 40 deg or more in the last 0.4 s.
+        var rh = A.rh || (A.rh = []);
+        if (me.r != null) { rh.push({ t: now, r: me.r }); while (rh.length && now - rh[0].t > 600) rh.shift(); }
+        if (aligned && C.steady && me.r != null && me.w != null) {
+          var wd = me.w * 180 / Math.PI;
+          if (angDiff(me.r * 180 / Math.PI + 3 * wd, r.deg) > tol * 1.6 || angDiff(me.r * 180 / Math.PI - 6 * wd, r.deg) > tol * 1.6) { aligned = false; A.steadyHeld = (A.steadyHeld || 0) + 1; }
+          else if (r.dist > 10) for (var rk = 0; rk < rh.length; rk++) if (now - rh[rk].t < 400 && angDiff(me.r * 180 / Math.PI, rh[rk].r * 180 / Math.PI) > 40) { aligned = false; A.steadyHeld = (A.steadyHeld || 0) + 1; break; }
+        }
+        else if (ms) {
+          var d = sdiff(r.deg, ms.angle), turn = Math.max(A.my.turn, 40) * lead(ms);
+          var face = Math.abs(d) <= turn ? r.deg : ms.angle + (d > 0 ? turn : -turn);
+          aligned = angDiff(face, r.deg) <= tol;
+        }
+        A.fire = fireWanted(r.hit && aligned, now);
+        A.lastSolve = { target: shot.s.id, lock: A.lock, deg: r.deg, hit: r.hit, t: r.t, ix: r.x, iy: r.y, px: r.p.x, py: r.p.y, ox: r.o.x, oy: r.o.y, S: S, k: k, model: r.model, aligned: aligned, w: me.w, fw: A.gun.n >= 2 ? A.gun.fwd : 0 };
+      }
+      // ---- True Laser Path ----
+      // With lag the server fires from where your ship really is (ahead of the
+      // ship you see, moving), so a bolt aimed by the mouse from the drawn ship
+      // flies a parallel line beside the point you aimed at. With no lock in
+      // play the point you aim at is taken from the screen: along your aim
+      // from the ship you see, as far out as the cursor (within the bolt's
+      // reach). The heading is solved as the Aim Assist solves a shot: from
+      // your ship as the server will have it when the command lands, with its
+      // velocity (the bolt takes a share) and the gun's spot, so the real bolt
+      // passes through that point. Spinning, the aim leads by how far the
+      // mouse turns before the command lands, so the nose keeps up.
+      function tlpAim(me, now) {
+        A.tlpWhy = "off";
+        if ((localStorage.getItem("AEGIS_truelaser") || "0") !== "1" || A.userDeg == null || !me.s || !inGame()) { A.tlpW = 0; A.tlpPrev = null; return; }
+        var tn = performance.now();
+        if (A.tlpPrev == null) { A.tlpPrev = A.userDeg; A.tlpPrevT = tn; A.tlpW = 0; }
+        else if (A.userDeg !== A.tlpPrev) {
+          // (turn rate from the aim's own changes; still for 90 ms = not spinning)
+          var wv = sdiff(A.userDeg, A.tlpPrev) / (Math.max(8, tn - A.tlpPrevT) / 1000);
+          A.tlpW = (A.tlpW || 0) * .4 + wv * .6; A.tlpPrev = A.userDeg; A.tlpPrevT = tn;
+        } else if (tn - A.tlpPrevT > 90) A.tlpW = 0;
+        var lead = Math.abs(A.tlpW) > 40 ? Math.max(-30, Math.min(30, A.tlpW * (ping() / 2 + 17) / 1000)) : 0, aDeg = A.userDeg + lead;
+        A.tlpWhy = "no view";
+        var gs = getGS(), vs = gs && getMyStatus(gs), cam = getActiveCamera();
+        if (!vs || typeof vs.x !== "number" || !cam) return;
+        var p0 = worldToScreenPx(cam, vs.x, vs.y, gs), p1 = worldToScreenPx(cam, vs.x + 10, vs.y, gs);
+        if (!p0 || !p1) return;
+        var ppu = Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10; if (!(ppu > .01)) return;
+        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(A.speed || 160);
+        var D = Math.max(12, Math.min(R * .95, Math.hypot(drag.real.x - p0.x, drag.real.y - p0.y) / ppu));
+        var a = aDeg * Math.PI / 180, tx = vs.x + Math.cos(a) * D, ty = vs.y + Math.sin(a) * D, deg = aDeg;
+        if (Math.hypot(wrap(me.x - vs.x), wrap(me.y - vs.y)) >= .15 || Math.hypot(me.v.x, me.v.y) >= .02) {
+          var q = stateOf(me.x + wrap(tx - me.x), me.y + wrap(ty - me.y), 0, 0), o = { x: me.x, y: me.y };
+          var r = solve(o, me.v, copyQ(q), 0, S, k);
+          if (r) {
+            var fw = A.gun.n >= 2 ? A.gun.fwd : 0;
+            if (fw > .3) { o = { x: me.x + Math.cos(r.deg * Math.PI / 180) * fw, y: me.y + Math.sin(r.deg * Math.PI / 180) * fw }; r = solve(o, me.v, copyQ(q), 0, S, k) || r; }
+            if (Math.abs(sdiff(r.deg, aDeg)) <= 20) deg = r.deg;
+          }
+        }
+        var dd = sdiff(deg, A.userDeg);
+        if (Math.abs(dd) < .5) { A.tlpWhy = "on line"; return; }
+        A.tlpDeg = ((Math.round(deg) % 360) + 360) % 360;
+        A.tlpFix = { dd: dd, lead: lead, D: D, at: now };
+        A.tlpWhy = "fixing";
+      }
+      var AIM_CAREFUL = { 402: .6 };
+      // Energy the next full volley needs (the biggest gun with the rest).
+      function need() {
+        var sh = A.ship;
+        if (!sh.maxVol) return 0;
+        return sh.genMax > 0 ? Math.min(sh.maxVol, sh.genMax * .97) : sh.maxVol;
+      }
+      // (projected from the last status by its age and a quarter of the ping,
+      // not the whole ping: in a recorded duel the whole ping read 84 while
+      // the server had 77-83, and those presses fired the side guns alone)
+      function energyAt() {
+        var my = A.my;
+        if (my.gen == null) return null;
+        return Math.min(A.ship.genMax || 1e9, my.gen + (A.ship.regen || 0) * Math.max(0, (Date.now() - my.genTs + ping() * .25) / 1000));
+      }
+      A.need = need; A.energyAt = energyAt;
+      function fireWanted(onTarget, now) {
+        var P = A.pulse;
+        if (!A.engaged) { P.on = false; return false; }
+        if (C.autofire === "off") return A.forced ? onTarget : A.userFire && (!C.gate || onTarget);
+        if (C.autofire === "all" || !need()) { P.on = false; return onTarget; }
+        // biggest shot: one short press once the bar pays for the volley; let go
+        // the moment the nose leaves the target (a press held on would fire
+        // the volley wherever the nose had swung to by the time it went)
+        if (P.on) {
+          if (A.lastBigAt > P.big0) { P.on = false; P.cool = now + 120; }
+          else if (!onTarget) { P.on = false; P.cool = now; }
+          // (a short press: held on, the side guns come back while the volley's
+          // report is still on its way and fire on their own)
+          else if (now - P.start > 50) { P.on = false; P.cool = now + ping() + 200; }
+          return P.on;
+        }
+        var e = energyAt();
+        if (onTarget && now >= P.cool && e != null && e >= need()) { P.on = true; P.start = now; P.big0 = A.lastBigAt; }
+        return P.on;
+      }
+      function rawSend(n) {
+        var ws = A.ws && A.ws.readyState === 1 ? A.ws : window.__synGameWS;
+        if (!ws || ws.readyState !== 1) return;
+        try { if (window.__synCtlSend) window.__synCtlSend(ws, A.numeric ? n : String(n)); else Object.getPrototypeOf(ws).send.call(ws, A.numeric ? n : String(n)); } catch (e) {}
+      }
+      function compose() { return (A.flags - (A.flags & 8192)) + (A.fire ? 8192 : 0) + A.aim; }
+      function userWord() { return A.flags + A.userDeg; }
+      // The autopilot's word (window.__synPilot), when it is flying.
+      function pilotWord() { var P = window.__synPilot; return P && P.on && P.alive && P.ctl != null ? P.ctl : null; }
+      // What goes out: the autopilot steers; the assist takes the shot whenever
+      // it has one (your lock, or the autopilot's fight); null = the game's own.
+      function baseWord() {
+        var pw = pilotWord();
+        if (pw == null) { var dw = duelWord(); if (dw != null) return dw; }
+        if (pw == null) return A.engaged && A.aim != null ? compose() : A.tlpDeg != null && A.flags != null ? A.flags + A.tlpDeg : null;
+        if (A.engaged && A.aim != null && A.lastSolve && A.lastSolve.hit) return (pw - pw % 4096 - (pw & 8192)) + (A.fire ? 8192 : 0) + A.aim;
+        return pw;
+      }
+      // (a dodge under way takes the movement keys of whatever goes out: your
+      // own controls, the assist's aim or the autopilot's)
+      function finalWord() {
+        var w = baseWord(), P = pilotWord() == null && duelWord() != null ? null : DG.plan || KB.plan;
+        if (!P) return w;
+        var b = w != null ? w : A.flags != null && A.userDeg != null ? userWord() : statusWord();
+        return b == null ? w : dodgeWord(b, P);
+      }
+      A.finalWord = finalWord;
+
+      // ---- Dodge Assist ----
+      // Enemy bolts in flight (type 100 volleys, dropped when they hit
+      // something or run out) are followed along the game's laser flight.
+      // When one is on course to hit your ship, the ways out are flown ahead
+      // in the game's own ship physics from the moment a command sent now
+      // reaches the server: thrust across the bolt's path either way, thrust
+      // along your nose, the engine off, other headings. The best that clears
+      // every bolt in flight is flown until the bolt has gone by; when none
+      // clears, the one that gets furthest from them.
+      var DG = { inc: [], plan: null, state: "off", why: "", n: 0, miss: 0, at: 0, hitIn: 0 };
+      A.dodgeState = DG;
+      function foe(id, me) {
+        if (id === me) return false;
+        var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode, myTeam = null;
+        if (wm && (wm.id === "team" || Array.isArray(wm.teams) && wm.teams.length > 1)) myTeam = typeof window.__synMyTeam === "number" ? window.__synMyTeam : _aegisTeamOf[me];
+        // (only teammates' bolts are harmless; a Syndicate-tagged player,
+        // your own second tab included, hurts like anyone else)
+        return !(typeof myTeam === "number" && _aegisTeamOf[id] === myTeam);
+      }
+      window.__synDodgeVolley = function(b) {
+        try { duVolley(b); } catch (e) {}
+        if (!C.dodge && !DU.on) return;
+        var me = myId();
+        if (me == null || b[1] === me || !foe(b[1], me)) return;
+        var my = _synStat[me];
+        if (!my || !my.alive) return;
+        var dv = new DataView(b.buffer, b.byteOffset, b.byteLength), now = Date.now(), t0 = now - ping() / 2;
+        for (var o = 8; o + 32 <= b.length; o += 32) {
+          if (b[o + 30] === 6) continue;                                        // a healing laser
+          var S = dv.getFloat32(o + 20, true), x = dv.getFloat32(o, true), y = dv.getFloat32(o + 4, true);
+          if (!(S > 1) || Math.hypot(wrap(x - my.x), wrap(y - my.y)) > 150) continue;
+          // (a bolt has a width: the game draws it in proportion to (damage / 10)^0.75, so
+          // a big shot is cleared by its own half-width as well as the hull's radius)
+          var dmgB = b[o + 31];
+          DG.inc.push({ id: b[o + 24] | b[o + 25] << 8, t0: t0, x: x, y: y, vx: dv.getFloat32(o + 12, true), vy: dv.getFloat32(o + 16, true), a: dv.getFloat32(o + 26, true), S: S, life: laserLife(S) * 1000, dmg: dmgB, r: Math.min(3, .3 * Math.pow(dmgB / 10, .75)) });
+        }
+        if (DG.inc.length > 120) DG.inc.splice(0, DG.inc.length - 120);
+        // (in a tab you are not looking at the browser runs timers only once
+        // a second, but messages still arrive: there it runs on them)
+        if (document.hidden) try { pump(true); } catch (e) {}
+      };
+      window.__synDodgeGone = function(id) { for (var i = DG.inc.length - 1; i >= 0; i--) if (DG.inc[i].id === id) DG.inc.splice(i, 1); };
+      // where a bolt is at server time T (ms), null once it is spent
+      function boltAt(L, T) {
+        var a = (T - L.t0) / 1000;
+        if (a < 0 || T - L.t0 > L.life) return null;
+        var D = L.S * (1 - Math.exp(-a / 2));
+        return { x: L.x + Math.cos(L.a) * D + 60 * L.vx * a, y: L.y + Math.sin(L.a) * D + 60 * L.vy * a };
+      }
+      function statusWord() {
+        var me = myId(), s = me != null ? _synStat[me] : null;
+        return s && s.alive ? Math.round(s.steer || 0) % 360 + (s.up ? 4096 : 0) : null;
+      }
+      function ctlOf(w) { return { aim: (w % 4096 % 360) * Math.PI / 180, up: (w & 4096) !== 0, glide: (w & 16384) !== 0, side: w & 32768 ? 1 : w & 65536 ? -1 : 0 }; }
+      function planCtl(p, c) {
+        if (p.side) return { aim: c.aim, up: p.up != null ? p.up : c.up, glide: false, side: p.side };
+        if (p.stop) return { aim: c.aim, up: false, glide: false, side: 0 };
+        return { aim: p.ang, up: true, glide: false, side: 0 };
+      }
+      function dodgeWord(b, p) {
+        var deg = b % 4096 % 360, fl = b - b % 4096;
+        fl = fl - (fl & 32768) - (fl & 65536) - (fl & 16384);
+        if (p.side) { if (p.up != null) fl = fl - (fl & 4096) + (p.up ? 4096 : 0); return fl + (p.side > 0 ? 32768 : 65536) + deg; }
+        fl -= fl & 4096;
+        if (p.stop) return fl + deg;
+        return fl + 4096 + Math.round(((p.ang * 180 / Math.PI) % 360 + 360) % 360) % 360;
+      }
+      // your ship as the server last told it (with its own keys)
+      function ownEng() {
+        var me = myId(), s = me != null ? _synStat[me] : null;
+        if (!s || !s.alive || Date.now() - s.ts > 600) return null;
+        var q = engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
+        q.T = s.ts - ping() / 2; q.rad = RAD[s.code] || 3;
+        return q;
+      }
+      // Closest any bolt comes to the hull (< 0: a hit) and when, flying
+      // `pre` until the command lands at Tc and `post` after.
+      function clearance(q0, pre, post, Tc, bolts, end) {
+        var q = copyQ(q0), T = q0.T, worst = 1e9, at = 0, set = false;
+        q.aim = pre.aim; q.up = pre.up; q.glide = pre.glide; q.side = pre.side;
+        while (T < end) {
+          if (!set && T >= Tc) { set = true; q.aim = post.aim; q.up = post.up; q.glide = post.glide; q.side = post.side; }
+          step(4, q, 1 / 60); T += 1000 / 60;
+          for (var i = 0; i < bolts.length; i++) {
+            var p = boltAt(bolts[i], T);
+            if (!p) continue;
+            var d = Math.hypot(wrap(p.x - q.x), wrap(p.y - q.y)) - q.rad - (bolts[i].r || 0);
+            if (d < worst) { worst = d; at = T; }
+          }
+        }
+        return { gap: worst, at: at, x: q.x, y: q.y };
+      }
+      var HIT = .25, SAFE = .9, RELEASE = 1.4;
+      function dodgeTick(force) {
+        var now = Date.now();
+        if (!force && now - DG.at < 30) return;
+        DG.at = now;
+        if (!C.dodge) { DG.plan = null; DG.state = "off"; if (!DU.on) DG.inc.length = 0; return; }
+        if (!inGame()) { DG.plan = null; DG.state = "idle"; DG.inc.length = 0; return; }
+        var pg = ping();
+        DG.inc = DG.inc.filter(function(L) { return now - L.t0 < L.life + 60; });
+        var q0 = ownEng(), w0 = baseWord();
+        if (w0 == null && A.flags != null && A.userDeg != null) w0 = userWord();
+        if (w0 == null) w0 = statusWord();
+        var min = +C.dodgeMin || 0, bolts = DG.inc.filter(function(L) { return L.dmg >= min; });
+        if (!q0 || w0 == null) { DG.plan = null; DG.state = q0 ? "watching" : "idle"; return; }
+        if (!bolts.length) { if (!evade(q0, now)) { DG.plan = null; DG.state = "watching"; } return; }
+        var end = 0;
+        bolts.forEach(function(L) { end = Math.max(end, L.t0 + L.life); });
+        end = Math.min(end, now + 2500);
+        var Tc = now + pg / 2 + 12, c0 = ctlOf(w0), sent = A.sentWord != null ? ctlOf(A.sentWord) : c0;
+        var base = clearance(q0, sent, c0, Tc, bolts, end);
+        if (base.gap >= HIT) { if (!evade(q0, now)) { DG.plan = null; DG.state = "watching"; } return; }
+        DG.hitIn = Math.max(0, base.at - now);
+        // a dodge under way goes on while it still clears
+        // A dodge under way stops the moment letting go would still clear the
+        // bolt with room to spare (checked again every 30 ms on the ship's real
+        // state), so the ship only moves as far as it needs to; otherwise it
+        // goes on while it still clears.
+        if (DG.plan && !DG.plan.ev) {
+          if (clearance(q0, sent, c0, Tc, bolts, end).gap >= RELEASE) { DG.plan = null; DG.state = "watching"; return; }
+          if (clearance(q0, sent, planCtl(DG.plan, c0), Tc, bolts, end).gap >= .3) { DG.state = "dodging"; return; }
+        }
+        // the ways out, in order: strafe away from the bolt (keeps the aim),
+        // strafe the other way, thrust across its path (the side needing less
+        // turn first), the engine off, thrust along the nose
+        var hb = null, hd = 1e9;
+        bolts.forEach(function(L) { var p = boltAt(L, base.at); if (p) { var d = Math.hypot(wrap(p.x - q0.x), wrap(p.y - q0.y)); if (d < hd) { hd = d; hb = L; } } });
+        // (it moves the ship itself out of the way: turn and thrust, or cut the
+        // engine; no strafing. The hull it has to clear is the game's own hit
+        // circle for the ship, its type radius, whatever way the ship tilts)
+        var ba = hb ? hb.a : q0.r, plans = [];
+        {
+          var a1 = ba + Math.PI / 2, a2 = ba - Math.PI / 2;
+          if (Math.abs(sdiff(a1 * 180 / Math.PI, q0.r * 180 / Math.PI)) > Math.abs(sdiff(a2 * 180 / Math.PI, q0.r * 180 / Math.PI))) { var t = a1; a1 = a2; a2 = t; }
+          plans.push({ ang: a1 }, { ang: a2 }, { stop: true }, { ang: q0.r });
+          // (then every 30 degrees round, nearest the nose first)
+          var more = [];
+          for (var k = 0; k < 12; k++) more.push(q0.r + k * Math.PI / 6);
+          more.sort(function(x, y) { return Math.abs(Math.atan2(Math.sin(x - q0.r), Math.cos(x - q0.r))) - Math.abs(Math.atan2(Math.sin(y - q0.r), Math.cos(y - q0.r))); });
+          more.slice(1).forEach(function(x) { plans.push({ ang: x }); });
+        }
+        // every way out is scored: a clear margin, keeping away from where
+        // the bolt came from (closing in makes the next one unescapable),
+        // little turning; failing a clear margin, the one that clears by most
+        // if it clears at all. (It is let go again as soon as it can be.)
+        var pick = null, best = null, bg = .35, ps = -1e9, anyP = null, anyG = base.gap + .2, sx = hb ? hb.x : q0.x, sy = hb ? hb.y : q0.y;
+        var d0 = Math.hypot(wrap(q0.x - sx), wrap(q0.y - sy));
+        for (var i = 0; i < plans.length; i++) {
+          var r = clearance(q0, sent, planCtl(plans[i], c0), Tc, bolts, end), pl = plans[i];
+          if (r.gap >= SAFE) {
+            var away = Math.hypot(wrap(r.x - sx), wrap(r.y - sy)) - d0;
+            var turn = pl.ang != null ? Math.abs(Math.atan2(Math.sin(pl.ang - q0.r), Math.cos(pl.ang - q0.r))) / Math.PI : 0;
+            var sc = Math.min(r.gap, 3) + .06 * Math.max(-25, Math.min(25, away)) - .6 * turn;
+            if (sc > ps) { ps = sc; pick = pl; }
+          } else if (r.gap > bg) { bg = r.gap; best = pl; }
+          if (r.gap > anyG) { anyG = r.gap; anyP = pl; }
+        }
+        if (!pick) pick = best;
+        // no clean way out: still fly the one that gets furthest from the bolts
+        // (it may clear the side guns' bolts, and next time the ship is moving)
+        if (!pick && anyP) { if (DG.state !== "trapped") DG.miss++; DG.plan = anyP; DG.state = "trapped"; DG.why = "best try"; return; }
+        if (pick) {
+          if (!DG.plan) DG.n++;
+          DG.plan = pick; DG.state = "dodging";
+          DG.why = (pick.stop ? "engine off" : "thrust " + Math.round(((pick.ang * 180 / Math.PI) % 360 + 360) % 360) + "°");
+        } else {
+          if (DG.state !== "trapped") DG.miss++;
+          DG.plan = null; DG.state = "trapped";
+        }
+      }
+      // Before the shot: an enemy close by with its nose on us. From a standstill
+      // a fast bolt fired from close in can't be escaped (a slow-turning ship
+      // needs ~0.4 s just to turn across its line), so while an enemy aims at
+      // us the ship is kept moving across its line of fire, a little away from
+      // it, switching sides every 0.9 to 1.8 s so its lead is wrong; when a
+      // bolt comes, the dodge has speed to work with. Not while you fire.
+      var EV = { side: 0, until: 0 };
+      function aimedBy(me, q0) {
+        var best = null, bd = 1e9, now = Date.now();
+        for (var k in _synStat) {
+          var s = _synStat[k];
+          if (!s || !s.alive || s.id === me || now - s.ts > 700 || !foe(s.id, me)) continue;
+          var dx = wrap(q0.x - s.x), dy = wrap(q0.y - s.y), d = Math.hypot(dx, dy);
+          if (d > 80 || d < 1) continue;
+          var err = Math.abs(sdiff(s.angle, Math.atan2(dy, dx) * 180 / Math.PI)), lat = d * Math.sin(Math.min(90, err) * Math.PI / 180);
+          if (err < 35 && lat < q0.rad + 9 && d < bd) { bd = d; best = { d: d, a: Math.atan2(dy, dx) }; }
+        }
+        return best;
+      }
+      function evade(q0, now) {
+        if (C.dodgePre !== true || A.userFire || A.forced) { EV.side = 0; return false; }
+        var th = aimedBy(myId(), q0);
+        if (!th) { EV.side = 0; return false; }
+        if (!EV.side || now > EV.until) {
+          if (!EV.side) { var a1 = th.a + Math.PI / 2, a2 = th.a - Math.PI / 2; EV.side = Math.abs(sdiff(a1 * 180 / Math.PI, q0.r * 180 / Math.PI)) <= Math.abs(sdiff(a2 * 180 / Math.PI, q0.r * 180 / Math.PI)) ? 1 : -1; }
+          else EV.side = -EV.side;
+          EV.until = now + 900 + Math.random() * 900;
+        }
+        if (!DG.plan || !DG.plan.ev) DG.ev = (DG.ev || 0) + 1;
+        DG.plan = { ang: th.a + EV.side * (Math.PI / 2 - .3), ev: true }; DG.state = "evading"; DG.why = "off the line of fire";
+        return true;
+      }
+      // ---- Knockback Recovery ----
+      // A hit knocks the ship back: for the knocked-back ticks the server
+      // turns and steers nothing (the status packet says how many are left),
+      // so the knock itself can't be undone. What can be won is the time after:
+      // the moment the server gives control back, the best counter is already
+      // there (a command sent now lands half a ping later). The ways back are
+      // flown ahead in the game's own ship physics from the knocked state:
+      // RCS strafe either way with or without the engine (keeps your aim), the
+      // engine along the nose, coasting, and (if allowed and you are not
+      // firing) turning to thrust against the drift. The one that brings the
+      // ship back to the way it was going before the hit soonest is flown
+      // until it is (or 1.5 s); then your controls are yours again.
+      var KB = { plan: null, state: "off", why: "", n: 0, act: false, pre: null, tgt: null, end: 0, gain: 0 };
+      A.kbState = KB;
+      function kbCost(q0, sent, ctl, Tc, tgt, T1) {
+        var q = copyQ(q0), T = q0.T, set = false, cost = 0, n = 0;
+        q.aim = sent.aim; q.up = sent.up; q.glide = sent.glide; q.side = sent.side;
+        while (T < T1) {
+          if (!set && T >= Tc) { set = true; q.aim = ctl.aim; q.up = ctl.up; q.glide = ctl.glide; q.side = ctl.side; }
+          step(4, q, 1 / 60); T += 1000 / 60;
+          if (T >= Tc) { var ex = q.vx - tgt.vx, ey = q.vy - tgt.vy; cost += ex * ex + ey * ey; n++; }
+        }
+        return n ? cost / n : 0;
+      }
+      function kbTick() {
+        if (!C.kb) { KB.plan = null; KB.act = false; KB.state = "off"; return; }
+        var me = myId(), s = me != null ? _synStat[me] : null, now = Date.now();
+        if (!inGame() || !s || !s.alive || now - s.ts > 600) { KB.plan = null; KB.act = false; KB.state = "idle"; return; }
+        if (!(s.stun > 0) && !KB.act) { KB.pre = { vx: s.vx, vy: s.vy }; KB.state = "watching"; KB.plan = null; return; }
+        var q0 = ownEng(); if (!q0) return;
+        if (s.stun > 0 && (!KB.act || KB.stun0 < s.stun)) {
+          // a (new) knock: aim for the way it was going before
+          if (!KB.act) KB.n++;
+          KB.act = true; KB.tgt = KB.pre || { vx: 0, vy: 0 }; KB.end = 0; KB.aim0 = A.userDeg != null ? A.userDeg : s.steer;
+        }
+        KB.stun0 = s.stun || 0;
+        var stunMs = (s.stun || 0) * 1000 / 60;
+        // (it holds the ship only until control comes back: the counter sent
+        // during the knock lands on the first tick you can steer, then your
+        // controls are yours)
+        if (!(s.stun > 0) && !KB.end) KB.end = now + ping() / 2 + 34;
+        if (KB.end && now > KB.end) { KB.act = false; KB.plan = null; KB.state = "watching"; KB.pre = { vx: s.vx, vy: s.vy }; return; }
+        var w0 = A.flags != null && A.userDeg != null ? userWord() : statusWord(); if (w0 == null) return;
+        // (you steer somewhere new: that is yours, recovery steps aside)
+        if (A.userDeg != null && KB.aim0 != null && Math.abs(sdiff(A.userDeg, KB.aim0)) > 45) { KB.act = false; KB.plan = null; KB.state = "watching"; return; }
+        var pg = ping(), Tc = now + pg / 2 + 12, c0 = ctlOf(w0), sent = A.sentWord != null ? ctlOf(A.sentWord) : c0, T1 = Math.max(now, q0.T + stunMs) + 900;
+        var plans = [ { ang: c0.aim, keep: true }, { stop: true } ];
+        if (q0.M.strafe > 0) plans.push({ side: 1, up: true }, { side: 1, up: false }, { side: -1, up: true }, { side: -1, up: false });
+        if (C.kbTurn !== false && !A.userFire && !A.engaged) {
+          var ea = Math.atan2(KB.tgt.vy - q0.vy, KB.tgt.vx - q0.vx);
+          [ 0, .5, -.5 ].forEach(function(o) { plans.push({ ang: ea + o }); });
+        }
+        var base = kbCost(q0, sent, c0, Tc, KB.tgt, T1), best = null, bc = base * .8;
+        plans.forEach(function(p) {
+          var c = kbCost(q0, sent, planCtl(p, c0), Tc, KB.tgt, T1);
+          if (p.ang != null && !p.keep) c += base * .1 * Math.abs(Math.atan2(Math.sin(p.ang - c0.aim), Math.cos(p.ang - c0.aim))) / Math.PI;
+          if (c < bc) { bc = c; best = p; }
+        });
+        KB.gain = base > 0 ? 1 - bc / base : 0;
+        KB.plan = best;
+        KB.state = s.stun > 0 ? "knocked" : best ? "recovering" : "watching";
+        KB.why = !best ? "your controls are best" : best.side ? "RCS " + (best.side > 0 ? "left" : "right") + (best.up ? " + engine" : "") : best.stop ? "coasting" : best.keep ? "engine" : "thrust against the drift";
+      }
+      /*DUELCORE{*/
+      // The duel brain: what to do this tick, from a plain description of the
+      // fight (no game objects), so the same code flies the ship here and in
+      // the offline duel simulator. Positions in world units, velocities per
+      // 60 Hz tick, angles in radians, energy in the game's units. Everything
+      // in the input is already moved on to when a command sent now lands.
+      var DuelCore = (function() {
+        var PI = Math.PI, TAU = 2 * PI, D2R = PI / 180;
+        function sd(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+        function cl(v, a, b) { return v < a ? a : v > b ? b : v; }
+        function hy(x, y) { return Math.sqrt(x * x + y * y); }
+        function wr(d, h) { if (!(h > 0)) return d; var s = 2 * h; d = ((d % s) + s) % s; return d > h ? d - s : d; }
+        // The game's ship physics for one tick (ShipPhysics: the nose eases
+        // towards the steering angle, its turn speed smoothed; knocked back it
+        // neither turns nor steers and keeps its speed; RCS off (glide) with the
+        // engine off it keeps its speed too, slowed only above top speed).
+        function phys(q) {
+          var dd = sd(q.aim, q.r), st = q.stun > 0;
+          if (Math.abs(dd) < 5 * q.turn && !st) { var p = q.r; q.r += .2 * dd; q.w = q.r - p; }
+          else { if (!st) q.w = .8 * (q.w || 0) + .2 * q.turn * (dd < 0 ? -1 : dd > 0 ? 1 : 0); q.r += q.w || 0; }
+          var sdv = q.strafe > 0 ? q.side || 0 : 0, s = q.top, n = 0, a = 0;
+          if (q.up) { n = s * Math.cos(q.r); a = s * Math.sin(q.r); }
+          if (sdv) {
+            n -= s * Math.sin(q.r) * q.strafe * sdv; a += s * Math.cos(q.r) * q.strafe * sdv;
+            var l = hy(n, a); if (l > s) { n = n / l * s; a = a / l * s; }
+          }
+          var inr = q.up ? q.inr : Math.pow(q.inr, q.fric || 1);
+          if (st || !q.up && !sdv && q.glide) {
+            if (!st && hy(q.vx, q.vy) > q.top) { q.vx *= inr; q.vy *= inr; }
+            if (st) q.stun = Math.max(0, q.stun - 1);
+          } else { q.vx = q.vx * inr + n * (1 - inr); q.vy = q.vy * inr + a * (1 - inr); }
+          q.x += q.vx; q.y += q.vy;
+        }
+        function copy(o) { var c = {}; for (var k in o) c[k] = o[k]; return c; }
+        function life(S) { return S >= 100 ? -2 * Math.log(1 - 63 / S) : 2; }
+        // where a bolt is t s after now (null once spent)
+        function boltAt(b, t) {
+          var tt = b.age + t;
+          if (tt < 0 || tt > life(b.S)) return null;
+          var D = b.S * (1 - Math.exp(-tt / 2));
+          return { x: b.x + Math.cos(b.a) * D + 60 * b.vx * tt, y: b.y + Math.sin(b.a) * D + 60 * b.vy * tt };
+        }
+        // Closest any bolt comes to the hull flying `ctl` (gap < 0: a hit).
+        function clearance(me, ctl, bolts, H, half) {
+          var q = copy(me), worst = 1e9, at = 0;
+          q.aim = ctl.aim; q.up = ctl.up; q.glide = ctl.glide; q.side = ctl.side || 0;
+          for (var k = 1; k <= H; k++) {
+            phys(q);
+            for (var i = 0; i < bolts.length; i++) {
+              var p = boltAt(bolts[i], k / 60);
+              if (!p) continue;
+              var d = hy(wr(p.x - q.x, half), wr(p.y - q.y, half)) - me.rad - (bolts[i].r || 0);
+              if (d < worst) { worst = d; at = k / 60; }
+            }
+          }
+          return { gap: worst, at: at, x: q.x, y: q.y, r: q.r };
+        }
+        // A straight-line lead (for prefiring at where a ship should be).
+        function lead(o, ov, k, p, pv, S) {
+          var t = .2;
+          for (var i = 0; i < 8; i++) {
+            var rx = p.x + pv.x * 60 * t - o.x - ov.x * 60 * k * t, ry = p.y + pv.y * 60 * t - o.y - ov.y * 60 * k * t, d = hy(rx, ry);
+            t = d >= S * .999 ? life(S) : -2 * Math.log(1 - d / S);
+          }
+          var rx2 = p.x + pv.x * 60 * t - o.x - ov.x * 60 * k * t, ry2 = p.y + pv.y * 60 * t - o.y - ov.y * 60 * k * t;
+          return { a: Math.atan2(ry2, rx2), t: t, d: hy(rx2, ry2) };
+        }
+        function create(seed) {
+          var s = (seed >>> 0) || 1234567;
+          return {
+            rnd: function() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; },
+            mode: "PRESS", modeAt: -1e9, ev: null, evAt: -1e9, evData: null, glide: null, glideAt: -1e9,
+            lastFire: -1e9, fE: null, fEAt: null, foeShotAt: -1e9, foeShots: 0,
+            pool: null, reSide: 1, reAt: -1e9, bearing: null, start: null, lastSeen: null, why: [], n: { toggles: 0 }
+          };
+        }
+        // The opponent's energy: exact when the game sends it for them,
+        // otherwise estimated: full at first, minus what each of their shots
+        // cost (a shot costs its damage), plus their regen.
+        function foeEnergy(B, I) {
+          var f = I.foe, cap = f.genMax || I.me.genMax, rg = f.regen || I.me.regen;
+          if (f.genExact != null) { B.fE = f.genExact; B.fEAt = I.now; B.fEx = true; }
+          else {
+            B.fEx = false;
+            if (B.fE == null) { B.fE = cap; B.fEAt = I.now; }
+            B.fE = Math.min(cap, B.fE + rg * Math.max(0, I.now - B.fEAt) / 1000); B.fEAt = I.now;
+          }
+          (I.foeShots || []).forEach(function(s) {
+            // (a shot we did not think they could afford: they had more)
+            if (!B.fEx) B.fE = Math.max(0, Math.max(B.fE, s.cost) - s.cost);
+            if (s.at > B.foeShotAt) B.foeShotAt = s.at;
+            B.foeShots++;
+          });
+          return B.fE;
+        }
+        // The gem pool: the densest cluster of gems on the field.
+        function poolOf(B, I) {
+          var g = I.gems || [], half = I.half, best = null, bn = 0;
+          for (var i = 0; i < g.length; i++) {
+            var n = 0;
+            for (var j = 0; j < g.length; j++) if (hy(wr(g[j].x - g[i].x, half), wr(g[j].y - g[i].y, half)) < 18) n++;
+            if (n > bn || n === bn && best && hy(wr(g[i].x - I.me.x, half), wr(g[i].y - I.me.y, half)) < hy(wr(best.x - I.me.x, half), wr(best.y - I.me.y, half))) { bn = n; best = g[i]; }
+          }
+          if (!best) { if (B.pool && I.now - B.pool.at > 4000) B.pool = null; if (B.pool) B.pool.n = 0; return B.pool; }
+          var sx = 0, sy = 0, c = 0, ss = 0;
+          for (var k = 0; k < g.length; k++) {
+            var dx = wr(g[k].x - best.x, half), dy = wr(g[k].y - best.y, half);
+            if (hy(dx, dy) < 18) { sx += dx; sy += dy; c++; }
+          }
+          var cx = best.x + sx / c, cy = best.y + sy / c;
+          for (var m = 0; m < g.length; m++) { var ex = wr(g[m].x - cx, half), ey = wr(g[m].y - cy, half), e2 = ex * ex + ey * ey; if (e2 < 400) ss += e2; }
+          B.pool = { x: cx, y: cy, n: c, r: Math.max(7, Math.sqrt(ss / c) * 1.4), at: I.now };
+          return B.pool;
+        }
+        // Turn a wanted velocity and a facing into the keys: thrust along the
+        // nose when the velocity needs fixing, otherwise face where we want to
+        // (the enemy or the shot) and coast: RCS off keeps the speed (glide),
+        // RCS on brakes.
+        function drive(B, I, vd, face, o) {
+          var me = I.me, ex = vd.x - me.vx, ey = vd.y - me.vy, err = hy(ex, ey), top = me.top, sp = hy(me.vx, me.vy), vdl = hy(vd.x, vd.y);
+          var thr = Math.atan2(ey, ex), out = { aim: face, up: false, glide: B.glide, side: 0 };
+          // (with RCS on, coasting brakes: fix the velocity sooner)
+          var lim = (I.rcs ? .3 : .2) * top;
+          // (SP.dh/dT, against jitter: a burn, once begun, goes on until the
+          // velocity is within dh of the limit or dT ms have passed, and a
+          // coast lasts dT ms unless the error doubles. Without it the engine
+          // and the nose flipped every ~95 ms between the burn heading and
+          // the enemy: in recorded duels 4-6 thrust toggles a second up close
+          // (60% of burns under 150 ms), the human players 0.75-1.8.)
+          var SPd = B.SPd || {}, Dv = B.drv || (B.drv = { on: false, at: -1e9 }), burn = err > lim;
+          if (SPd.dT) {
+            burn = Dv.on ? err > lim * (SPd.dh || 1) || I.now - Dv.at < SPd.dT : err > lim && (I.now - Dv.at >= SPd.dT || err > 2 * lim);
+            if (burn !== Dv.on) { Dv.on = burn; Dv.at = I.now; }
+          }
+          if (o.hold) {
+            // a shot is wanted: the nose stays on it; thrust only when that
+            // also fixes the velocity, otherwise coast (RCS off keeps the speed)
+            out.aim = face;
+            out.up = burn && Math.cos(sd(face, thr)) > .6;
+            if (!out.up) out.glide = !!I.rcs && !(sp > vdl + .3 * top && vdl < .4 * top);
+            else out.glide = B.glide;
+          } else if (burn) {
+            var h = thr;
+            // never show the side to a shot that can come: thrust headings
+            // within 60 degrees of facing them or of showing the back
+            if (o.guard) {
+              var bf = o.bearing, d1 = sd(h, bf), d2 = sd(h, bf + PI), dd = Math.abs(d1) < Math.abs(d2) ? d1 : d2, base = Math.abs(d1) < Math.abs(d2) ? bf : bf + PI;
+              if (Math.abs(dd) > 60 * D2R) h = base + (dd > 0 ? 60 : -60) * D2R;
+            }
+            out.aim = h;
+            out.up = Math.abs(sd(me.r, h)) < 50 * D2R && Math.cos(sd(h, thr)) > .3;
+            // (engine on: the RCS state does nothing now and is left as it is)
+          } else {
+            out.aim = face;
+            // keep the speed while it is what we want; brake when too fast
+            out.glide = !!I.rcs && !(sp > vdl + .25 * top && vdl < .5 * top);
+            out.slow = sp > vdl + .25 * top && vdl < .5 * top;
+          }
+          // strafing modes: slide across while the nose stays on the face
+          if (I.strafe > 0 && o.side) { out.side = o.side; out.aim = face; out.up = false; out.glide = false; }
+          B.dbg = (o.hold ? "H" : burn ? "T" : "C") + " err=" + (err / top).toFixed(2) + " vd=" + (vdl / top).toFixed(2) + " dn=" + Math.round(sd(me.r, out.aim) / D2R);
+          return out;
+        }
+        // The matchup, from both ships' real specs (dueling mods ship several
+        // Speedsters: heavier, more agile, faster): who is heavier, turns
+        // better, is faster, and the style that suits it.
+        //   BRAWL    heavier: bumps, ram contact, knockback, push them out
+        //   SKIRMISH lighter or more agile: no contact, side-step, kite, counter
+        //   ROAM     faster: own the pool by mobility, re-enter often, punish pickups
+        //   ANCHOR   slower: hold the pool, prefire, save energy, counter
+        //   DUEL     even
+        var STYLES = {
+          DUEL:     { dwA: 36, dwP: 15, dwR: 57, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 1, avoid: 0, reM: 14, reD: 28, poolW: 1.2, poke: .45, adv: 0, pre: 1.6 },
+          BRAWL:    { dwA: 30, dwP: 0, dwR: 50, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 2, avoid: 0, reM: 14, reD: 28, poolW: 1.2, poke: .45, adv: .25, pre: 1.6 },
+          SKIRMISH: { dwA: 44, dwP: 27, dwR: 60, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 0, avoid: 1, reM: 14, reD: 30, poolW: 1, poke: .4, adv: -.1, pre: 1.6 },
+          ROAM:     { dwA: 40, dwP: 15, dwR: 58, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 1, avoid: 0, reM: 6, reD: 18, poolW: 1.7, poke: .45, adv: .1, pre: 1.6 },
+          AGILE:    { dwA: 32, dwP: 15, dwR: 55, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 1, avoid: 0, reM: 14, reD: 28, poolW: 1.2, poke: .5, adv: 0, pre: 1.6 },
+          ANCHOR:   { dwA: 32, dwP: 15, dwR: 50, bs: 16, ev: 14, evA: 1, evT: .35, sg: 6, rw: 500, aj: 6, cl: 1, clV: 25, clM: .25, clL: 1, kbT: 1, kbL: 14, kbC: 4, kbA: 1.5, rch: 3, bt: 1, sl: 40, slW: 80, bsS: 10, kg: 3, tS: 400, slQ: 1, tC: 10, dT: 250, dh: .5, gT: 1, gF: 1, tA: 1, tAg: 70, clA: 8, clAll: 1, fMin: 115, rcK: 1, fR: 32, lsP: .75, wD: 28, cut: 1, cutE: 1, cutM: .6, bump: 1, avoid: 0, reM: 8, reD: 22, poolW: 2.4, poke: .6, adv: 0, pre: 1.25 }
+        };
+        function tagOf(a, b) {
+          var t = [], mr = a.mass / b.mass, tr = a.turn / b.turn, vr = a.top / b.top;
+          if (mr > 1.15) t.push("HEAVY"); else if (mr < .87) t.push("LIGHT");
+          if (tr > 1.15) t.push("AGILE");
+          if (vr > 1.08) t.push("FAST"); else if (vr < .93) t.push("SLOW");
+          return t.length ? t.join("+") : "EVEN";
+        }
+        // (a duel is normally the same variant on both sides: then the
+        // variant itself sets the style, against the dueling mod's maxed
+        // Legacy-Speedster, the one played: mass 175, rotation 80 (0.12 rad a
+        // tick), speed 115 (0.46 a tick))
+        var BASE = { mass: 175, turn: .12, top: .46 };
+        // the dueling mod's two official Speedsters: A-Speedster ("NEW") and
+        // Legacy-Speedster ("LEGACY", lighter, a little slower, turns less)
+        function vtag(sp) { var n = String(sp && sp.name || ""); return /legacy/i.test(n) ? "LEGACY" : /speedster/i.test(n) ? "NEW" : null; }
+        function matchup(I) {
+          var a = I.me.spec, b = I.foe.spec;
+          if (!a || !(a.mass > 0)) return { style: "DUEL", me: "?", foe: "?" };
+          if (!b || !(b.mass > 0)) b = a;
+          var mr = a.mass / b.mass, tr = a.turn / b.turn, vr = a.top / b.top;
+          if (Math.abs(mr - 1) < .08 && Math.abs(tr - 1) < .08 && Math.abs(vr - 1) < .06) {
+            var ar = a.mass / BASE.mass, at = a.turn / BASE.turn, av = a.top / BASE.top, v = "BASE", s0 = "DUEL";
+            if (ar > 1.25) { v = "HEAVY"; s0 = "BRAWL"; } else if (at > 1.2) { v = "AGILE"; s0 = "AGILE"; } else if (av > 1.1) { v = "FAST"; s0 = "ROAM"; }
+            v = vtag(a) || v;
+            return { style: s0, me: v, foe: v, mirror: true };
+          }
+          // (NEW against LEGACY: heavier, so BRAWL; LEGACY against NEW: lighter, so SKIRMISH)
+          var st = mr > 1.15 ? "BRAWL" : mr < .87 || tr > 1.15 ? "SKIRMISH" : vr > 1.08 ? "ROAM" : vr < .93 ? "ANCHOR" : "DUEL";
+          return { style: st, me: (vtag(a) ? vtag(a) + " " : "") + tagOf(a, b), foe: (vtag(b) ? vtag(b) + " " : "") + tagOf(b, a) };
+        }
+        // ---- adapting to this opponent (SP.ad) ----
+        // Some choices win against one kind of player and lose against
+        // another (in the simulator, holding the spill after a body shot:
+        // 63% v 50% against the rusher, 34% v 52% against the pilot itself;
+        // the nose on the gems while taking them: 22% v 47% and 50% v 45%).
+        // So at each such moment the pilot tries one way or the other, scores
+        // it by the health swing over the next 2.5 s (shield + gems, theirs
+        // taken off ours), and leans to what works against this opponent;
+        // recent results count most, so it follows them if they change.
+        var ADMEM = {}, ADM = ADMEM;
+        function adStat(key) { return ADM[key] || (ADM[key] = { on: { n: 0, m: 0 }, off: { n: 1, m: 5 } }); }
+        // (SP.ad: the moves it may vary, SP.adK, default rl,nw,bs,pn,bk:
+        //   rl  touching them, their shot first and their gun loaded: hold off
+        //       instead of 'ram it off us'
+        //   nw  their shot first, ours not ready: keep pressing instead of waiting
+        //   bs  a bump shot on: just shoot instead
+        //   pn  their gun 0.45 s+ off: go in for the body shot from up to 22
+        //   bk  they're stunned and ours is empty: take the gems, don't ram
+        // "on" is the variation, "off" the usual move. One pick holds for 1.2 s,
+        // and is scored by the health swing over the next 2.5 s.)
+        function adHas(SP, key) { return !!SP.ad && ("," + (SP.adK || "rl,nw,bs,pn,bk") + ",").indexOf("," + key + ",") >= 0; }
+        function adOn(B, SP, key, now, d0) {
+          if (!adHas(SP, key)) return false;
+          var A = B.adA || (B.adA = {}), a = A[key];
+          if (!a || now - a.t > 1200) a = A[key] = { t: now, arm: adPick(B, key, now, d0) };
+          return a.arm === "on";
+        }
+        function adPick(B, key, now, d0) {
+          var st = adStat(key), g = function() { var u = 1 - B.rnd(), v = B.rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2832 * v); };
+          var son = st.on.m + g() * 90 / Math.sqrt(st.on.n + 1), soff = st.off.m + g() * 90 / Math.sqrt(st.off.n + 1), arm = son > soff ? "on" : "off";
+          (B.adP = B.adP || []).push({ key: key, arm: arm, t: now, d0: d0 });
+          return arm;
+        }
+        function adSettle(B, now, d) {
+          if (!B.adP) return;
+          B.adP = B.adP.filter(function(p) {
+            if (now - p.t < 2500) return true;
+            var r = Math.max(-400, Math.min(400, d - p.d0)), a = adStat(p.key)[p.arm];
+            a.n = a.n * .9 + 1; a.m += (r - a.m) / a.n;
+            return false;
+          });
+        }
+        function adInfo() { var o = []; for (var k in ADMEM) o.push(k + " " + Math.round(ADMEM[k].on.m) + "/" + Math.round(ADMEM[k].off.m)); return o.join(" "); }
+        function tick(B, I) {
+          var me = I.me, f = I.foe, now = I.now, half = I.half || 1e9, why = [];
+          var cost = I.shot.cost, S = I.shot.S, reach = S >= 100 ? 63 : S * (1 - Math.exp(-1)), top = me.top;
+          var dx = wr(f.x - me.x, half), dy = wr(f.y - me.y, half), dist = hy(dx, dy), bear = Math.atan2(dy, dx), rr = me.rad + f.rad;
+          var E = me.gen, cap = me.genMax, fE = foeEnergy(B, I), gemLead = (me.crystals || 0) - (f.crystals || 0);
+          var gunR = me.gunReadyIn <= 20, canFire = gunR && E >= cost * .995 && !(me.stun > 0);
+          var foeGunR = f.gunReadyIn <= 80, foeCan = foeGunR && fE >= cost * .97 && !(f.stun > 0);
+          // (their nose on us: how far off, and whether a shot from them now would land)
+          var fBear = Math.atan2(-dy, -dx), fErr = Math.abs(sd(f.r, fBear)) / D2R, fLat = dist * Math.sin(Math.min(90, fErr) * D2R);
+          var aimedAt = fErr < 30 && fLat < me.rad + 6 && dist < reach * 1.05;
+          var imminent = foeCan && aimedAt;
+          var P = poolOf(B, I), pd = P ? hy(wr(P.x - me.x, half), wr(P.y - me.y, half)) : 0, fpd = P ? hy(wr(P.x - f.x, half), wr(P.y - f.y, half)) : 0;
+          if (B.start == null) B.start = now;
+          if (B.glide == null) B.glide = !!me.glide;
+          // ---- who is ahead: energy (in shots), stun, shield, gems ----
+          var MU = matchup(I), SP = STYLES[MU.style]; ADM = I.adMem || ADMEM;
+          if (I.tune) { var SPc = {}; for (var kk in SP) SPc[kk] = SP[kk]; for (var kt in I.tune) SPc[kt] = I.tune[kt]; SP = SPc; }
+          // (SP.fSG: a stunned ship's gun still fires; only its nose is stuck.
+          // v HEAVENLY (17 Nov, 0-11) he fired 85 of his 332 volleys while
+          // stunned and hit 33, 12 of 27 right after a contact; after the
+          // pilot drove into him with his bar up, his shot came a median
+          // 78 ms after the touch (43 of 81 such contacts went to him, 13 to
+          // the pilot): it read his stun as "can't shoot" and rammed on. So
+          // stunned with the bar up and the nose within fSG deg of us
+          // (35 by default) counts as loaded)
+          var fArm = !!SP.fSG && f.stun > 0 && foeGunR && fE >= cost * .97 && fErr < (SP.fSG > 1 ? SP.fSG : 35) && dist < reach * 1.05;
+          if (fArm) foeCan = true;
+          B.SPd = SP;
+          var adv = SP.adv + (SP.wE != null ? SP.wE : .45) * cl((E - fE) / cost, -2, 2) + (f.stun > 0 ? 1.1 : 0) - (me.stun > 0 ? .4 : 0) +
+            (SP.wS != null ? SP.wS : 1.6) * (me.shield / me.shieldMax - f.shield / f.shieldMax) + (SP.wG != null ? SP.wG : .3) * cl(gemLead / 15, -1.5, 1.5) + (gunR ? .15 : 0) - (foeGunR ? .15 : 0);
+          // (decision variants: SP.wH, the whole health lead (shield + gems)
+          // in 300s; SP.wT, whose big gun is back first, in seconds)
+          if (SP.wH) adv += SP.wH * cl(((me.shield || 0) + (me.crystals || 0) - (f.shield || 0) - (f.crystals || 0)) / 300, -1.5, 1.5);
+          if (SP.wT) adv += SP.wT * cl(Math.max(0, cost - fE) / Math.max(1, f.regen || 45) + (f.stun > 0 ? f.stun / 60 : 0) - Math.max(me.gunReadyIn / 1000, Math.max(0, cost - E) / Math.max(1, me.regen || 45)), -1, 1);
+          var m = B.mode, dwell = now - B.modeAt > 450;
+          // Aggressive by default: PRESS (charge, bump, shove them out of the
+          // pool) unless behind; ATTACK when somewhat behind; RETREAT only when
+          // clearly losing (energy, shield and gems all against us).
+          if (dwell) {
+            var aP = SP.aP != null ? SP.aP : -.2, aA = SP.aA != null ? SP.aA : -.75, aR = SP.aR != null ? SP.aR : -1.6, aX = SP.aX != null ? SP.aX : -.8;
+            if (m === "ATTACK" && adv > aP) m = "PRESS";
+            else if (m === "PRESS" && adv < aA) m = "ATTACK";
+            else if (m === "ATTACK" && adv < aR) m = "RETREAT";
+            else if (m === "RETREAT" && adv > aX) m = "ATTACK";
+          }
+          if (m !== B.mode) { B.mode = m; B.modeAt = now; }
+          why.push(m === "PRESS" ? "ahead " + adv.toFixed(1) : m === "RETREAT" ? "behind " + adv.toFixed(1) : "even " + adv.toFixed(1));
+          // ---- re-enter the pool when out of it with gems in it ----
+          var reenter = P && P.n >= 3 && pd > P.r + SP.reM && m !== "RETREAT" && dist > SP.reD && !(f.stun > 0) && !(m === "PRESS" && fpd < P.r + 30);
+          // (faster: their pickups are punished, a pressing chance when they sit in the pool)
+          if (MU.style === "ROAM" && P && fpd < P.r && m === "ATTACK" && E >= cost && dwell) { m = B.mode = "PRESS"; B.modeAt = now; }
+          if (reenter && B.state !== "REENTER") { B.reSide = B.rnd() < .5 ? -1 : 1; B.reAt = now; }
+          // ---- incoming bolts ----
+          var bolts = I.bolts || [], ctl0 = me.ctl || { aim: me.r, up: false, glide: B.glide, side: 0 }, threat = null;
+          // ---- where their shots pass us (SP.bt) ----
+          // Each of their big lasers is followed to its closest pass, and
+          // where it crossed the hull is noted: ahead of the nose, behind the
+          // tail, or over the middle. In the recorded duels players shooting
+          // at the pilot side-on missed ahead of its nose 47 times and behind
+          // it 12 (they aim at the cockpit, which lets lasers through);
+          // NO MERCY BOT, the pilot itself and the simulator's players aim
+          // at the centre and don't.
+          var BT = B.bt || (B.bt = { seen: {}, f: 0, b: 0, m: 0 });
+          if (SP.bt) {
+            var btNow = {};
+            bolts.forEach(function(b) {
+              if ((b.r || 0) < 1) return;
+              var k = Math.round(b.x * 4) + ":" + Math.round(b.y * 4) + ":" + Math.round(b.a * 50), p = boltAt(b, 0);
+              btNow[k] = 1; if (!p) return;
+              var ex = wr(p.x - me.x, half), ey = wr(p.y - me.y, half), d = hy(ex, ey), sb = BT.seen[k] || (BT.seen[k] = { d: d, al: 0, done: false });
+              if (sb.done) return;
+              if (d < sb.d) { sb.d = d; sb.al = ex * Math.cos(me.r) + ey * Math.sin(me.r); }
+              else if (d > sb.d + 1.5) { sb.done = true; if (sb.d < 7) { if (sb.al > 2.2) BT.f++; else if (sb.al < -2.8) BT.b++; else BT.m++; } }
+            });
+            for (var bk in BT.seen) if (!btNow[bk]) { var sb2 = BT.seen[bk]; if (!sb2.done && sb2.d < 7) { if (sb2.al > 2.2) BT.f++; else if (sb2.al < -2.8) BT.b++; else BT.m++; } delete BT.seen[bk]; }
+          }
+          // (they aim at the cockpit: at least 6 passes ahead of the nose, and
+          // twice as many there as behind the tail)
+          var baitOn = !!SP.bt && BT.f >= 6 && BT.f >= 2 * (BT.b + 1);
+          if (bolts.length && !(me.stun > 0)) {
+            var c0 = clearance(me, ctl0, bolts, 55, half);
+            if (c0.gap < .4) threat = c0;
+          }
+          // a bolt on course: the ways out, flown ahead (across it either way,
+          // forward or back at an angle, coasting, braking); one that clears
+          // with room and keeps the nose near them is flown; none: brace for
+          // it just before it lands (and keep weaving until then)
+          var dplan = null, hb = null;
+          if (!threat) B.dodge = null;
+          if (threat) {
+            var hd = 1e9;
+            bolts.forEach(function(b) { var p = boltAt(b, threat.at); if (p) { var d = hy(wr(p.x - me.x, half), wr(p.y - me.y, half)); if (d < hd) { hd = d; hb = b; } } });
+            var ba0 = hb ? hb.a : bear, plans = [];
+            [90, -90, 60, -60].forEach(function(o) { plans.push({ aim: ba0 + o * D2R, up: true, glide: B.glide, side: 0 }); });
+            plans.push({ aim: me.r, up: false, glide: !!I.rcs, side: 0, coast: 1 }, { aim: me.r, up: false, glide: false, side: 0, brake: 1 }, { aim: me.r, up: true, glide: B.glide, side: 0 });
+            if (I.strafe > 0) plans.push({ aim: ctl0.aim, up: false, glide: false, side: 1 }, { aim: ctl0.aim, up: false, glide: false, side: -1 });
+            var bs = -1e9;
+            // (a dodge under way is kept while it still clears: no dithering between ways out)
+            if (B.dodge && now - B.dodge.at < 1200) {
+              var keep = B.dodge.p, ck = clearance(me, keep, bolts, 55, half);
+              if (ck.gap >= .3) { dplan = { p: keep, c: ck }; bs = 1e9; }
+            }
+            var tryP = null, tryG = threat.gap + (SP.tryGain != null ? SP.tryGain : .6);
+            if (!dplan) plans.forEach(function(p) {
+              var c = clearance(me, p, bolts, 55, half), sc = Math.min(c.gap, 3) * 2;
+              if (c.gap > tryG) { tryG = c.gap; tryP = { p: p, c: c, partial: true }; }
+              if (c.gap < .6) return;
+              sc += 1.1 * Math.cos(sd(c.r, bear));
+              if (P) sc -= .02 * hy(wr(P.x - c.x, half), wr(P.y - c.y, half));
+              sc -= .02 * Math.abs(hy(wr(f.x - c.x, half), wr(f.y - c.y, half)) - 30);
+              if (sc > bs) { bs = sc; dplan = { p: p, c: c }; }
+            });
+            // (no clean way out: the one that gets furthest from it, if that is
+            // much further than going on; the margin here is generous, so it
+            // often still clears)
+            if (!dplan && tryP && !SP.noTry) dplan = tryP;
+          }
+          var state = m, out = null, vd = { x: 0, y: 0 }, weave = false, guard = foeCan && dist < reach * 1.15, fireOk = true;
+          // ---- the shot first: the nose goes where the shot is ----
+          var aim = I.aim, aRad = aim ? aim.deg * D2R : null, tol = Math.max(.8, Math.atan2(f.rad * .55, Math.max(dist, 1)) / D2R) * D2R;
+          // (SP.tC: never wider than tC deg, however close. Up close the
+          // target fills more of the view and the margin grew past 20 deg;
+          // in a 29-minute session the pilot's close shots hit 85 of 89 with
+          // the nose under 10 deg off, 10 of 16 at 14-20, 19 of 35 at 20+.)
+          // (SP.tCc: at touch range, under 9, the cap is tCc instead. Over the
+          // recorded duels the pilot's shots from under 8 hit 88% at 10-14 deg
+          // off and 71% at 14-18; against FIGHT OR DIE it touched them loaded,
+          // free and 6-16 deg off 8 times without firing.)
+          if (SP.tC) tol = Math.min(tol, (SP.tCc && dist < 9 ? SP.tCc : SP.tC) * D2R);
+          // (the nose as it will be when the command lands, on the shot now and
+          // still on it 3 ticks on: never a volley that leaves while the nose
+          // swings through them)
+          // (and still on it had the shot left SP.aj ticks early: the press
+          // reaches the server a few ticks either side of when it's meant to,
+          // and a turning nose is that far off. In the recorded duels the
+          // pilot's shots after a turn of 60 deg or more in the last 300 ms
+          // hit 68-73%, the players' 86-96%. The margin is in nose angle, so
+          // the turn speed allowed scales with how wide the target is: about
+          // 0.09 rad a tick at 10, 0.03 at 30.)
+          var aligned = !!aim && Math.abs(sd(me.r, aRad)) * .8 <= tol && Math.abs(sd(me.r + 3 * (me.w || 0), aRad)) * .8 <= tol * 1.3 &&
+            Math.abs(sd(me.r - (SP.aj || 0) * (me.w || 0), aRad)) * .8 <= tol * 1.3 &&
+            (!SP.wG || Math.abs(me.w || 0) < SP.wG || Math.abs(sd(me.r, aRad)) < 5 * D2R);
+          // (SP.tS: not past 10 while the nose has swung more than 40 deg in
+          // the last tS ms. 1.3.30-1.3.32 v YILING and FIGHT OR DIE: shots after
+          // a 90+ deg turn in 300 ms hit 53-67%, 15 deg or less 80-85%; the
+          // slant and slide swing the nose off them and back)
+          var rh = B.rh || (B.rh = []); rh.push({ t: now, r: me.r }); while (rh.length && now - rh[0].t > 600) rh.shift();
+          // (SP.tSo: not while their gun is up and on us: v FIGHT OR DIE
+          // (21:01) it was loaded, nose 2-9 deg on, settled, held because the
+          // nose had swung 72-92 deg in the 0.3 s before, and was shot first
+          // (1084, 1106, 1116, 1223 s). SP.tSw: settled once it turns under
+          // tSw rad a tick, whatever the swing before)
+          if (SP.tS && aligned && dist > 10 && !(SP.tSo && foeCan && fErr < 25) && !(SP.tSw && Math.abs(me.w || 0) < SP.tSw && Math.abs(sd(me.r, aRad)) < tol)) { for (var rk = 0; rk < rh.length; rk++) if (now - rh[rk].t < SP.tS && Math.abs(sd(me.r, rh[rk].r)) > 40 * D2R) { aligned = false; break; } }
+          // the chance it lands: a hull of radius R against a spread that grows
+          // with the flight time and with how well their path has been
+          // predicted lately (perr: miss 0.4 s ahead), 1 - e^(-R^2 / 2 s^2)
+          var pHit = 0;
+          if (aim && aim.hit) {
+            // (coasting, engine off, they go straight: a surer shot)
+            var sg = (.5 + (f.perr != null ? f.perr : 2) * Math.pow(aim.t / .4, 1.3)) * (f.up === false && !(f.stun > 0) ? (SP.coastK || .7) : 1), R = f.rad + .5;
+            // (SP.hbR: the hull's real width across the laser. Over ~2,200
+            // replayed shots a laser passing 2-3 from the centre hit 78% of
+            // side-on hulls and 20% of nose- or tail-on ones (3-4: 25% v 2%):
+            // nose-on it is ~2.2 wide each side, side-on ~3, not rad + .5)
+            if (SP.hbR) R = SP.hbR * (2.3 + .9 * Math.abs(Math.sin(f.r - aim.deg * D2R)));
+            pHit = 1 - Math.exp(-R * R / (2 * sg * sg));
+          }
+          // A person dodges a long shot: in a real duel (recorded) the pilot's
+          // shots from 32 or closer all landed, from 38 on only 8 of 17. Past
+          // ~0.28 s of flight the chance falls to half by 0.45 s (not when
+          // they're stunned for the whole flight).
+          var downAll = aim && aim.hit && f.stun > aim.t * 60;
+          if (aim && aim.hit && !downAll && aim.t > .28) pHit *= Math.max(SP.lsF || .65, 1 - (aim.t - .28) / .17 * .35);
+          if (downAll) pHit = Math.max(pHit, .95);
+          var overcap = E + me.regen * .35 >= cap - .5;
+          var counter = now - B.foeShotAt < 380 && B.foeShotAt > B.lastFire;
+          // closing speed (units a second, + = coming at us)
+          var closing = dist > .01 ? -((f.vx - me.vx) * dx + (f.vy - me.vy) * dy) / dist * 60 : 0;
+          // The full volley as soon as the big gun is ready, if the shot is
+          // good enough for how the fight stands (no spacing shots out).
+          var needP = m === "PRESS" ? .35 : m === "ATTACK" ? .45 : .6;
+          if (f.stun > 0 || counter) needP = Math.min(needP, .25);
+          if (overcap) needP = Math.min(needP, .15);
+          // Out-time them: up close with their gun ready, shoot first: the
+          // knock spoils their shot (the recording: the pilot let a player
+          // shoot first at point blank while it held a full bar)
+          var outTime = dist < 32 && foeGunR && fE >= cost * .9 && !(f.stun > 0);
+          if (outTime) needP = Math.min(needP, .25);
+          // (SP.bLn: both loaded at 15-30, the bar goes down to bLn: in the
+          // players' duel (Wiktor v Noto, 22 min) they fired 54% of the time
+          // there and held 16% (fire +31..+34 over the next 2 s, hold -54);
+          // the pilot held 47% and fired 24%)
+          if (SP.bLn && foeGunR && fE >= cost && dist >= 15 && dist < 30) needP = Math.min(needP, SP.bLn);
+          // Long shots (over ~0.3 s of flight) only when they're sure or free:
+          // they knock little, are easy to dodge, and spend the bar the close
+          // fight needs. Not while they're coming in (keep the shot for when
+          // they arrive) unless the bar is full anyway.
+          var longShot = aim && aim.hit && aim.t > .3 && !downAll;
+          if (longShot) {
+            var tArrive = Math.max(0, dist - 20) / Math.max(8, closing);
+            var backInTime = E - cost + me.regen * tArrive >= cost;
+            // (SP.lsP: in that session its shots from 35 on missed 25 of 80,
+            // and a miss leaves the gun empty as they come in)
+            // (SP.lsO: the bar for a long shot when the bar is full anyway;
+            // v YILING at 19:02, 9 of 13 shots from 35+ missed, several only
+            // because the bar was full)
+            needP = Math.max(needP, overcap ? (SP.lsO || .4) : (SP.lsP || .5));
+            if (!overcap && closing > 12 && dist < 50 && !backInTime) needP = 2;
+          }
+          // (SP.lsE: their gun is empty, so there's no hurry: close in rather
+          // than shoot from past lsE. Spectated NND v ZΣX: the shooters were
+          // 13-15 from the spill when the hit landed, the pilot 25; hit from
+          // far, an empty victim took back 54% of its own spill)
+          if (SP.lsE && !overcap && !downAll && dist > SP.lsE && fE < (f.cost || cost) * .9) needP = 2;
+          // (SP.chH: up close, not into an empty foe charging straight at us.
+          // The knock adds ~13 u/s along the shot to whatever speed they had,
+          // so one coming in at 20 still drifts back over its own spill. Over
+          // the recorded duels, close hits on a foe coming at the shooter: the
+          // shooter took 47% of the spill, the victim 36%; moving away: 70%
+          // v 16%. 49% of the pilot's close hits were on a foe coming at it,
+          // ZΣX's and Noto's 29-31%.)
+          if (SP.chH && aim && aRad != null && dist < 18 && !overcap && !(f.stun > 0) && !foeCan && (f.vx * Math.cos(aRad) + f.vy * Math.sin(aRad)) * 60 < -SP.chH) needP = 2;
+          if (dist < 15 && !(fE >= (f.cost || cost) && !(f.stun > 0))) needP = Math.min(needP, .15);
+          // (SP.dn: deny the pickup. Their gun empty, a fresh spill (under
+          // 1.4 s old) within 14 of them: shoot now on a lower bar, before
+          // they're on it. v FIGHT OR DIE (21:01) with the pilot loaded and
+          // them empty it fired before their first pickup 12 times of 50
+          // (they kept 138 gems) and after it 37 (they kept 2,221); its shot
+          // came at a median 1.34 s, their pickup 1.05 s. Theirs, the other
+          // way round: 27 of 50 before.)
+          if (SP.dn && !(fE >= (f.cost || cost)) && !(f.stun > 0) && (I.gems || []).some(function(g) { return g.age != null && g.age < 1.4 && hy(wr(g.x - f.x, half), wr(g.y - f.y, half)) < 14; })) needP = Math.min(needP, SP.dn);
+          var goodShot = !!(aim && aim.hit) && pHit >= needP;
+          // pre-aim: the nose is on the shot by the time the gun is ready
+          var turnT = aRad != null ? Math.abs(sd(me.r, aRad)) / (me.turn * 60) + .1 : 0, readyT = Math.max(me.gunReadyIn / 1000, (cost - E) / Math.max(1, me.regen));
+          var preAim = goodShot && !(me.stun > 0) && readyT <= turnT + .3;
+          // They're stunned (knocked back: no steering, no shooting). Double
+          // shot when our gun is back before the stun ends: hold the nose on
+          // them and fire the moment it's ready, which stuns them again and
+          // pushes them further. If it won't be back in time, ram them: the
+          // contact keeps them stunned (and spills their gems) while our gun
+          // and energy come back.
+          var foeDown = f.stun > 3 && !(me.stun > 0) && !fArm;
+          // the gem nearest us (within 35, and not nearer them)
+          var gemNear = null, gnd = 1e9;
+          (I.gems || []).forEach(function(g) {
+            var a1 = hy(wr(g.x - me.x, half), wr(g.y - me.y, half)), a2 = hy(wr(g.x - f.x, half), wr(g.y - f.y, half));
+            if (a1 < 35 && a1 < a2 * 1.2 && a1 < gnd) { gnd = a1; gemNear = g; }
+          });
+          var dblSoon = foeDown && E + me.regen * readyT >= cost && readyT <= f.stun / 60 + .06;
+          if (dblSoon) preAim = true;
+          // ---- shot priority: whose big shot comes first ----
+          // (a strong duellist shoots when theirs is ready and, while the other
+          // has the shot, takes gems and waits for their turn: in a recorded
+          // duel one took 106 gems while behind on the shot and 37 while ahead)
+          var fCost = f.cost || cost, fReg = f.regen || me.regen;
+          var foeT = f.stun > 0 && !fArm ? f.stun / 60 + .1 : Math.max(f.gunReadyIn / 1000, (fCost - fE) / Math.max(1, fReg));
+          var myT = me.stun > 0 ? Math.max(readyT, me.stun / 60) : readyT;
+          // (a stunned foe counts too: after our double their stun ends while
+          // our gun is still empty, and their bar is full. In a recorded duel
+          // both sides took ~1.6 hits in the 3 s after landing a double.)
+          // (only when their shot is near: up to 1.2 s it held back for most of
+          // every reload after a trade, and read as passive)
+          var theyLead = foeT + .3 < myT && foeT < .6;
+          // ---- the health race: gems are health ----
+          // In the dueling mod a hit takes the shield first and the rest from
+          // the gems (720 at the start); the gems lost spill where the ship was
+          // hit and a pickup adds its value back; out of gems, the ship dies.
+          // So shield + gems is health, and every gem on the floor is health
+          // for whoever takes it. (A tester: "it had gems beside it, on 30
+          // gems, and went after me.")
+          var myHP = (me.shield || 0) + (me.crystals || 0), fHP = f.crystals > 0 ? (f.shield || 0) + f.crystals : null;
+          var adD = myHP - ((f.shield || 0) + (f.crystals || 0));
+          if (SP.ad) adSettle(B, now, adD);
+          var lethal = fHP != null && fHP <= cost * .95;
+          var heal = null, healV = 0, healW = -1e9;
+          (I.gems || []).forEach(function(g) {
+            var gx = wr(g.x - me.x, half), gy = wr(g.y - me.y, half), a1 = hy(gx, gy); if (a1 > 30) return;
+            var a2 = hy(wr(g.x - f.x, half), wr(g.y - f.y, half)); if (a1 > a2 * .9) return;
+            // (a spilled gem can't be taken for its first ~0.95 s: only ones
+            // that will be ready when we get there)
+            if (g.age != null && g.age + a1 / Math.max(.1, top * 60) < .95) return;
+            // in front of their gun while it is up: not worth the shot
+            var off = Math.abs(sd(Math.atan2(wr(g.y - f.y, half), wr(g.x - f.x, half)), f.r));
+            if (foeT < .4 && off < .45 && a2 < 40) return;
+            var V = 0; (I.gems || []).forEach(function(h) { if (hy(wr(h.x - g.x, half), wr(h.y - g.y, half)) < 7) V += h.v || 1; });
+            var w = V / (a1 + 8);
+            if (w > healW) { healW = w; heal = g; healV = V; }
+          });
+          // Heal when low (under 300 of ~1020) and it's safe: no shot of our
+          // own, and theirs is 0.6 s off or they're far. Wider rules (any gems
+          // worth 8+, or cheap pickups beside us) were tried in the simulator
+          // with the real health model: more time collecting, no more gems,
+          // fewer wins (49-50% v 54% against 1.3.10 over 150 rounds).
+          var lowHP = myHP < 300;
+          // ---- claim the spill ----
+          // In a recorded duel (sisyphus ai v a player, 2-8) the pilot landed
+          // 67 more hits (292 v 225, 86% v 79%) and lost on gems: 10,363 v
+          // 18,673. Of what its hits spilled it took 32% and the player took
+          // back 48%; of what the player's hits spilled the player kept 66%.
+          // The player follows the shot onto the gems (5-9 away when they
+          // can be taken, even after shots from 20-30); the pilot was 17-26
+          // away, firing from range. So: fresh gems (spilled in the last
+          // 2.5 s), worth SP.clV or more, that we reach no later than them
+          // (+SP.clM s): go and take them, shooting on the way when the shot
+          // is there. Not into their loaded gun with ours empty up close.
+          var claimG = null, claimV = 0, claimLead = 0, claimAge = 9;
+          if (SP.cl && (!(me.stun > 0) || SP.spS)) {
+            var topS = Math.max(1, top * 60), claimW = -1e9;
+            // (SP.clA: gems up to clA s old, not only fresh spills; SP.clAll:
+            // a pile's worth counts all its gems. Owner: it took the less
+            // valuable pile; v Noto, 10 of 113 gem runs passed a pile worth
+            // 1.5x+ as near and ours first, e.g. 52 gems 24 away over 82 at 5:
+            // the 82 were more than 2.5 s old, so they didn't count)
+            var clA = SP.clA || 2.5;
+            (I.gems || []).forEach(function(g) {
+              if (g.age == null || g.age > clA) return;
+              var a1 = hy(wr(g.x - me.x, half), wr(g.y - me.y, half)); if (a1 > 45) return;
+              var a2 = hy(wr(g.x - f.x, half), wr(g.y - f.y, half));
+              // (or later than them, if we get there loaded with their gun
+              // still empty: their pickup becomes our close shot)
+              var tMe = a1 / topS + (me.stun > 0 ? me.stun / 60 : 0), tFo = a2 / topS + (f.stun > 0 ? f.stun / 60 : 0);
+              // (SP.spV: a ship flying away from the gems first has to stop
+              // and turn: its speed away, over top speed, times spV seconds)
+              if (SP.spV && a2 > 1) { var fTow = (f.vx * wr(g.x - f.x, half) + f.vy * wr(g.y - f.y, half)) / a2 * 60; if (fTow < 0) tFo += -fTow / topS * SP.spV; }
+              if (tMe > tFo + SP.clM && !(SP.clL && myT < .15 && foeT > tMe + .2)) return;
+              var V = 0; (I.gems || []).forEach(function(h) { if ((SP.clAll || h.age != null && h.age <= clA) && hy(wr(h.x - g.x, half), wr(h.y - g.y, half)) < 7) V += h.v || 1; });
+              if (V < SP.clV) return;
+              var w = V / (a1 + 8);
+              // (SP.clH: the gem we were already going for counts clH times:
+              // in a real duel a third of the nose's reversals came in CLAIM,
+              // 2.8 a second, the pick flipping between gems of a ring)
+              if (SP.clH && B.clPrev && hy(wr(g.x - B.clPrev.x, half), wr(g.y - B.clPrev.y, half)) < 2) w *= SP.clH;
+              if (w > claimW) { claimW = w; claimG = g; claimV = V; claimLead = tFo - tMe; claimAge = g.age; }
+            });
+            B.clPrev = claimG ? { x: claimG.x, y: claimG.y } : null;
+            if (claimG && !(f.stun > 0) && foeT < .2 && !canFire && dist < (SP.clR || 25) && !(SP.clF && claimLead > SP.clF)) claimG = null;
+          }
+          var wantHeal = heal && lowHP && !lethal && !(me.stun > 0) && !canFire && (foeT > .6 || dist > 40);
+          // ---- what to do, by situation (measured on real duels) ----
+          // From 3 recorded duels, every 0.25 s scored by the health swing over
+          // the next 2 s (shield + gems, theirs taken off ours), by who is
+          // loaded, the distance and gems near (avg; players' sample sizes):
+          //  only us loaded:   <15 fire +39..+48, holding the shot -266 (the
+          //                    pilot: -158); 15-30 push in +34 / fire +36;
+          //                    30+ fire +29..44 or collect +27, push in -10..-30
+          //  only them loaded: push in -32..-59 everywhere; 15-30 back off +44 /
+          //                    hold +35
+          //  both empty, gems near: collect +12..+28 (back off / hold / push in
+          //                    -16..-35)
+          //  both loaded:      fire when it's there; 15-30 without a shot back
+          //                    off +14 / hold +10, push in -18
+          var loadedMe = canFire, loadedFoe = (!(f.stun > 0) || fArm) && foeT < .2;
+          // (the "hold tight under 15" row, +207, was tried and left out: at
+          // that range "distance unchanged" is mostly ships tangled after a
+          // bump, so it says little about what to choose, and in the
+          // simulator it cost fights: 44% v 49% won against 1.3.11)
+          var holdTight = false;
+          var holdOff = !SP.nH && loadedFoe && loadedMe && dist >= 15 && dist < 30 && !goodShot && !SP.avoid;
+          // (collecting: in those duels the pilot already took gems about as
+          // often as the players, ~60% of the time with both empty and gems
+          // near; forcing more of it lost fights. Where it differed: it held a
+          // loaded shot up close 28% of the time (players 4%), rammed a loaded
+          // enemy, and fired 9% of the time loaded at range with gems near
+          // (players 30%).)
+
+          // ---- events first: contact knockback, a bump, a dodge ----
+          var contact = dist - rr;
+          // ---- the bump shot: in loaded, the shot at the touch ----
+          // In a recorded duel the player got to contact with their shot ready
+          // 26 times (fired at the touch 20, hit 18), the pilot 4: it fired as
+          // soon as it was loaded, from further out (from 30+: 12 of 22 hit).
+          // With only us loaded and close, it closes in and holds the shot for
+          // the touch: it lands surer, and shot plus bump send them further.
+          // Only while we get there before their gun is back.
+          var fAway = dist > .01 ? (f.vx * dx + f.vy * dy) / dist * 60 : 0, topU = top * 60;
+          var tC = Math.max(0, contact - 2) / Math.max(2, (closing + topU - Math.max(0, fAway)) / 2);
+          // (SP.pnR, owner: they've just missed from mid range and ours is
+          // ready: go in for the body shot from up to pnR away, while we'd
+          // touch them 0.25 s before their gun is back; if they recover in
+          // time this stops holding and it just shoots, keeping the priority)
+          var pnRv = SP.pnR;
+          if (SP.ad && ("," + (SP.adK || "rl,nw,bs,pn,bk") + ",").indexOf(",pn,") >= 0 && foeT > .45 && canFire && !(f.stun > 0) && dist < 35) pnRv = adOn(B, SP, "pn", now, adD) ? (SP.pnR || 22) : 0;
+          var pnOn = !!pnRv && foeT > .45, bsR = pnOn ? Math.max(SP.bs || 0, pnRv) : SP.bs, bsT = pnOn ? Math.min(1.2, foeT - .25) : .6;
+          var bsGo = !!SP.bs && canFire && !(me.stun > 0) && !(f.stun > 0) && !lethal && !SP.avoid && contact > (SP.kbC != null ? SP.kbC : 2.6) && contact < bsR &&
+            tC < bsT && foeT > tC + (B.bsAt && now - B.bsAt < 900 ? .05 : pnOn ? .25 : .2);
+          // (SP.ad bs: against some players the plain shot does better)
+          if (bsGo && !pnOn && adOn(B, SP, "bs", now, adD)) bsGo = false;
+          if (bsGo) { if (!(B.bsAt && now - B.bsAt < 900)) B.bsAt = now; } else B.bsAt = 0;
+          // ---- cut them off on the way to the gems ----
+          // (in a recorded duel, with them running for fresh gems, their gun
+          // empty and ours loaded within 25, the pilot shot every time, from
+          // ~13 away, and never closed in; one of ten was point blank.) When
+          // they're heading for fresh gems with their gun empty, and we get
+          // to those gems no later than them (+0.4 s) loaded: go to the gems
+          // and take the shot at the touch (pushes them off, we're on them).
+          // (SP.cutE: also with our gun empty, if it's back no later than
+          // theirs: then it's a body block, ram them off the pile. In a
+          // recorded duel every gem run the pilot could have cut off came with
+          // its own gun empty, and the player was the one who got there; with
+          // the pilot under 0.4 s behind them it took 11% of those gems, the
+          // player 64%. SP.cutM: how far behind them it may start, s.)
+          var cutG = null;
+          if (SP.cut && (canFire || SP.cutE && myT <= foeT + .1) && !(me.stun > 0) && !(f.stun > 0) && !lethal && !SP.avoid && dist < (SP.cutR || 35)) {
+            // (SP.cuA: older gems count for a cut too, up to cuA s; owner: more
+            // cuts. v Noto at 14:55 it cut 12 times in 4.5 min, 1% of the time)
+            (I.gems || []).forEach(function(g) {
+              if (g.age == null || g.age > (SP.cuA || 2.5)) return;
+              var gx = wr(g.x - f.x, half), gy = wr(g.y - f.y, half), gd = hy(gx, gy); if (gd > 25 || gd < 2) return;
+              var tow = (f.vx * gx + f.vy * gy) / gd * 60; if (tow < (SP.cutT || 8)) return;
+              // (not gems that lie on their way to us: that's a charge, not a gem run)
+              if (Math.abs(sd(Math.atan2(gy, gx), Math.atan2(-dy, -dx))) < (SP.cutA != null ? SP.cutA : 1)) return;
+              var tMe = hy(wr(g.x - me.x, half), wr(g.y - me.y, half)) / Math.max(1, topU), tFo = gd / Math.max(8, tow);
+              if (tMe > tFo + (SP.cutM != null ? SP.cutM : .4) || foeT < tMe + .1) return;
+              if (!cutG || gd < cutG.gd) cutG = { g: g, gd: gd, t: tMe };
+            });
+          }
+          // ---- hold the spill (SP.spH, the Duel Pilot switch) ----
+          // After our hit lands (their stun starts within 0.7 s of our shot),
+          // for 1.6 s: the nose on the gems it spilled and hovering on them,
+          // instead of ramming them while they're down. In the recorded
+          // duels the strong players did this after their body shots: v the
+          // pilot, Noto kept the nose on the spill (52-62%), thrust held, and
+          // took 68-79% of those gems; the pilot, nose-on to them, 38-54%.
+          // The simulator scores the ram higher (its spill races aren't
+          // real enough), so this is a switch to try in real duels.
+          var spillG = null;
+          // (the older adaptive pair, spH and clN, only when SP.adK names them)
+          if (SP.spH || adHas(SP, "spH") || SP.sL) {
+            if (f.stun > 0 && !(B.fStun0 > 0) && now - (B.lastFire || 0) < 700) { B.spAt = now; B.spArm = adHas(SP, "spH") ? adPick(B, "spH", now, adD) : "on"; }
+            B.fStun0 = f.stun;
+            if (B.spAt && now - B.spAt < 1600 && B.spArm === "on") {
+              var sgx = 0, sgy = 0, sgv = 0;
+              (I.gems || []).forEach(function(g) { if (g.age == null || g.age > 1.8) return; var gx = wr(g.x - me.x, half), gy = wr(g.y - me.y, half); if (hy(gx, gy) > 20) return; var v = g.v || 1; sgx += gx * v; sgy += gy * v; sgv += v; });
+              if (sgv >= (SP.clV || 25)) spillG = { x: me.x + sgx / sgv, y: me.y + sgy / sgv, v: sgv };
+            }
+          }
+          // ---- their ram while only they're loaded: out of its line ----
+          // In the recorded duels the pilot took 7 bumps a minute with only the
+          // enemy loaded (the players: ~3), moving into them in 20 of 25. The
+          // bumped ship is stunned twice as long (39 ticks v 20), and the
+          // loaded one shoots it while it can't move: every hit the pilot took
+          // on a stunned hull came 100-270 ms after a bump, and each knocked it
+          // 33-41 units (a first hit: 5-10). So no ramming a loaded enemy;
+          // with them coming in nose on us, sidestep their line (on every
+          // ram it lost to the rusher in the simulator: 31-42% v 49%).
+          var evade = !!SP.ev && loadedFoe && !canFire && !(me.stun > 0) && !SP.avoid && contact > 1.5 && contact < SP.ev && closing > 6 && contact / closing < .7 && contact / closing >= (SP.evT || 0) && (!SP.evA || aimedAt);
+          // ms since our own stun ended (the nose is still swinging back)
+          if (me.stun > 0) B.stunEnd = now;
+          var recov = B.stunEnd > 0 ? now - B.stunEnd : 1e9;
+          if (me.stun > 0 && SP.spS && claimG && claimAge < SP.spS && !loadedFoe) {
+            // (stunned after our body shot: the nose on the spill, not on
+            // them, so we're pointed at the gems when it ends)
+            state = "CLAIM"; gemNear = claimG;
+            why.unshift("stunned " + Math.round(me.stun) + "t: nose on the spill");
+          } else if (me.stun > 0) {
+            state = B.mode;
+            why.unshift("stunned " + Math.round(me.stun) + "t: nose back on them");
+          // (SP.kbC: how near the touch, in units between the hulls; 2.6 until
+          // 1.3.25. Over a 25-minute duel v Noto, Noto's touch shots left
+          // from under 8 (79 to the pilot's 48) and the pilot's from 8-12
+          // (115 to 64): arriving, not touching. At 0.8, in the simulator
+          // with the measured hull: 70-71% v 59-60%, better against all
+          // three opponents and more of each spill taken.)
+          } else if (contact < (SP.kbC != null ? SP.kbC : 2.6) + Math.max(0, closing) * Math.min(.12, (I.lag || .1) * .5) && canFire) {
+            // (early by what we close while the press is on its way: the shot
+            // has to leave at the touch, not after it)
+            state = "KNOCKBACK";
+            why.unshift("contact: shoot now");
+          } else if (threat && (dplan || threat.at < .3) && !(SP.bump && contact < 9 && imminent) && !(canFire && goodShot && aligned)) {
+            // (a good volley ready on the nose goes first: trade, don't flinch)
+            state = "DODGE";
+          } else if (evade) {
+            state = "EVADE";
+            why.unshift("they're loaded and ramming: off their line (" + Math.round(contact / closing * 1000) + " ms to contact)");
+          } else if (SP.kd && loadedFoe && !canFire && myT > foeT + .2 && dist < SP.kd && !(f.stun > 0) && !(me.stun > 0)) {
+            // (SP.kd: our gun empty, theirs loaded, and close: make space. In a
+            // recorded round v MIXCANIX it took 8 of 8 touch shots this way:
+            // the pilot had fired 1-1.8 s before (49-81 energy), sat 6-13
+            // from them, and they charged in loaded at 16-21 a second; from
+            // that close the contact came in under 0.3 s, too soon for the
+            // sidestep. Owner's notes: up close, prone to bumps and knockback.)
+            state = "SPACE";
+            why.unshift("making space: their gun is loaded, ours back in " + Math.round(myT * 1000) + " ms");
+          } else if (SP.sL && claimG && B.spAt && now - B.spAt < SP.sL * 1000 && claimAge < SP.sL + .3 && !(loadedFoe && contact < 6)) {
+            // (SP.sL, from the players: after their clean short hits Wiktor
+            // and Noto stayed on the spill until it could be taken and kept
+            // 76-88% of it; the pilot pressed, shoved, rammed or shot again
+            // in 60% of that time and kept 50-62%. So for sL s after our hit
+            // lands, the spill comes before anything but a dodge or their ram)
+            state = "CLAIM"; gemNear = claimG;
+            why.unshift("on our spill: " + Math.round(claimV) + " gems");
+          } else if (spillG && !(loadedFoe && contact < 6) && (!(SP.spH >= 2) || f.stun > 0 || !loadedFoe && foeT > (SP.spH >= 3 ? .4 : .15))) {
+            state = "SPILL";
+            why.unshift("holding the spill: " + Math.round(spillG.v) + " gems");
+          } else if (cutG) {
+            state = "CUT";
+            why.unshift("cutting them off at the gems: shot at the touch (there in " + Math.round(cutG.t * 1000) + " ms)");
+          } else if (bsGo) {
+            state = "BUMPSHOT";
+            why.unshift("bump shot: in loaded, fire at the touch (there in " + Math.round(tC * 1000) + " ms, their gun " + Math.round(foeT * 1000) + ")");
+          } else if (SP.spP && claimG && claimAge < SP.spP) {
+            // (a fresh spill we can get to first goes before ramming them)
+            state = "CLAIM"; gemNear = claimG;
+            why.unshift("claiming the spill: " + Math.round(claimV) + " gems");
+          } else if (SP.bkC && foeDown && !canFire && !dblSoon && gemNear && (!SP.bkL || theyLead) && (function() {
+              // (SP.bkC, owner: once they've been knocked about enough and we
+              // have no shot left (gun empty, no double shot coming), pick up
+              // the gems rather than keep ramming: a pile of at least bkC
+              // fresh gems by the nearest one, while they're down. SP.bkL:
+              // only when their gun is back first anyway, the next shot theirs)
+              var v = 0; (I.gems || []).forEach(function(h) { if (h.age != null && h.age <= 3 && hy(wr(h.x - gemNear.x, half), wr(h.y - gemNear.y, half)) < 8) v += h.v || 1; });
+              return v >= SP.bkC;
+            })()) {
+            state = "COLLECT";
+            why.unshift("they're down " + Math.round(f.stun) + "t and the spill is big: taking the gems");
+          } else if (foeDown && !canFire && !dblSoon && contact < 8 && (!theyLead || contact < 3) && !SP.avoid && !(gemNear && adOn(B, SP, "bk", now, adD)) &&
+            // (SP.nbS: not when their gun is back by the time their stun ends
+            // (+nbS s): v Noto (12:23, lost 2-5) 11 of his 63 body shots came
+            // right after the pilot rammed him while he was stunned, and 21
+            // within 0.4 s of a bump; the pilot's gun was empty for 60 of them)
+            !(SP.nbS && foeT < f.stun / 60 + SP.nbS)) {
+            state = "BUMP";
+            why.unshift("they're stunned " + Math.round(f.stun) + "t: ram to keep them down");
+          } else if (foeDown && !dblSoon && gemNear && !theyLead) {
+            // knocked back, they can't come for the gems: take them
+            state = "COLLECT";
+            why.unshift("they're knocked back " + Math.round(f.stun) + "t: taking the gems");
+          } else if (claimG) {
+            state = "CLAIM"; gemNear = claimG;
+            why.unshift("claiming the spill: " + Math.round(claimV) + " gems");
+          } else if (SP.dsm && !canFire && !(f.stun > 0) && !(me.stun > 0) && foeT > .03 && foeT < SP.dsm && myT > foeT && contact < (SP.dsmR || 10) &&
+            Math.abs(Math.sin(f.r - Math.atan2(-dy, -dx))) > .6) {
+            // (SP.dsm, owner: disarm. Their gun is back first, within dsm s,
+            // and their side is to us: ram it nose-first. A nose into a
+            // shoulder stunned the shoulder 35-40 ticks and the nose 8-12 in
+            // the recorded duels, so their shot waits and ours comes back.
+            // v YILING (19:02) it was close, empty, with their side to it and
+            // their shot due, and was shot.)
+            state = "BUMP";
+            why.unshift("disarm: their gun back in " + Math.round(foeT * 1000) + " ms, side to us: ram it");
+          } else if (holdTight || holdOff) {
+            state = "HOLD";
+            why.unshift(holdTight ? "they're loaded, we're not, up close: hold tight (backing off or pushing in loses here)" : "both loaded, no shot yet: hold the gap, don't charge into theirs");
+          } else if (wantHeal) {
+            state = "COLLECT"; gemNear = heal;
+            why.unshift((lowHP ? "low on health (" + Math.round(myHP) + "): " : "") + "taking " + Math.round(healV) + " gems" + (fHP != null ? " (health " + Math.round(myHP) + " v " + Math.round(fHP) + ")" : ""));
+          } else if (SP.bump > 1 && contact < 7 && !canFire && !foeDown && !loadedFoe ||
+            (m === "PRESS" || m === "ATTACK" && myT + .1 < foeT) && !SP.avoid && contact < 14 && !canFire && !dblSoon && !theyLead && !loadedFoe ||
+            theyLead && !(f.stun > 0) && !SP.avoid && !canFire && contact < 1.5 && !(loadedFoe && (SP.rmL || adOn(B, SP, "rl", now, adD)))) {
+            // (only when our gun is back no later than theirs: rammed while
+            // they're loaded, we're the one stunned and shot. Already touching
+            // with their shot first: nothing to lose, ram. SP.rmL: not when
+            // their gun is loaded: v ZEX, 3 of his 7 body shots came while the
+            // pilot was ramming him with his gun up.)
+            state = "BUMP";
+            why.unshift(theyLead ? "their shot first and they're on us: ram it off us" : "ram them: our gun is back first");
+          } else if (theyLead && !canFire && m !== "RETREAT" && !(SP.nW || adOn(B, SP, "nw", now, adD))) {
+            // (SP.nW: no waiting, it keeps pressing even with their shot first)
+            // their shot first: don't walk into it; take gems off their nose
+            // and come back when ours is ready
+            state = "WAIT";
+            why.unshift((f.stun > 0 ? "after our shots: they're up in " : "their shot first (") + Math.round(foeT * 1000) + " ms v ours " + Math.round(myT * 1000) + (f.stun > 0 ? ": off their nose, taking gems" : "): taking gems, off their nose"));
+          } else if (reenter) state = "REENTER";
+          // ---- where to be ----
+          if (state === "DODGE") {
+            // ways out, flown ahead: across the bolt either way, forward or
+            // back at an angle, coasting, braking; the one that clears with
+            // room and keeps the nose near them wins; none clears: brace
+            var ba = hb ? hb.a : bear, best = dplan;
+            if (best && (!B.dodge || B.dodge.p !== best.p)) B.dodge = { p: best.p, at: now };
+            if (best) {
+              out = { aim: best.p.aim, up: best.p.up, glide: best.p.glide, side: best.p.side, brake: best.p.brake, coast: best.p.coast };
+              why.unshift(best.p.side ? "side-step (RCS strafe)" : best.p.up ? "side-step " + Math.round(((best.p.aim - ba) / D2R + 540) % 360 - 180) + "°" : best.p.coast ? "coast clear (RCS off)" : "brake clear (RCS on)");
+              fireOk = !!best.p.side;
+            } else {
+              // counter knockback: RCS off, engine off, take it near-parallel:
+              // face the shooter a little off line, or show the back
+              var h1 = ba + PI + .26 * (sd(me.r, ba + PI) >= 0 ? 1 : -1), h2 = ba;
+              out = { aim: Math.abs(sd(me.r, h1)) <= Math.abs(sd(me.r, h2)) + .3 ? h1 : h2, up: false, glide: !!I.rcs, side: 0, coast: 1 };
+              why.unshift("brace: RCS off, nose along the bolt");
+              // (facing the shooter is near-parallel too: the shot back may go)
+              fireOk = I.aim && Math.abs(sd(I.aim.deg * D2R, ba + PI)) < 25 * D2R;
+              if (fireOk) out.aim = I.aim.deg * D2R;
+              state = "DODGE"; B.brace = now;
+            }
+          } else if (state === "WAIT") {
+            // the best gem near us that isn't in front of their gun; none: a
+            // spot ~28 out, well off their nose, on the side we're already on
+            var gw = null, gws = -1e9;
+            (I.gems || []).forEach(function(g) {
+              var a1 = hy(wr(g.x - me.x, half), wr(g.y - me.y, half)); if (a1 > 45) return;
+              var gfx = wr(g.x - f.x, half), gfy = wr(g.y - f.y, half), a2 = hy(gfx, gfy), off = Math.abs(sd(Math.atan2(gfy, gfx), f.r));
+              var sc = -a1 / 10 - (off < .5 && a2 < 40 ? 3 : 0) - (a2 < 12 ? 2 : 0);
+              // (SP.wD: their shot first, so not gems within wD of them: v
+              // FIGHT OR DIE (21:01), empty with them loaded, the pilot moved
+              // toward them 71% of the time (they, the other way round, 51%)
+              // and from 12-45 that cost 0.31-0.47 of their hits a second)
+              if (SP.wD && foeT < .3 && a2 < SP.wD) sc -= SP.wP || 4;
+              if (sc > gws) { gws = sc; gw = g; }
+            });
+            var wx, wy;
+            if (gw) { wx = wr(gw.x - me.x, half); wy = wr(gw.y - me.y, half); }
+            else {
+              var side0 = sd(Math.atan2(-dy, -dx), f.r) >= 0 ? 1 : -1, wa = f.r + side0 * 1.7;
+              wx = wr(f.x + Math.cos(wa) * 28 - me.x, half); wy = wr(f.y + Math.sin(wa) * 28 - me.y, half);
+            }
+            var wl = hy(wx, wy) || 1;
+            wx /= wl; wy /= wl;
+            // (SP.wD: inside wD with their gun up, not closing in: what takes
+            // us toward them is swapped for across)
+            if (SP.wD && foeT < .3 && dist < SP.wD && dist > 8) {
+              var tw = (wx * dx + wy * dy) / Math.max(dist, .01);
+              if (tw > 0) { wx -= tw * dx / dist; wy -= tw * dy / dist; var wl2 = hy(wx, wy); if (wl2 < .2) { var sg2 = sd(Math.atan2(-dy, -dx), f.r) >= 0 ? 1 : -1; wx = -dy / dist * sg2; wy = dx / dist * sg2; } else { wx /= wl2; wy /= wl2; } why.push("not closing in on their loaded gun"); }
+            }
+            // their gun up (or nearly) and their nose on us: not straight
+            // there, across their line first (straight in or out is easy to lead)
+            var fmx = wr(me.x - f.x, half), fmy = wr(me.y - f.y, half), fml = hy(fmx, fmy) || 1, offN = sd(Math.atan2(fmy, fmx), f.r);
+            if (foeT < .3 && Math.abs(offN) < .55) {
+              var sg = offN >= 0 ? 1 : -1, px = -fmy / fml * sg, py = fmx / fml * sg;
+              wx = wx * .5 + px; wy = wy * .5 + py; wl = hy(wx, wy) || 1; wx /= wl; wy /= wl;
+              why.push("across their line");
+            }
+            vd.x = wx * top; vd.y = wy * top;
+          } else if (state === "HOLD") {
+            vd.x = f.vx; vd.y = f.vy;
+            var hmx = wr(me.x - f.x, half), hmy = wr(me.y - f.y, half), hml = hy(hmx, hmy) || 1, hoff = sd(Math.atan2(hmy, hmx), f.r);
+            if (Math.abs(hoff) < .5) { var hs = hoff >= 0 ? 1 : -1; vd.x += -hmy / hml * hs * top * .6; vd.y += hmx / hml * hs * top * .6; why.push("off their nose"); }
+          } else if (state === "SPACE") {
+            // away at an angle, to the side away from their nose (kept 0.6 s),
+            // the tail to them
+            var axx = -dx / Math.max(dist, .01), axy = -dy / Math.max(dist, .01), offK = sd(Math.atan2(-dy, -dx), f.r);
+            if (!(B.kdAt && now - B.kdAt < 600)) { B.kdSide = Math.abs(offK) < .08 ? (B.rnd() < .5 ? -1 : 1) : offK > 0 ? 1 : -1; B.kdAt = now; }
+            var kca = Math.cos(.6), ksa = Math.sin(.6) * B.kdSide, kvx = axx * kca - axy * ksa, kvy = axx * ksa + axy * kca;
+            vd.x = kvx * top; vd.y = kvy * top;
+          } else if (state === "SPILL") {
+            // onto the gems and hover there, nose on them
+            var spx = wr(spillG.x - me.x, half), spy = wr(spillG.y - me.y, half), spl = hy(spx, spy) || 1, spa = Math.atan2(spy, spx);
+            var sps = top * Math.min(1, Math.max(0, (spl - 1.5) / 9));
+            vd.x = spx / spl * sps; vd.y = spy / spl * sps;
+            if (spl > 3) out = { aim: spa, up: Math.abs(sd(me.r, spa)) < 60 * D2R && spl > 4, glide: !!I.rcs, side: 0 };
+          } else if (state === "COLLECT" || state === "CLAIM") {
+            var cx = wr(gemNear.x - me.x, half), cy = wr(gemNear.y - me.y, half);
+            // (SP.rch: a gem is taken from 6.0 away (4,451 pickups in the
+            // recorded duels), and a spill lands as a ring 6-10 round where
+            // the hit was; the players circled 5.5-8 from its middle and took
+            // it all. So: aim up to rch inside the gem, towards the middle of
+            // its pile, not at the gem itself)
+            if (SP.rch) {
+              var pmx = 0, pmy = 0, pmv = 0;
+              (I.gems || []).forEach(function(h) { if (h.age == null || h.age > 2.5) return; var hx = wr(h.x - gemNear.x, half), hyy = wr(h.y - gemNear.y, half); if (hy(hx, hyy) > 16) return; var v = h.v || 1; pmx += hx * v; pmy += hyy * v; pmv += v; });
+              if (pmv) { pmx /= pmv; pmy /= pmv; var pml = hy(pmx, pmy); if (pml > .5) { var sh = Math.min(SP.rch, pml) / pml; cx += pmx * sh; cy += pmy * sh; } }
+            }
+            var cl2 = hy(cx, cy) || 1;
+            // (full speed until close, then ease in: at full speed it ran over
+            // the gems and circled back)
+            // (SP.gF: the floor of that, as a share of top speed; the owner:
+            // keep the thrust on going for gems, the players flew through)
+            var cs = top * Math.min(1, Math.max(SP.gF || .35, cl2 / 12));
+            // (SP.rT: a spilled gem can't be taken for its first ~0.95 s; at
+            // full speed the pilot got onto its spill early, passed over gems
+            // it couldn't take yet and was off them when they could be. After
+            // its clean short hits (Wiktor, Noto, Canim) it was 6-7 from the
+            // pile at 0.4-0.7 s and 9-11 at 1.0-1.5 s, keeping 50-62%; the
+            // players were 5.5-8 at 1.0 s and kept 76-88%. So: arrive as it
+            // ripens, rT of top speed at least)
+            if (SP.rT && gemNear.age != null && gemNear.age < .95 && cl2 > 1) cs = Math.min(cs, Math.max(top * SP.rT, cl2 / Math.max(.05, (.95 - gemNear.age) * 60)));
+            vd.x = cx / cl2 * cs; vd.y = cy / cl2 * cs;
+          } else if (state === "KNOCKBACK") {
+            // point blank: the shot pushes them along our line, out of the
+            // pool. Driving into it (SP.kbT): in the recorded duels a close
+            // shot pushed 12.3 a second with the shooter backing off, 14.1 at
+            // 0-6 a second into it, 16.0 at 6-12 and 17.8 above 12 (~2,000
+            // hits); the pilot's were fired standing still (0-1 a second).
+            out = { aim: bear, up: SP.kbT ? Math.abs(sd(me.r, bear)) < 40 * D2R : false, glide: !!I.rcs, side: 0 };
+          } else if (state === "EVADE") {
+            // across their line and a little back, to the side away from
+            // their nose (a coin flip when it's dead on us), kept 0.7 s
+            var ex = -dx / Math.max(dist, .01), ey = -dy / Math.max(dist, .01), offE = sd(Math.atan2(-dy, -dx), f.r);
+            if (!(B.evAt && now - B.evAt < 700)) { B.evSide = Math.abs(offE) < .08 ? (B.rnd() < .5 ? -1 : 1) : offE > 0 ? 1 : -1; B.evAt = now; }
+            var evb = SP.evB != null ? SP.evB : .5, evx = -ey * B.evSide * .85 + ex * evb, evy = ex * B.evSide * .85 + ey * evb, evl = hy(evx, evy) || 1;
+            vd.x = evx / evl * top; vd.y = evy / evl * top;
+          } else if (state === "CUT") {
+            // to the gems they're heading for, nose on where they'll be
+            var cgx = wr(cutG.g.x - me.x, half), cgy = wr(cutG.g.y - me.y, half), cga = Math.atan2(cgy, cgx);
+            // (SP.cutP: not straight down their line of sight to the gems: a
+            // waypoint off to the side of their path, so we come in from
+            // outside their nose; the last stretch straight. Owner's notes:
+            // Offensive Positioning.)
+            if (SP.cutP && hy(cgx, cgy) > 12) {
+              var fdx = wr(cutG.g.x - f.x, half), fdy = wr(cutG.g.y - f.y, half), fdl = hy(fdx, fdy) || 1, px0 = -fdy / fdl, py0 = fdx / fdl;
+              if (px0 * -cgx + py0 * -cgy < 0) { px0 = -px0; py0 = -py0; }
+              var wpx = cgx + px0 * SP.cutP, wpy = cgy + py0 * SP.cutP; cga = Math.atan2(wpy, wpx);
+            }
+            out = { aim: cga, up: Math.abs(sd(me.r, cga)) < 70 * D2R, glide: false, side: 0 };
+            if (hy(cgx, cgy) < 6) out.aim = bear;
+          } else if (state === "BUMPSHOT") {
+            // straight in where they'll be, nose on them for the shot
+            var lb = lead(me, { x: 0, y: 0 }, 0, f, { x: f.vx, y: f.vy }, 60);
+            out = { aim: lb.a, up: Math.abs(sd(me.r, lb.a)) < 70 * D2R, glide: false, side: 0 };
+          } else if (state === "BUMP") {
+            // full speed into them: contact knocks their nose off us
+            var lv = lead(me, { x: 0, y: 0 }, 0, f, { x: f.vx, y: f.vy }, 60);
+            out = { aim: lv.a, up: Math.abs(sd(me.r, lv.a)) < 95 * D2R, glide: false, side: 0 };
+            fireOk = false;
+          } else {
+            var bestT = null, shove = false;
+            if (state === "PRESS" && !SP.avoid) {
+              // Charge them head-on. With gems about, from the pool side: get
+              // between them and the gems first, then drive straight through
+              // them, so the contact and the point-blank volley send them out
+              // of the pool.
+              bestT = { x: f.x + f.vx * 12, y: f.y + f.vy * 12 }; shove = true;
+              // (in their reach with their shot due, the line in wanders 5-10
+              // either side, switching at odd times: a straight charge is easy
+              // to lead. Any other time it goes straight: weaving all the way
+              // in let a rusher reach us first, 83% -> 60% won)
+              if (dist > 18 && dist < 40 && foeT < .8) {
+                if (!(now < B.jkAt)) { B.jk = (B.rnd() < .5 ? -1 : 1) * (5 + B.rnd() * 5); B.jkAt = now + 350 + B.rnd() * 550; }
+                bestT.x += -Math.sin(bear) * B.jk; bestT.y += Math.cos(bear) * B.jk;
+              }
+              if (P && P.n >= 2 && fpd < P.r + 30) {
+                var pux = wr(P.x - f.x, half), puy = wr(P.y - f.y, half), pul = hy(pux, puy) || 1; pux /= pul; puy /= pul;
+                var poolSide = (-dx * pux - dy * puy) / Math.max(dist, .01);
+                if (poolSide > .45 || dist < rr + 5) why.unshift("shove: driving them out of the pool");
+                else {
+                  var bx = -dx / Math.max(dist, .01), by = -dy / Math.max(dist, .01);
+                  bestT = { x: f.x + pux * (rr + 9) + bx * 7, y: f.y + puy * (rr + 9) + by * 7 };
+                  why.unshift("getting between them and the gems");
+                }
+              } else why.unshift("charging");
+            } else {
+              // a point on a ring round them: the ring by mode; on it, the spot
+              // nearest the pool, off their nose, below them early on, and near us
+              var Dw = state === "RETREAT" ? SP.dwR : state === "PRESS" ? (SP.dwP || SP.dwA) : SP.dwA;
+              var early = now - B.start < 6000 || dist > reach * 1.2;
+              var bt = -1e9;
+              for (var k = 0; k < 24; k++) {
+                var th = k * TAU / 24, tx = f.x + Math.cos(th) * Dw, ty = f.y + Math.sin(th) * Dw, sc2 = 0;
+                var mdx = wr(tx - me.x, half), mdy = wr(ty - me.y, half), md = hy(mdx, mdy);
+                sc2 -= md / 25;
+                if (P && P.n >= 2) {
+                  var pdx = wr(P.x - tx, half), pdy = wr(P.y - ty, half);
+                  sc2 -= (state === "RETREAT" ? .5 : SP.poolW) * Math.max(0, hy(pdx, pdy) - P.r * .6) / 15;
+                  if (state === "PRESS") sc2 += 1.2 * Math.cos(sd(th, Math.atan2(wr(P.y - f.y, half), wr(P.x - f.x, half))));
+                }
+                if (foeCan) sc2 -= 1.3 * Math.max(0, Math.cos(sd(th, f.r)) - .5) * 2;
+                if (early) sc2 += .9 * cl((f.y - ty) / Dw, -1, 1);
+                if (state === "RETREAT") sc2 -= .4 * Math.max(0, Math.cos(sd(th, f.r)));
+                if (sc2 > bt) { bt = sc2; bestT = { x: tx, y: ty }; }
+              }
+            }
+            if (state === "REENTER" && P) {
+              // a curved way back in, from one side, never in a straight line
+              var px = wr(P.x - me.x, half), py = wr(P.y - me.y, half), pl = hy(px, py) || 1, ux = px / pl, uy = py / pl;
+              var bend = pl > P.r + 22 ? (P.r + 10) * B.reSide : 0;
+              bestT = { x: P.x - uy * bend, y: P.y + ux * bend };
+              why.unshift("back to the pool (" + P.n + " gems), curving " + (B.reSide > 0 ? "left" : "right"));
+            }
+            var tx2 = bestT.x, ty2 = bestT.y;
+            if ((!shove || SP.shG) && state !== "RETREAT") {
+              // pick up the gem nearest us that is closer to us than to them
+              // (SP.shG: charging too, gems within shG on the way: v HEAVENLY
+              // 5,683 gems went to him while it charged him, 11 from him and
+              // 19 from it 0.6 s before; charging, it took none in passing)
+              var gt = null, gd = 1e9, gR = shove ? SP.shG : 16;
+              (I.gems || []).forEach(function(g) {
+                var a1 = hy(wr(g.x - me.x, half), wr(g.y - me.y, half)), a2 = hy(wr(g.x - f.x, half), wr(g.y - f.y, half));
+                if (a1 < gR && a1 < a2 * .9 && a1 < gd && (!shove || g.age == null || g.age > .9)) { gd = a1; gt = g; }
+              });
+              if (gt) { tx2 = tx2 * .5 + (me.x + wr(gt.x - me.x, half)) * .5; ty2 = ty2 * .5 + (me.y + wr(gt.y - me.y, half)) * .5; }
+            }
+            var gx = wr(tx2 - me.x, half), gy = wr(ty2 - me.y, half), gl = hy(gx, gy);
+            var spd = shove || state === "REENTER" ? top : Math.min(top, gl * .05 + (state === "PRESS" ? .15 * top : 0));
+            if (gl > .01) { vd.x = gx / gl * spd; vd.y = gy / gl * spd; }
+          }
+          // ---- bump shots: at the touch, or once the bounce has settled ----
+          // In a recorded duel the pilot's shots within 150 ms of a contact hit
+          // 19 of 22 (and 23 of 27 just before it), but 150-400 ms after it only
+          // 5 of 12: by then the knock has turned the nose and the drift. The
+          // other player fired at the touch or waited (400 ms on: 20 of 24).
+          if (contact < 1.2) { if (!(B.cAt > 0)) B.cAt = now; } else if (contact > 4) B.cAt = 0;
+          var cdt = B.cAt > 0 ? now - B.cAt : -1, settling = cdt > 150 && cdt < 400;
+          // (SP.bsS: not while the nose is already on them, within bsS deg and
+          // steady: against FIGHT OR DIE and NO MERCY BOT it touched them
+          // loaded, nose 2-6 deg off, held for the bounce and was rammed or
+          // shot first; shots at a touch with the nose under 8 deg hit 34 of 34)
+          if (settling && SP.bsS && aim && aRad != null && Math.abs(sd(me.r, aRad)) < SP.bsS * D2R && Math.abs(me.w || 0) < .03) settling = false;
+          // ---- the volley ----
+          var fire = false, fwhy = null, wantFace = false, soon = false;
+          var visible = f.visible !== false;
+          if (!fireOk || !canFire) {
+            // (not ready, or the move can't take a shot)
+          } else if (state === "BUMPSHOT") {
+            fwhy = "bump shot: holding it for the touch";
+          } else if (state === "CUT") {
+            if (dist < 9 && goodShot) { wantFace = true; fire = aligned; fwhy = "cut: point blank"; } else fwhy = "cut: holding the shot for the touch";
+          } else if (settling) {
+            wantFace = true; fwhy = "bump: holding the shot till the bounce settles";
+          } else if (state === "KNOCKBACK") {
+            // (and steady: in a recorded duel most of the pilot's close misses
+            // were touch shots fired with the nose 22-42 deg off and turning
+            // 0.08-0.14 rad a tick; same timing margin as the other shots)
+            // (SP.kbL: how far off the nose may be, at least; 20 deg until
+            // 1.3.23. Over three duels the pilot's close shots hit 68 of 68
+            // with the nose under 10 deg off, 19 of 24 at 10-20, 11 of 27 at
+            // 20 and more. At 14 it won 56-57% v 55% in the simulator on two
+            // sets of seeds; holding for a steady nose (kbW, kbS) didn't.)
+            var kbLim = SP.kbL ? Math.max(tol, SP.kbL * D2R) : Math.max(tol, 20 * D2R);
+            fire = Math.abs(sd(me.r, bear)) <= kbLim && (!SP.kbW || Math.abs(me.w || 0) < SP.kbW || Math.abs(sd(me.r, bear)) < 8 * D2R) && (!SP.kbS || Math.abs(sd(me.r - (SP.aj || 0) * (me.w || 0), bear)) <= kbLim && Math.abs(sd(me.r + 3 * (me.w || 0), bear)) <= kbLim * 1.3);
+            // (SP.kbA: beyond kbA between the hulls it takes the ordinary aim
+            // check, nose and swing on the lead: the 14 deg allowance was
+            // set for shots at the touch, ~8 between centres. v Noto on
+            // 1.3.50 (contact shot from 4 apart) 4 of the 8 misses were
+            // these, from 9-12 with the nose 4-22 deg off and turning
+            // 0.06-0.11 rad a tick; over five duels the contact shots that
+            // missed turned 0.08-0.10 a tick, the ones that hit 0.04-0.06)
+            if (SP.kbA && contact > SP.kbA && aim) fire = aligned;
+            wantFace = true; fwhy = "knockback shot";
+          } else if (!visible && !(aim && aim.hit)) {
+            // FOV prefire: where they should be (last seen, pulled by the gems)
+            if (f.seenAgo < 2500 && dist < reach * 1.15 && (overcap || E >= cost * SP.pre)) {
+              var tp = { x: f.x, y: f.y };
+              if (P && P.n >= 2) { tp.x = f.x * .65 + (f.x + wr(P.x - f.x, half)) * .35; tp.y = f.y * .65 + (f.y + wr(P.y - f.y, half)) * .35; }
+              var pl2 = lead(me, { x: me.vx, y: me.vy }, I.shot.k || 1, tp, { x: f.vx, y: f.vy }, S);
+              if (pl2.d < reach * 1.02) {
+                aRad = pl2.a; wantFace = true;
+                fire = Math.abs(sd(me.r, aRad)) * .8 <= 2.5 * D2R; fwhy = "prefire (off screen)";
+              }
+            }
+          } else if (goodShot) {
+            wantFace = true;
+            fwhy = f.stun > 0 ? (now - B.lastFire < 1600 ? "double shot" : "they are stunned: full volley") : outTime && pHit < .35 ? "out-timing their shot" : counter ? "counter-shot after theirs" : overcap ? "energy full" : pHit > .8 ? "clean shot" : "full volley";
+            fire = aligned;
+            // (SP.fMin: keep a reserve: no ordinary shot under fMin energy,
+            // unless they're stunned, it's point blank, the bar is full or
+            // the hit is near certain. In the bullring duels ZEX fired at a
+            // median 113-122 energy and CANIM 104-114, the pilot at 95-104:
+            // its next shot came later)
+            if (fire && SP.fMin && E < SP.fMin && !(f.stun > 0) && !overcap && dist > 12 && pHit < .9) { fire = false; why.push("keeping a reserve (" + Math.round(E) + " of " + SP.fMin + ")"); }
+            // (SP.fR: no ordinary shot from further than fR: the spill lands by
+            // them, not us. v Wiktor (22:31) the pilot landed 57 of its hits
+            // from 25-40 and he took back 43% of what they spilled; he shot
+            // from 12-25 (54 of his) and kept 69% of his. Not when they're
+            // stunned, the bar is full or the shot is near certain.)
+            if (fire && SP.fR && dist > SP.fR && !(f.stun > 0) && !overcap && pHit < .95) { fire = false; why.push("too far: the spill would be theirs (" + Math.round(dist) + ")"); }
+          }
+          // No shot while the nose is swinging fast: in a recorded duel the
+          // misses that went far off were fired turning up to 0.21 rad a tick
+          // with the nose 64-133 deg off (missed shots: turning 0.058 a tick,
+          // hits 0.02). (Holding also when one of theirs was about to land, or
+          // from 0.06 a tick, cost fights in the simulator: 40-44% v 51%.)
+          if (fire && state !== "KNOCKBACK" && Math.abs(me.w || 0) > .09) { fire = false; why.push("steadying the shot"); }
+          // Just out of a stun the nose is still swinging back: in the
+          // recorded duels the pilot fired 33 shots in the first 300 ms after
+          // its stun ended and hit 20 (61%); the player fired 2, the players in
+          // a 25-minute duel once in 15-25 recoveries, waiting until 300 ms
+          // on (90% and more). Wait too, unless they're stunned up close, or it's a
+          // touch shot with the nose already steady on them. (SP.rw was 300
+          // until 1.3.21; a simulator sweep put 500 ahead: 60-61% v 48-54%
+          // against the pilot's own kind on three seed sets, level against
+          // the rusher; 800 won more against its own kind but lost to the
+          // rusher.)
+          if (fire && recov < SP.rw && !(f.stun > 0 && dist < 15) &&
+            (state !== "KNOCKBACK" || Math.abs(me.w || 0) > .09 || Math.abs(sd(me.r, bear)) > tol)) { fire = false; why.push("steadying after the knock (" + Math.round(recov) + " ms)"); }
+          // (SP.sF: our own gun works stunned too: the nose can't be turned,
+          // so it fires when the spin, flown on by the lag, brings it onto
+          // the shot. v HEAVENLY he hit 33 of 85 that way, the pilot fired 14)
+          if (SP.sF && !fire && me.stun > 0 && gunR && E >= cost * .995 && aim && aim.hit && visible) {
+            var sfK = Math.round((I.lag || 0) * 60), sfR = me.r + (me.w || 0) * sfK, sfT = Math.max(tol, Math.atan2(f.rad * .7, Math.max(dist, 1)));
+            if (Math.abs(sd(sfR, aRad)) <= sfT && Math.abs(sd(me.r, aRad)) <= sfT * 1.5) { fire = true; fwhy = "stunned shot: the spin is on them"; }
+          }
+          // (aim first: between shots it moves freely; from just before the
+          // gun is ready the nose is on the shot and it only thrusts that way)
+          // (SP.clN: taking gems, the nose goes to the gems, not onto the next
+          // shot, unless they're loaded and near. Over a 25-minute duel v
+          // Noto, nearer its own spilled gems (9 v 21 away) the pilot thrust
+          // 44% of the time with the nose on the gems 30%, pre-aiming at
+          // them, and took 46% of those gems; Noto in the same spot thrust
+          // 91% and took 64%.)
+          if ((state === "CLAIM" || state === "COLLECT") && B.state !== "CLAIM" && B.state !== "COLLECT") B.clArm = adHas(SP, "clN") ? adPick(B, "clN", now, adD) : SP.clN ? "on" : "off";
+          if ((SP.clN || adHas(SP, "clN")) && B.clArm === "on" && (state === "CLAIM" || state === "COLLECT") && !fire && gemNear && hy(wr(gemNear.x - me.x, half), wr(gemNear.y - me.y, half)) > 3 && !(loadedFoe && dist < (SP.clN > 1 ? SP.clN : 20))) { wantFace = false; preAim = false; }
+          soon = !wantFace && preAim;
+          // ---- tip dodge (SP.tpD) ----
+          // Their gun loaded and on us: the nose or the tail on them, never the
+          // side. Over ~2,200 replayed shots a laser 2-3 off the centre hit
+          // 78% of side-on hulls and 20% of nose- or tail-on ones. Moving
+          // across their line, it thrusts that way and then glides with the
+          // nose swung back on them (RCS), so the slide goes on, the side
+          // doesn't show. (From the owner's notes: Tip Dodge; and re-entering
+          // the pool, never show them the side.)
+          var tipD = !!SP.tpD && !out && loadedFoe && aimedAt && !fire && !wantFace && !(me.stun > 0) && state !== "DODGE" && state !== "KNOCKBACK";
+          if (tipD) {
+            var vda = hy(vd.x, vd.y) > .01 ? Math.atan2(vd.y, vd.x) : me.r, tipA = Math.cos(vda - bear) >= 0 ? bear : bear + PI;
+            if (Math.abs(sd(vda, tipA)) < (SP.tpD > 1 ? SP.tpD : 25) * D2R) tipA = vda;
+            // (SP.tpA/tpV, the owner's angled tip: the nose or tail an angle
+            // off them, up to tpA deg either side, swung slowly (tpV deg a
+            // second) to a new random angle when it gets there, not snapped:
+            // a hull that turns gradually is hard to read)
+            if (SP.tpA) {
+              var TP = B.tpO || (B.tpO = { a: 0, g: 0, at: now });
+              var tdt = Math.min(.1, (now - TP.at) / 1000); TP.at = now;
+              if (Math.abs(TP.g - TP.a) < 1) TP.g = (B.rnd() * 2 - 1) * SP.tpA;
+              TP.a += cl(TP.g - TP.a, -(SP.tpV || 60) * tdt, (SP.tpV || 60) * tdt);
+              tipA += TP.a * D2R;
+            }
+            out = drive(B, I, vd, tipA, { hold: true, guard: guard, bearing: bear });
+            why.push("tip on them: their gun is loaded");
+          }
+          if (!out) {
+            var faceAim = (wantFace || soon) && aRad != null ? aRad : bear;
+            out = drive(B, I, vd, faceAim, { hold: wantFace || soon, guard: guard, bearing: bear });
+            // (SP.gT: going for gems the engine stays on while the nose is
+            // along the way we want to go, at speed: the speed match let it
+            // coast. Players had thrust on 68-82% of the 0.6 s before a
+            // pickup, the pilot 53-56%.)
+            if (SP.gT && (state === "COLLECT" || state === "CLAIM") && !out.up && !out.slow) {
+              var gvA = Math.atan2(vd.y, vd.x);
+              if (hy(vd.x, vd.y) > .5 * top && Math.abs(sd(out.aim, gvA)) < 35 * D2R && Math.abs(sd(me.r, gvA)) < 35 * D2R) out.up = true;
+            }
+            if (soon) why.push(dblSoon ? "double shot: they're stunned " + Math.round(f.stun) + "t, gun back in " + Math.round(readyT * 1000) + " ms" : "pre-aiming: gun ready in " + Math.round(readyT * 1000) + " ms");
+          } else if (wantFace && aRad != null && state !== "DODGE") out.aim = aRad;
+          if (fwhy) why.push(fire ? fwhy : fwhy + " · lining up");
+          // ---- after a knock: coast if the drift helps, otherwise brake or thrust back ----
+          if (me.stun > 0) {
+            out.up = false;
+            out.aim = aRad != null ? aRad : bear;
+            // (SP.spU: the last spU ticks of a stun, thrust held when the nose
+            // is near where we go next, so it bites the moment the stun ends;
+            // to a fresh spill if we can claim it and they're not loaded,
+            // else at them. In a recorded session, knocked back by a body
+            // shot, the players held thrust 50% of the time 0.75 s on and
+            // 72% at 1 s, turned back to their spill and took 38% of it; the
+            // pilot 25% and 43%, and 20%.)
+            if (SP.spU && me.stun <= SP.spU) {
+              var sgA = claimG && claimAge < 2 && !loadedFoe ? Math.atan2(wr(claimG.y - me.y, half), wr(claimG.x - me.x, half)) : bear;
+              out.aim = sgA; out.up = Math.abs(sd(me.r, sgA)) < 75 * D2R;
+            }
+          }
+          // ---- the bait (SP.bt, owner's notes: tip dodge with RCS) ----
+          // Against a player who aims at the cockpit: crossing their line with
+          // their gun loaded, slide nose-first (RCS glide, the nose leading
+          // the drift), so the shot that leads the cockpit crosses ahead of
+          // the hull, where it goes through. Side-on and sliding nose-first,
+          // the players' hit rate on the pilot was ~46% (Noto 13/28, ADRIANA
+          // 9/19, YILING 8/18); Noto's overall ~80%.
+          if (baitOn && out && loadedFoe && !fire && !wantFace && !(me.stun > 0) && dist > 8 && dist < 40 && readyT > .25 &&
+            (state === "EVADE" || state === "WAIT" || state === "RETREAT" || state === "COLLECT" || state === "CLAIM" || state === "REENTER" || state === "HOLD")) {
+            var bvs = hy(me.vx, me.vy) * 60, bva = Math.atan2(me.vy, me.vx);
+            if (bvs > 8 && Math.abs(Math.sin(bva - bear)) > .6) { out.aim = bva; out.up = !I.rcs; out.glide = !!I.rcs; why.push("bait: sliding nose-first (" + BT.f + " of their shots passed ahead of the nose)"); }
+          }
+          B.btInfo = SP.bt ? BT.f + "/" + BT.m + "/" + BT.b + (baitOn ? " BAIT" : "") : "";
+          // ---- the slant (SP.sl, owner: dodge mid/long shots, don't run
+          // straight into them) ----
+          // Coming at them down their line with their gun up and on us: come
+          // in at sl deg off it instead, one side for 0.6-1.1 s, then the
+          // other. In the recorded duels shots from 18-50 hit 85% of hulls
+          // moving under 3 u/s across the bolt and 75% of those over 10; the
+          // pilot's median was 4.4, ZΣX's 7.6. Only while our own gun is a
+          // while off or there's no good shot yet (the nose is back on the
+          // shot before it's ready).
+          // (SP.slG: also when our own gun is up but there's no good shot yet:
+          // charging in nose-on, they shoot first. SP.slW: sitting still in
+          // WAIT/HOLD with their shot on us, slide across at slW deg instead:
+          // in the simulator that's where most of those moments were.)
+          var slOn = SP.sl && out && out.aim != null && loadedFoe && fErr < 20 && !fire && !(me.stun > 0) &&
+            dist >= (SP.slN || 20) && dist < (SP.slF || 50) && (!wantFace && readyT > (SP.slR || .4) || !SP.slQ && !goodShot && (!wantFace || SP.slG));
+          if (slOn && (!B.slS || now > B.slT)) {
+            var latV = -me.vx * Math.sin(bear) + me.vy * Math.cos(bear);
+            B.slS = !B.slS ? (latV >= 0 ? 1 : -1) : -B.slS; B.slT = now + 600 + 500 * B.rnd();
+          }
+          if (slOn && out.up && Math.abs(sd(out.aim, bear)) < 35 * D2R &&
+            (state === "PRESS" || state === "ATTACK" || state === "WAIT" || state === "COLLECT" || state === "CLAIM" || state === "HOLD" || state === "REENTER")) {
+            out.aim = bear + B.slS * SP.sl * D2R; why.push("slant: their gun is up and on us, not straight down their line");
+          } else if (slOn && SP.slW && !out.up && (state === "WAIT" || state === "HOLD") && hy(me.vx, me.vy) * 60 < 14) {
+            out.aim = bear + B.slS * SP.slW * D2R; out.up = true; why.push("slant: not a still target with their shot on us");
+          }
+          // ---- the knock line (SP.kg, owner's idea) ----
+          // Their gun up and on us, ours not ready, fresh gems near: stand
+          // between them and the gems, kg in front of the gems on their line,
+          // RCS off. Their hit adds ~13 u/s along the shot and, gliding, the
+          // drift carries us through the gems (a full ship still takes them:
+          // 164 pickups at 715+ gems in the FIGHT OR DIE duel). Only a trade
+          // worth taking (owner): a shot it can't avoid anyway (inside kgR:
+          // from under 25, 85-90% of shots land) and a pile worth at least kgM.
+          var kgOn = false;
+          if (SP.kg && out && !(me.stun > 0) && loadedFoe && fErr < 25 && !fire && (readyT > .3 || !goodShot) && dist > 8 && dist < (SP.kgR || 35) &&
+            (state === "WAIT" || state === "HOLD" || state === "EVADE" || state === "RETREAT" || state === "COLLECT" || state === "CLAIM")) {
+            var kgx = 0, kgy = 0, kgV = 0;
+            (I.gems || []).forEach(function(g) {
+              if (g.age == null || g.age > 3) return;
+              var gx = wr(g.x - me.x, half), gy = wr(g.y - me.y, half);
+              if (hy(gx, gy) < 16) { kgx += gx * (g.v || 1); kgy += gy * (g.v || 1); kgV += g.v || 1; }
+            });
+            if (kgV >= (SP.kgM || SP.clV || 25)) {
+              kgx /= kgV; kgy /= kgV;
+              var fgx = dx - kgx, fgy = dy - kgy, fgl = hy(fgx, fgy);
+              if (fgl > 6) {
+                var ktx = kgx + fgx / fgl * SP.kg, kty = kgy + fgy / fgl * SP.kg, ktl = hy(ktx, kty);
+                out.aim = ktl > 1.5 ? Math.atan2(kty, ktx) : bear; out.up = ktl > 1.5; kgOn = true; B.kgUntil = now + 900;
+                why.push("knock line: the gems behind us on their shot");
+              }
+            }
+          }
+          // ---- never take a bump side-on while they have the shot ----
+          // (from the owner: bumping with the side of the ship in a high-risk
+          // spot is the biggest taboo in duelling. In the recorded duels a
+          // risky bump on the shoulder stunned that hull 35-40 ticks and the
+          // other 8-12, and it was shot after 70-83% of them.) When their gun
+          // comes back before ours and contact is about to happen, the hull
+          // goes nose-on to them (or back-on, if already turning away) and
+          // stops driving in. A sidestep only starts with time to clear
+          // (SP.evT): moving across their line is side-on.
+          // (only when the paths as they are now still meet: closest pass of
+          // the two hulls under the hull sizes within 0.45 s. Bracing earlier
+          // cut short sidesteps that would have cleared. In the simulator,
+          // with side-on bumps modelled as measured, against the rusher: 43%
+          // won v 29% for 1.3.15, side-on bumps while they're loaded 68 -> 38.)
+          var rvx = (f.vx - me.vx) * 60, rvy = (f.vy - me.vy) * 60, rv2 = rvx * rvx + rvy * rvy;
+          var tCl = rv2 > 1e-6 ? Math.max(0, -(dx * rvx + dy * rvy) / rv2) : 1e9, dCl = hy(dx + rvx * tCl, dy + rvy * tCl);
+          var riskBump = !!SP.sg && !(f.stun > 0) && !(me.stun > 0) && foeT < .35 && foeT + .1 < myT && contact < SP.sg && closing > 2 &&
+            tCl < .45 && dCl < rr + (SP.sgM != null ? SP.sgM : .5) && state !== "KNOCKBACK" && state !== "DODGE" && state !== "BUMPSHOT";
+          if (riskBump && out.aim != null && Math.abs(Math.sin(sd(out.aim, bear))) > .5) {
+            // (whichever is nearer the hull now: tail-on, driving straight
+            // away; or nose-on, engine off so it doesn't drive in)
+            var backOn = Math.abs(sd(me.r, bear)) > PI / 2;
+            var ref = backOn ? bear + PI : bear;
+            out.aim = ref + cl(sd(out.aim, ref), -.26, .26); out.up = backOn; out.side = 0;
+            state = "BRACE"; why.unshift("bump coming while they're loaded: " + (backOn ? "back" : "nose") + " to them, never the side");
+          }
+          // ---- thrust on by default (SP.tA) ----
+          // (owner: keep the engine on unless a stop is needed, e.g. a body
+          // shot; a hull under thrust is harder to hit, and with RCS off it
+          // slides on. The players had thrust on 64-79% of the time up close,
+          // the pilot 57-61%.) Off for contact shots, braces, brake dodges,
+          // settling, stuns and the shot itself; the nose not driven into
+          // their loaded gun up close unless we mean to be on them; the nose
+          // within tAg deg of where we want to go (or there's nowhere to go).
+          if (SP.tA && !out.up && !fire && !(me.stun > 0) && !out.brake && !out.slow &&
+            state !== "KNOCKBACK" && state !== "BUMPSHOT" && state !== "BRACE" && state !== "HOLD" && state !== "DODGE") {
+            var tvl = hy(vd.x, vd.y), tvA = tvl > .01 ? Math.atan2(vd.y, vd.x) : me.r;
+            var intoGun = loadedFoe && dist < 25 && Math.abs(sd(me.r, bear)) < 30 * D2R && state !== "PRESS" && state !== "BUMP" && state !== "CUT" && state !== "ATTACK";
+            if (!intoGun && (tvl < .3 * top || Math.abs(sd(me.r, tvA)) < (SP.tAg || 45) * D2R)) { out.up = true; }
+          }
+          // ---- RCS: a real toggle, as a duellist taps Ctrl, each for a reason ----
+          // Off (glide) is the fighting state: the momentum is kept while the
+          // nose aims, shoots or braces. On (brake) only to stop: a brake
+          // dodge, or settling into the pool out of a fight. Held at least
+          // 1.5 s (a dodge or a brace: 0.3 s).
+          if (I.rcs) {
+            var g = B.glide, urgent = false, rwhy = null;
+            // (SP.rcA: RCS on the whole time. SP.rcK, knocked back: 1 RCS on,
+            // 2 RCS off (the knock carries on), 3 on only while it carries us
+            // away from the pool, off when toward it. Owner's tests.)
+            var rcKn = SP.rcK && me.stun > 0, rcAw = false;
+            if (rcKn && SP.rcK === 3) { var pc = P && P.n ? P : null; rcAw = pc ? (me.vx * wr(pc.x - me.x, half) + me.vy * wr(pc.y - me.y, half)) < 0 : true; }
+            if (SP.rcA) { g = false; urgent = true; rwhy = "RCS on (always)"; }
+            else if (rcKn) { g = SP.rcK === 2 ? true : SP.rcK === 3 ? !rcAw : false; urgent = true; rwhy = g ? "RCS off: the knock carries on" : "RCS on: brake the knock"; }
+            else if (out.brake) { g = false; urgent = true; rwhy = "RCS on: brake dodge"; }
+            else if (out.coast) { g = true; urgent = true; rwhy = "RCS off: brace / coast clear"; }
+            else if (SP.kg && (kgOn || me.stun > 0 && B.kgUntil > now)) { g = true; urgent = true; rwhy = "RCS off: their knock carries us into the gems"; }
+            // Bumps: RCS on going in and while knocked back, so the bounce
+            // bleeds off instead of carrying us out of the pool (gliding, the
+            // knock keeps its whole speed: the pilot drifted away after every
+            // bump in a real duel). Body shots and free movement stay RCS off.
+            else if (state === "BUMP" || me.stun > 0 || contact < 6 && state !== "KNOCKBACK" && state !== "BUMPSHOT" && state !== "CUT" && !fire) { g = false; urgent = true; rwhy = "RCS on: bump, don't drift out of the pool"; }
+            else if (state === "KNOCKBACK" || state === "BUMPSHOT" || state === "CUT" || fire && contact < 10) { g = true; urgent = true; rwhy = "RCS off: body shot"; }
+            else if (out.slow && !weave) { g = false; rwhy = "RCS on: settle in the pool"; }
+            else if (weave || dist < reach * 1.25 || state === "REENTER" || state === "COLLECT" || state === "CLAIM") { g = true; rwhy = "RCS off: free to turn and move unpredictably"; }
+            if (g !== B.glide && now - B.glideAt > (urgent ? 300 : 1500)) { B.glide = g; B.glideAt = now; B.n.toggles++; B.rcsWhy = rwhy; }
+          }
+          out.glide = !!I.rcs && B.glide;
+          // ---- a steadier nose ----
+          // The pilot's nose reversed its turn ~3 times a second; the strong
+          // players in a recorded duel 1.5-1.7. Much of it is noise: their
+          // position is estimated between status packets, which come only when
+          // their keys change, so the aim point jumps. Small heading changes
+          // (under 20 deg) go half way each tick; big turns go straight.
+          // Not while firing, dodging or on a contact shot.
+          if (!fire && state !== "DODGE" && (SP.smK || state !== "KNOCKBACK" && state !== "BUMPSHOT" && state !== "CUT") && state !== "BRACE" && !(me.stun > 0) && out.aim != null && B.aimOut != null) {
+            var dA = sd(out.aim, B.aimOut);
+            if (Math.abs(dA) < 20 * D2R) out.aim = B.aimOut + dA * (SP.smF || .5);
+          }
+          B.aimOut = out.aim;
+          // ---- a steadier engine (SP.uT) ----
+          // Thrust spells last at least uT ms (on or off), except where a
+          // switch is the point: dodging, bracing, a contact shot, firing,
+          // stunned. Recorded up close, the pilot's burns had a median of
+          // 98 ms (60% under 150), the human players' 280: users saw the bot
+          // jitter.
+          var upNow = !!out.up;
+          if (SP.uT && B.upOut != null && upNow !== B.upOut && now - B.upAt < SP.uT && !fire && !(me.stun > 0) &&
+            state !== "DODGE" && state !== "BRACE" && state !== "KNOCKBACK" && state !== "BUMPSHOT") out.up = upNow = B.upOut;
+          if (upNow !== B.upOut) { B.upOut = upNow; B.upAt = now; }
+          if (fire) B.lastFire = now;
+          B.state = state; B.why = why;
+          B.ev = state;
+          return {
+            aim: out.aim, up: !!out.up, glide: !!I.rcs && B.glide, side: out.side || 0, fire: fire, state: state, why: why,
+            info: { bt: B.btInfo, hold: !!(wantFace || soon), weave: weave, style: MU.style, myTag: MU.me, foeTag: MU.foe, E: E, cap: cap, fE: fE, fEx: !!B.fEx, gemLead: gemLead, dist: dist, adv: adv, stun: me.stun || 0, fstun: f.stun || 0, pool: P, rcs: !!I.rcs && B.glide, imminent: imminent, pHit: pHit, needP: needP, al: !!aligned, m: m, threat: threat ? threat.gap : null }
+          };
+        }
+        // The shot at a ship: it flown on in the game's physics (its keys,
+        // `q`), the bolt from our gun (gunFwd ahead of the hull, along the
+        // shot) taking k of our speed; the first meeting, or the closest pass.
+        function aim(me, q0, S, k, gunFwd) {
+          var o = { x: me.x, y: me.y }, res = null, L = life(S);
+          for (var pass = 0; pass < 2; pass++) {
+            var q = copy(q0), best = null, pg = null, prx = 0, pry = 0; res = null;
+            for (var i = 1; i / 60 <= L; i++) {
+              var t = i / 60; phys(q);
+              var rx = q.x - o.x - 60 * k * me.vx * t, ry = q.y - o.y - 60 * k * me.vy * t, gap = hy(rx, ry) - S * (1 - Math.exp(-t / 2));
+              if (gap <= 0) { var fr = pg != null && pg - gap > 0 ? pg / (pg - gap) : 1, ax = prx + (rx - prx) * fr, ay = pry + (ry - pry) * fr; res = { deg: Math.atan2(ay, ax) / D2R, t: t, hit: true, x: q.x, y: q.y }; break; }
+              if (!best || gap < best.gap) best = { gap: gap, deg: Math.atan2(ry, rx) / D2R, t: t, hit: false, x: q.x, y: q.y };
+              pg = gap; prx = rx; pry = ry;
+            }
+            res = res || best;
+            if (!(gunFwd > .3)) break;
+            var a = res.deg * D2R; o = { x: me.x + Math.cos(a) * gunFwd, y: me.y + Math.sin(a) * gunFwd };
+          }
+          return res;
+        }
+        return { create: create, tick: tick, phys: phys, clearance: clearance, boltAt: boltAt, life: life, lead: lead, aim: aim, matchup: matchup, STYLES: STYLES };
+      })();
+      /*}DUELCORE*/
+      // ---- Duel Pilot ----
+      // Flies and fights your Speedster in 1v1 duels (Combat window > DUEL
+      // PILOT, its side panel switch, or its key). Its word goes out the way
+      // the autopilot's does (window.__synDuel.ctl, the same priority, into
+      // the game's own input and through the 90-a-second limit); what it knows
+      // comes from the ship status packets, the Aim Assist's solver and bolt
+      // list, and the game's own ship types (each variant's real specs) and
+      // gems. RCS alone is switched as a person does it: a Ctrl tap the game
+      // handles itself; its words carry the game's own RCS state unchanged.
+      // The decisions are DuelCore's (above), the code the offline duel
+      // simulator runs. Any real mouse or key input of yours takes the ship
+      // back for a second.
+      var DU_KEY = "syn_duel";
+      var DU = { on: false, active: false, paused: false, why: "off", out: null, B: null, pauseUntil: 0, readout: true, warned: false,
+        foe: null, mine: null, theirs: null, foeShots: [], foeLast: 0, fg: { vals: {}, n: 0 }, ctl: null, fireAt: 0, fireBig: 0, fireOn: false,
+        tapAt: 0, tapping: false, taps: 0, n: 0, ring: [] };
+      try { var dsv = JSON.parse(localStorage.getItem(DU_KEY) || "{}"); if (dsv.readout === false) DU.readout = false; if (dsv.warned) DU.warned = true; } catch (e) {}
+      window.__synDuel = DU;
+      DU.core = DuelCore;
+      function duSave() { try { localStorage.setItem(DU_KEY, JSON.stringify({ readout: DU.readout, warned: DU.warned })); } catch (e) {} }
+      // the duel opponent you picked (Combat window > DUEL OPPONENT), by name
+      // so it holds across their respawns; "" = AUTO (the nearest enemy)
+      DU.pick = "";
+      function duName(id) { return String(_aegisNames[id] || "").replace(/^\s+|\s+$/g, ""); }
+      DU.players = function() {
+        var me = own(), mid = me ? me.id : null, now = Date.now(), out = [];
+        for (var id in _synStat) {
+          var st = _synStat[id], nm = duName(id);
+          if (!st || st.id === mid || !nm) continue;
+          var live = st.alive && synAge(st, now) < 2500;
+          out.push({ id: st.id, name: nm, live: live, d: me && live ? Math.round(Math.hypot(wrap(st.x - me.x), wrap(st.y - me.y))) : null });
+        }
+        out.sort(function(a, b) { return (b.live - a.live) || ((a.d == null ? 1e9 : a.d) - (b.d == null ? 1e9 : b.d)) || a.name.localeCompare(b.name); });
+        return out;
+      };
+      // Copy debug: the last ~4 s, newest last
+      DU.debug = function() {
+        var d0 = DU.ring.length ? DU.ring[0].t : 0;
+        return JSON.stringify({ v: (typeof SYNDICATE_UPDATE_LOG !== "undefined" && SYNDICATE_UPDATE_LOG[0] && SYNDICATE_UPDATE_LOG[0].v) || "?", at: new Date().toISOString(), on: DU.on, why: DU.why, pick: DU.pick,
+          ship: DU.mine && { name: DU.mine.name, code: DU.mine.code, S: DU.mine.S, cost: DU.mine.cost }, theirs: DU.theirs && { name: DU.theirs.name, code: DU.theirs.code }, ping: ping(), laserS: A.speed, k: A.k,
+          keys: "t ms · st state · word sent · aim deg · up/fire/glide · me [x,y,nose,energy,gems,stun] · foe [id,x,y,energy,gems,stun] · shot [deg,hit,flight ms,p(hit)%] · dist",
+          ticks: DU.ring.map(function(r) { var c = {}; for (var k in r) c[k] = r[k]; c.t = r.t - d0; return c; }) });
+      };
+      DU.setPick = function(name) { DU.pick = name || ""; DU.foe = null; if (DU.changed) DU.changed(); };
+      // its key (Keybinds > Combat), off and unbound until you set one
+      if (typeof KEYBIND_DEFAULTS === "object" && KEYBIND_DEFAULTS && !KEYBIND_DEFAULTS.duelpilot) KEYBIND_DEFAULTS.duelpilot = { key: "", on: false };
+      window.__synCombatBindsExtra = [ { id: "duelpilot", label: "Duel Pilot on/off (Speedster duels)" } ];
+      // ---- the game's ship types: each variant's real numbers ----
+      function duWorld() {
+        var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110, me = sc && (sc.O1OI0 || sc.ship);
+        if (!w || !me || !Array.isArray(w.ships)) return null;
+        return { g: g, sc: sc, w: w, me: me, tick: typeof w.l11lI === "number" ? w.l11lI : null };
+      }
+      var duCtlOf = new WeakMap();
+      function duCtl(e) {
+        if (!e) return null;
+        if (e.OOl01 && e.OOl01.status) return e.OOl01;
+        var c = duCtlOf.get(e);
+        if (c === undefined) { c = Object.values(e).find(function(o) { return o && o.status && typeof o.status.x === "number" && o.status.id != null; }) || null; duCtlOf.set(e, c); }
+        return c;
+      }
+      function duCtlById(W, id) {
+        if (W.me && W.me.status && W.me.status.id === id) return W.me;
+        for (var i = 0; i < W.w.ships.length; i++) { var c = duCtl(W.w.ships[i]); if (c && c.status && c.status.id === id) return c; }
+        return null;
+      }
+      // A ship's real numbers, from its type and its upgrades as the game
+      // computes them (ShipInstance): top speed, inertia and turn per tick,
+      // energy and shield, and its biggest gun (cost = damage x bolts).
+      function duSpec(c, g) {
+        var ins = c && c.instance, t = c && c.type || ins && ins.type;
+        if (!ins || !t || !(ins.speed > 0)) return null;
+        var sh = t.specs && t.specs.ship || {}, mo = g && g.mode && g.mode.options || {}, L = null;
+        (ins.lasers || []).forEach(function(l) { if (l && l.type && (!L || l.damage * (l.type.number || 1) > L.damage * (L.type.number || 1))) L = l; });
+        if (!L) return null;
+        return { name: String(t.name || "#" + t.code), code: t.code, mass: +sh.mass || 100, top: ins.speed * (+mo.speed_mod || 1), inr: ins.OlIll, turn: ins.Il001, fric: +mo.friction_ratio || 1,
+          genMax: ins.generator_capacity, regen: ins.generator_reload, shieldMax: ins.shield_capacity, cost: L.damage * (L.type.number || 1), mainDmg: L.damage, S: L.speed, rate: +L.type.rate || 1,
+          rad: +t.radius || RAD[t.code] || 3, gunFwd: Math.max(0, -parseFloat(L.type.y) || 0) };
+      }
+      function duSpeedster(sp) { return !!sp && /speedster/i.test(sp.name); }
+      // ---- the dueling mod's official Speedsters, recognised ----
+      // Dueling mod 3.7.2 ships two, both maxed in a duel, with the same guns
+      // (main 84 at speed 230, sides 12 at 130):
+      //   A-Speedster (605, the mod's "NEW"): mass 230, speed 121, rotation 90, accel 135, size 1.6
+      //   Legacy-Speedster (613, "LEGACY"):   mass 175, speed 115, rotation 80, accel 140, size 1.5
+      // A ship is recognised by its name in the mode's ship list (a mod may
+      // renumber them), else by those codes, else by its mass.
+      var DU_OFFICIAL = { 605: { tag: "NEW", name: "A-Speedster", mass: 230 }, 613: { tag: "LEGACY", name: "Legacy-Speedster", mass: 175 } };
+      var duModShips = { w: null, map: {} };
+      function duModShip(code) {
+        var wl = window.__synWelcome;
+        if (duModShips.w !== wl) {
+          duModShips.w = wl; duModShips.map = {};
+          var list = wl && wl.data && wl.data.mode && wl.data.mode.ships;
+          (Array.isArray(list) ? list : []).forEach(function(sj) {
+            try {
+              var o = typeof sj === "string" ? JSON.parse(sj) : sj, c = o && (o.typespec && o.typespec.code || (o.level && o.model ? o.level * 100 + o.model : null));
+              if (c) duModShips.map[c] = { name: o.typespec && o.typespec.name || o.name, mass: o.specs && o.specs.ship && o.specs.ship.mass || o.typespec && o.typespec.specs && o.typespec.specs.ship && o.typespec.specs.ship.mass };
+            } catch (e) {}
+          });
+        }
+        return duModShips.map[code] || null;
+      }
+      // "NEW", "LEGACY" or null (not one of the duel Speedsters)
+      function duKind(code) {
+        var m = duModShip(code), nm = m && m.name || (DU_OFFICIAL[code] && DU_OFFICIAL[code].name) || "";
+        if (!/speedster/i.test(nm)) return null;
+        if (/legacy/i.test(nm)) return "LEGACY";
+        if (m && m.mass && !DU_OFFICIAL[code]) return Math.abs(m.mass - 175) < Math.abs(m.mass - 230) ? "LEGACY" : "NEW";
+        return "NEW";
+      }
+      function duKindName(code) { var m = duModShip(code), k = duKind(code); return (m && m.name || DU_OFFICIAL[code] && DU_OFFICIAL[code].name || "Speedster") + " (" + k + ")"; }
+      DU.kind = duKind;
+      // ---- Legacy or Revamp (the Combat Window's SPEEDSTER pick) ----
+      // The pick sets which Speedster the pilot plays: its tuning, and on a
+      // server whose mod offers it, the ship itself (the dueling mod's own
+      // LEGACY / NEW button, "asLegacy", key 5; each press swaps the two).
+      // ("AUTO", the default: the Speedster you're in, and never a switch)
+      function duPickRaw() { try { var v = localStorage.getItem("AEGIS_duel_kind"); return v === "NEW" || v === "LEGACY" ? v : "AUTO"; } catch (e) { return "AUTO"; } }
+      function duPick(code) { var v = duPickRaw(); return v !== "AUTO" ? v : duKind(code) || "LEGACY"; }
+      DU.kindPick = duPick;
+      // (the tuning was made on the Legacy-Speedster; for the Revamp's own
+      // settings see the update log of the version that set them)
+      // Revamp (A-Speedster both sides, simulator, 1,200 rounds a set v the
+      // 1.3.33 pilot, itself and a fast shooter): only spills worth 40+ (25)
+      // and no side-step off their ram (ev 0; heavier, it takes less knock):
+      // 77.0% and 73.7% won v 69.0% and 71.3%
+      // (1.3.55, overnight sweeps on the Revamp: contact shot from 6 apart
+      // (4), the gem aim 4 inside the ring (3) and a slower last stretch onto
+      // the gems (gF .6): +3.7, 0.0, +4.0, +2.0 points over four fresh sets)
+      // (1.3.56, more aggressive: no waiting off their nose when their shot is
+      // first (nW), leaning to PRESS (adv .5) and a closer stand-off (dwA 28,
+      // 36): +5.7, +7.4, +4.0, +4.7 points over four fresh sets)
+      var DU_REVAMP_TUNE = { clV: 40, ev: 0, kbC: 6, rch: 4, gF: .6, nW: 1, adv: .5, dwA: 28 };
+      // three presses at most, 3 s apart, while the ship is the other duel
+      // Speedster; then it says the server has no switch
+      function duSwitchShip(ms, now) {
+        if (duPickRaw() === "AUTO") { DU.swNote = null; return; }
+        var S = DU.sw || (DU.sw = { n: 0, at: 0, key: "" }), want = duPick(ms.code), have = duKind(ms.code), key = want + ":" + ms.code;
+        if (!have || have === want) { S.n = 0; S.key = key; DU.swNote = null; return; }
+        if (S.key !== key) { S.key = key; S.n = 0; }
+        if (S.n >= 3) { DU.swNote = "you're in the " + (have === "NEW" ? "A-Speedster" : "Legacy-Speedster") + ": this server has no Legacy / Revamp switch"; return; }
+        if (now - S.at < 3000) return;
+        var ws = window.__synGameWS;
+        if (!ws || ws.readyState !== 1) return;
+        S.at = now; S.n++; DU.swNote = "switching to the " + (want === "NEW" ? "A-Speedster" : "Legacy-Speedster");
+        try { ws.send(JSON.stringify({ name: "modemsg", data: { name: "ui_component_clicked", id: "asLegacy" } })); } catch (e) {}
+      }
+      // While Dueling Mode is on: a chip at the top saying which Speedster you
+      // fly and which your opponent flies, and what that matchup asks of you.
+      (function duIdChip() {
+        var el = null, last = "";
+        function show(txt, sub) {
+          if (!el) {
+            el = document.createElement("div"); el.id = "syn-duel-id";
+            el.style.cssText = "position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9990;pointer-events:none;font-family:'JetBrains Mono',monospace;" +
+              "padding:5px 12px 6px;background:rgba(12,15,15,.86);border:1px solid #474551;color:#e2e2e2;text-align:center;line-height:1.35;" +
+              "clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)";
+            document.body.appendChild(el);
+          }
+          var h = '<div style="font-size:10.5px;font-weight:700;letter-spacing:.12em">' + txt + '</div>' + (sub ? '<div style="font-size:9px;letter-spacing:.1em;color:#928f9c">' + sub + "</div>" : "");
+          if (h !== last) { last = h; el.innerHTML = h; }
+          el.style.display = "block";
+        }
+        function hide() { if (el) el.style.display = "none"; }
+        setInterval(function() {
+          try {
+            if (!document.body || !featOn("dueling") || !inGame()) return hide();
+            var mid = myId(), ms = mid != null ? _synStat[mid] : null, now = Date.now();
+            if (!ms || !ms.alive) return hide();
+            var mk = duKind(ms.code);
+            if (!mk) return hide();
+            var fs = duFoe(ms, now), fk = fs ? duKind(fs.code) : null;
+            var col = function(k) { return k === "LEGACY" ? "#ffb066" : "#c6c1ff"; };
+            var txt = 'YOU <span style="color:' + col(mk) + '">' + duKindName(ms.code).toUpperCase() + "</span>" +
+              (fs ? ' &nbsp;VS&nbsp; <span style="color:' + col(fk) + '">' + (fk ? duKindName(fs.code) : (duModShip(fs.code) || {}).name || "#" + fs.code).toUpperCase() + "</span>" : "");
+            var sub = !fs ? "no opponent in view" : !fk ? "they are not in a duel Speedster" : mk === fk ? "mirror match" + (duName(fs.id) ? " · " + duName(fs.id) : "") :
+              mk === "NEW" ? "you're heavier and turn better: bump, shove, knock them out of the pool" : "you're lighter and quicker off the mark: side-step their rams, counter-shoot, stay off their nose";
+            show(txt, sub);
+          } catch (e) { hide(); }
+        }, 300);
+      })();
+      function duRcsMode(g) { var mo = g && g.mode && g.mode.options; return !!(mo && mo.rcs_toggle); }
+      // a ship's status packet flown on to when a word sent now lands, in the
+      // game's own physics with its keys (ours: the word going out)
+      function duState(s, sp, w) {
+        var q = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, w: s.spin || 0, stun: s.stun || 0,
+          aim: (w != null ? w % 4096 % 360 : s.steer || 0) * Math.PI / 180, up: w != null ? (w & 4096) !== 0 : !!s.up, glide: w != null ? (w & 16384) !== 0 : !!s.glide,
+          side: w != null ? (w & 32768 ? 1 : w & 65536 ? -1 : 0) : s.side || 0, top: sp.top, inr: sp.inr, turn: sp.turn, fric: sp.fric, strafe: MODE().strafe };
+        for (var i = 0, n = Math.round(lead(s) * 60); i < n; i++) DuelCore.phys(q);
+        return q;
+      }
+      // their volleys (from the Dodge Assist's feed): what each cost them
+      function duVolley(b) {
+        if (!DU.on || b[1] !== DU.foe) return;
+        var c = 0;
+        for (var o = 8; o + 32 <= b.length; o += 32) c += b[o + 31];
+        if (c > 0) { DU.foeShots.push({ cost: c, at: Date.now() }); DU.foeLast = Date.now(); }
+      }
+      // the gems on the field (the game's own), where they will be when our word lands
+      function duGems(W, H) {
+        var cm = W.sc && W.sc.I0OIO, list = cm && cm.I0OIO, out = [], tick = W.tick;
+        if (!Array.isArray(list)) return out;
+        list.forEach(function(c) {
+          if (!c || typeof c.x !== "number" || c.eater || c.eat_time > 0) return;
+          var k = 1, age = 9;
+          if (tick != null && typeof c.l00Il === "number") { age = (tick - c.l00Il) / 60 + H; k = age > 0 ? 1 - Math.exp(-age) : 0; }
+          out.push({ x: c.x + (c.Ol11O || 0) * k, y: c.y + (c.OO001 || 0) * k, v: +c.points || 1, age: age });
+        });
+        return out;
+      }
+      // never an opponent: spectators and the dueling mod's own bot
+      function duSkip(s) { return s.code === 191 || /^\s*(duel\s*bot|spectat)/i.test(duName(s.id)); }
+      // The opponent: the one you picked, or the nearest live ship that is not
+      // ours or a teammate. A ship whose keys have not changed sends no status
+      // (gliding with RCS off: a second or more), so a state is kept for 2.5 s
+      // by its real age; in a duel mod that puts both players on one team, the
+      // nearest other ship is taken anyway.
+      function duFoe(me, now) {
+        if (DU.pick) {
+          for (var pid in _synStat) {
+            var ps = _synStat[pid];
+            if (ps && ps.alive && ps.id !== me.id && synAge(ps, now) <= 2500 && duName(pid) === DU.pick) return ps;
+          }
+          return null;
+        }
+        var best = null, bd = 1e9, any = null, ad = 1e9;
+        for (var id in _synStat) {
+          var s = _synStat[id];
+          if (!s || !s.alive || s.id === me.id || synAge(s, now) > 2500 || duSkip(s)) continue;
+          var d = Math.hypot(wrap(s.x - me.x), wrap(s.y - me.y)) + (s.inv ? 200 : 0);
+          if (d < ad) { ad = d; any = s; }
+          if (foe(s.id, me.id) && d < bd) { bd = d; best = s; }
+        }
+        return best || any;
+      }
+      // Off screen (no status at all): the radar's spot for them, to close in on
+      function duRadarFoe(me, now) {
+        var best = null, bd = 1e9;
+        for (var id in _aegisShips) {
+          var r = _aegisShips[id], n = +id;
+          if (!r || n === me.id || now - r.ts > 3000 || r.x === 0 && r.y === 0) continue;
+          var nm = duName(n);
+          if (DU.pick ? nm !== DU.pick : /^\s*(duel\s*bot|spectat)/i.test(nm)) continue;
+          var d = Math.hypot(wrap(r.x - me.x), wrap(r.y - me.y));
+          if (d < bd) { bd = d; best = { id: n, x: r.x, y: r.y, d: d, name: nm }; }
+        }
+        return best;
+      }
+      // their energy, exact when the packets show it changing for them
+      function duFoeGen(fs, cap) {
+        var v = fs.gen;
+        if (typeof v !== "number") return null;
+        var F = DU.fg;
+        if (!F.vals[v]) { F.vals[v] = 1; F.n++; }
+        return F.n >= 4 && v <= cap + 1 ? v : null;
+      }
+      // ---- the decision, every 16 ms (from the pump) ----
+      function duTick(now) {
+        DU.active = false; DU.out = null;
+        if (!DU.on) { DU.why = "off"; return null; }
+        if (!inGame()) { DU.why = "waiting for a match"; return null; }
+        var mid = myId(), ms = mid != null ? _synStat[mid] : null;
+        if (!ms || !ms.alive || now - ms.ts > 800) { DU.why = "waiting for your ship"; return null; }
+        var W = duWorld(), msp = W && duSpec(duCtlById(W, mid), W.g);
+        DU.mine = msp;
+        if (!duSpeedster(msp)) { DU.why = "idle: not in a Speedster" + (msp ? " (" + msp.name + ")" : ""); return null; }
+        var fs = duFoe(ms, now);
+        // (the Legacy / Revamp pick: the ship swapped only with no one within 60)
+        if (!fs || Math.hypot(wrap(fs.x - ms.x), wrap(fs.y - ms.y)) > 60) { try { duSwitchShip(ms, now); } catch (e) {} } else if (DU.sw) DU.sw.at = now;
+        if (!fs) {
+          DU.foe = null;
+          // none in view: close in on the radar's spot for them, nose first
+          var rf = duRadarFoe(ms, now), gi0 = gameInput();
+          if (!rf) { DU.why = DU.pick ? "waiting for " + DU.pick + " (not on the radar)" : "idle: no opponent"; return null; }
+          var ra = Math.atan2(wrap(rf.y - ms.y), wrap(rf.x - ms.x));
+          DU.why = "closing in on " + (rf.name || "them") + " (radar, " + Math.round(rf.d) + " away)";
+          DU.active = true;
+          return DU.out = { aim: ra, up: Math.abs(Math.atan2(Math.sin(ra - ms.angle * Math.PI / 180), Math.cos(ra - ms.angle * Math.PI / 180))) < 1.2, fire: false, side: 0,
+            glide: gi0 ? !!gi0.glide : !!ms.glide, state: "SEEK", why: [ DU.why ], info: null };
+        }
+        if (DU.foe !== fs.id) { DU.foe = fs.id; DU.fg = { vals: {}, n: 0 }; DU.foeShots = []; DU.foeLast = 0; DU.B = null; }
+        var fsp = duSpec(duCtlById(W, fs.id), W.g) || msp;
+        DU.theirs = fsp;
+        var gi = gameInput(), pg = ping(), H = pg / 2000;
+        if (!DU.B) { DU.B = DuelCore.create((now & 0x7fffffff) || 7); DU.B.glide = gi ? !!gi.glide : !!ms.glide; }
+        // (RCS as the game has it, if it was switched by hand)
+        if (gi && DU.B.glide !== !!gi.glide && now - DU.B.glideAt > 600) { DU.B.glide = !!gi.glide; DU.B.glideAt = now; }
+        DU.paused = false;
+        var meQ = duState(ms, msp, A.sentWord), fq = duState(fs, fsp, null), meO = own();
+        // the shot: the Aim Assist's solver (ping lead, its model for their path)
+        // (the big gun's real speed: measured from our own volleys, else the mod's ship type)
+        var S = A.speed || msp.S, k = A.kN ? A.k : 1, sol = meO ? shotAt(meO, fs, S, k, true) : null, tr = A.tracks[fs.id];
+        var bolts = [];
+        DG.inc.forEach(function(L) {
+          if (L.dmg < 1) return;
+          var own2 = _synLaserOwner[L.id];
+          if (own2 && own2[0] !== fs.id) return;
+          bolts.push({ x: L.x, y: L.y, a: L.a, S: L.S, vx: L.vx, vy: L.vy, age: (now + pg / 2 - L.t0) / 1000, r: L.r || 0 });
+        });
+        var cam = getActiveCamera(), view = { w: 55, h: 31 };
+        if (cam) { var p0 = worldToScreenPx(cam, ms.x, ms.y, W.g), p1 = worldToScreenPx(cam, ms.x + 10, ms.y, W.g); if (p0 && p1) { var ppu = Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10; if (ppu > .01) view = { w: innerWidth / 2 / ppu, h: innerHeight / 2 / ppu }; } }
+        // (the big gun's reload from the ship's own gun spec: the mod's A- and
+        // Legacy-Speedster fire it once a second; energy is the real limit)
+        var rate = msp.rate || 1, per = 1000 / rate, en = energyAt(), shots = DU.foeShots.splice(0);
+        // A press is a 40 ms pulse. From then until our volley's report comes
+        // back (or ping + 300 ms) the big gun counts as fired and its energy as
+        // spent: held on meanwhile, the side guns came back and fired alone
+        // (15 of the 25 side-only volleys in a recorded duel).
+        // (no volley reported by ping + 160 ms: the press didn't take; the gun
+        // is loaded again for the brain, not counted empty for another 140 ms)
+        var pend = DU.press && !(A.lastBigAt > DU.press.big0) && now - DU.press.at < ping() + 160;
+        if (DU.press && !pend) DU.press = null;
+        var spent = pend && now - DU.press.at >= 40;
+        // (the Combat Window's experimental "Spill first": the fresh spill
+        // before ramming them, as the strong players play it)
+        var duTune = {}; if (duPick(ms.code) === "NEW") for (var rvk in DU_REVAMP_TUNE) duTune[rvk] = DU_REVAMP_TUNE[rvk];
+        try { if (localStorage.getItem("AEGIS_duel_spill") === "1") duTune.spP = 1.2; if (localStorage.getItem("AEGIS_duel_punish") !== "0") duTune.pnR = 22; var nrV = localStorage.getItem("AEGIS_duel_noram2"); if (nrV === "1" || nrV !== "0" && duPick(ms.code) === "NEW") { duTune.rmL = 1; duTune.fSG = 1; } if (localStorage.getItem("AEGIS_duel_adapt_on") === "1") duTune.ad = 1; } catch (e) { duTune.pnR = 22; }
+        var I = {
+          now: now, half: _aegisMapHalf || 1e9, rcs: duRcsMode(W.g), strafe: MODE().strafe, lag: (now - ms.ts + pg) / 1000, tune: duTune,
+          me: { x: meQ.x, y: meQ.y, vx: meQ.vx, vy: meQ.vy, r: meQ.r, w: meQ.w, stun: meQ.stun, top: msp.top, inr: msp.inr, turn: msp.turn, fric: msp.fric, strafe: meQ.strafe,
+            rad: msp.rad, shield: ms.shield, shieldMax: msp.shieldMax, gen: Math.max(0, Math.min(msp.genMax, en != null ? en : ms.gen) - (spent ? msp.cost : 0)), genMax: msp.genMax, regen: msp.regen, crystals: ms.crystals || 0,
+            gunReadyIn: spent ? per : A.lastBigAt ? Math.max(0, per - (now - A.lastBigAt + pg)) : 0, glide: gi ? !!gi.glide : !!ms.glide,
+            ctl: A.sentWord != null ? { aim: A.sentWord % 4096 % 360 * Math.PI / 180, up: (A.sentWord & 4096) !== 0, glide: (A.sentWord & 16384) !== 0, side: A.sentWord & 32768 ? 1 : A.sentWord & 65536 ? -1 : 0 } : null, spec: msp },
+          foe: { x: fq.x, y: fq.y, vx: fq.vx, vy: fq.vy, r: fq.r, stun: fs.stun || 0, shield: fs.shield, shieldMax: fsp.shieldMax, crystals: fs.crystals || 0, rad: fsp.rad,
+            gunReadyIn: DU.foeLast ? Math.max(0, 1000 / (fsp.rate || 1) - (now - DU.foeLast + pg)) : 0, genMax: fsp.genMax, regen: fsp.regen, cost: fsp.cost, genExact: duFoeGen(fs, fsp.genMax),
+            visible: onScreen(fs.x, fs.y), seenAgo: now - fs.ts, perr: tr && tr.n ? tr.e[modelOf(tr)] : null, spec: fsp, up: !!fs.up },
+          foeShots: shots, shot: { cost: msp.cost, S: S, rate: rate, k: k }, aim: sol ? { deg: sol.ideg != null ? sol.ideg : sol.deg, hit: sol.hit, t: sol.t } : null,
+          bolts: bolts, gems: W ? duGems(W, H + .05) : [], view: view
+        };
+        // (what it has learnt against this player: kept per name, saved every 15 s)
+        if (duTune.ad) {
+          if (!DU.adMems) { try { DU.adMems = JSON.parse(localStorage.getItem("AEGIS_duel_adapt") || "{}") || {}; } catch (e) { DU.adMems = {}; } }
+          var adKey = duName(fs.id) || "#" + fs.id, adM = DU.adMems[adKey] || (DU.adMems[adKey] = {});
+          adM.__t = now; I.adMem = adM;
+          if (!DU.adSaved || now - DU.adSaved > 15000) {
+            DU.adSaved = now;
+            try {
+              var names = Object.keys(DU.adMems).sort(function(a, b) { return (DU.adMems[b].__t || 0) - (DU.adMems[a].__t || 0); });
+              names.slice(40).forEach(function(n) { delete DU.adMems[n]; });
+              localStorage.setItem("AEGIS_duel_adapt", JSON.stringify(DU.adMems));
+            } catch (e) {}
+          }
+        }
+        var out = DuelCore.tick(DU.B, I);
+        DU.active = true; DU.out = out; DU.I = I; DU.why = out.state; DU.n++;
+        if (window.__synRecPilot) try { window.__synRecPilot(out); } catch (e) {}
+        return out;
+      }
+      // RCS, as a person switches it: a Ctrl tap (down, up 90 ms later; a tap
+      // toggles, a hold is momentary) that the game's own key handler takes
+      function duTapCtrl(now) {
+        if (DU.tapping || now - DU.tapAt < 300) return;
+        DU.tapping = true; DU.tapAt = now; DU.taps++;
+        function ev(type) {
+          var e = new KeyboardEvent(type, { key: "Control", code: "ControlLeft", bubbles: true, cancelable: true, ctrlKey: type === "keydown" });
+          // (the game reads keyCode, which a made event leaves at 0)
+          try { Object.defineProperty(e, "keyCode", { get: function() { return 17; } }); Object.defineProperty(e, "which", { get: function() { return 17; } }); } catch (x) {}
+          (document.body || document.documentElement).dispatchEvent(e);
+        }
+        ev("keydown");
+        setTimeout(function() { ev("keyup"); DU.tapping = false; }, 90);
+      }
+      // The word: heading, thrust, fire and strafe from the brain; RCS is the
+      // game's own state, carried through as it is.
+      function duWord(out, now) {
+        var deg = ((Math.round(out.aim * 180 / Math.PI) % 360) + 360) % 360;
+        // fire: pressed only while the brain says so (the nose on the shot and
+        // steady). It used to stay pressed until the volley went or 250 ms
+        // passed, whatever the nose did meanwhile: shots left mid-swing.
+        // A press, once begun, is held at least 60 ms (until our volley is
+        // seen sooner): the brain's fire sometimes flickered on for one frame
+        // (median 17 ms), too short for the game to take, and the press was
+        // still booked as a shot, so the gun counted as empty for ~0.4 s. In
+        // a recorded duel 47 of 522 presses fired nothing, several of them
+        // point blank at a contact.
+        var was = DU.fireOn;
+        DU.fireOn = !!out.fire || !!(DU.press && now - DU.press.at < 60 && !(A.lastBigAt > DU.press.big0));
+        if (DU.fireOn && !was && !DU.press) DU.press = { at: now, big0: A.lastBigAt || 0 };
+        // (no strafe from the pilot, even where the mode has it: only what a
+        // player flies with, the owner's call)
+        var side = 0;
+        return deg + (out.up ? 4096 : 0) + (DU.fireOn ? 8192 : 0) + (side > 0 ? 32768 : side < 0 ? 65536 : 0);
+      }
+      function duelWord() {
+        if (!DU.on || !DU.active || DU.paused || DU.ctl == null) return null;
+        var gi = gameInput();
+        return DU.ctl + (gi && gi.glide ? 16384 : 0);
+      }
+      DU.frame = function(now) {
+        var out = null;
+        try { out = duTick(now); } catch (e) { DU.why = "error: " + (e && e.message || e); DU.active = false; out = null; }
+        if (!out) { DU.ctl = null; DU.fireOn = false; return; }
+        DU.ctl = duWord(out, now);
+        // (the last ~4 s, for Copy debug)
+        var I0 = DU.I, nf = out.info;
+        DU.ring.push({ t: now, st: out.state, why: (out.why || []).slice(0, 3).join(" · "), word: DU.ctl, aim: Math.round(out.aim * 573) / 10, up: out.up ? 1 : 0, fire: out.fire ? 1 : 0, glide: out.glide ? 1 : 0,
+          me: I0 && nf ? [ Math.round(I0.me.x * 10) / 10, Math.round(I0.me.y * 10) / 10, Math.round(I0.me.r * 573) / 10, Math.round(nf.E), I0.me.crystals, I0.me.stun ] : null,
+          foe: I0 && nf ? [ DU.foe, Math.round(I0.foe.x * 10) / 10, Math.round(I0.foe.y * 10) / 10, Math.round(nf.fE), I0.foe.crystals, I0.foe.stun ] : null,
+          shot: I0 && I0.aim ? [ Math.round(I0.aim.deg * 10) / 10, I0.aim.hit ? 1 : 0, Math.round(I0.aim.t * 1000), nf ? Math.round(nf.pHit * 100) : null ] : null, dist: nf ? Math.round(nf.dist) : null });
+        if (DU.ring.length > 260) DU.ring.splice(0, DU.ring.length - 240);
+        var gi = gameInput();
+        if (gi && DU.I && DU.I.rcs && !!gi.glide !== !!out.glide) duTapCtrl(now);
+      };
+      function duActive() { return duelWord() != null; }
+      A.duelActive = duActive;
+      // (your mouse and keys no longer take the ship back: only its switch,
+      // its side-panel toggle or its key stop it)
+      function duBindMatch(e) {
+        var kb = window.__aegisGetKeybinds && window.__aegisGetKeybinds(), b = kb && kb.duelpilot;
+        if (!b || !b.on || !b.key) return false;
+        return b.key.length === 1 ? e.key && e.key.toLowerCase() === b.key.toLowerCase() : e.key === b.key;
+      }
+      document.addEventListener("keydown", function(e) {
+        if (e.repeat || !e.isTrusted || e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+        if (duBindMatch(e)) DU.toggle();
+      }, true);
+      // ---- switching it on: a clear warning, every time ----
+      DU.set = function(on) {
+        on = !!on;
+        if (on === DU.on) return;
+        if (on && !DU.warned) { duConfirm(); return; }
+        DU.on = on; DU.B = null; DU.pauseUntil = 0;
+        if (!on) { DU.ctl = null; DU.active = false; DU.fireOn = false; }
+        duBanner(on);
+        DU.changed && DU.changed();
+      };
+      DU.toggle = function() { DU.set(!DU.on); };
+      DU.setReadout = function(v) { DU.readout = !!v; duSave(); DU.changed && DU.changed(); };
+      var DU_CSS = "#syn-duel-ro{position:fixed;left:14px;top:252px;z-index:9991;pointer-events:none;width:300px;padding:1px;background:#474551;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);display:none;font-family:'JetBrains Mono',monospace}" +
+        "#syn-duel-ro .in{background:rgba(12,15,15,.9);clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);padding:8px 10px 9px}" +
+        "#syn-duel-ro .hd{display:flex;align-items:center;justify-content:space-between;font-size:9.5px;font-weight:700;letter-spacing:.16em;color:#c8c4d3;margin-bottom:6px}" +
+        "#syn-duel-ro .tk{display:inline-block;width:7px;height:7px;background:#c6c1ff;clip-path:polygon(50% 0,100% 100%,0 100%);margin-right:7px}" +
+        "#syn-duel-ro .st{font-size:10px;letter-spacing:.14em;padding:2px 7px;border:1px solid #474551;color:#c6c1ff;background:#0c0f0f}" +
+        "#syn-duel-ro .st.hot{color:#2a2279;background:#c6c1ff;border-color:#c6c1ff}#syn-duel-ro .st.warn{color:#2a2279;background:#ffb066;border-color:#ffb066}#syn-duel-ro .st.dim{color:#928f9c}" +
+        "#syn-duel-ro .row{display:grid;grid-template-columns:62px 1fr;gap:6px;font-size:10px;line-height:1.55;color:#e2e2e2}" +
+        "#syn-duel-ro .k{color:#928f9c;letter-spacing:.12em;font-size:8.5px;font-weight:700;padding-top:1px}" +
+        "#syn-duel-ro .bar{position:relative;height:4px;background:#2a2930;margin:5px 0 2px}#syn-duel-ro .bar i{position:absolute;left:0;top:0;bottom:0;background:#c6c1ff}#syn-duel-ro .bar b{position:absolute;top:-2px;width:2px;height:8px;background:#ffb066}" +
+        "#syn-duel-ro .why{margin-top:5px;padding-top:5px;border-top:1px solid #2f2e36;font-size:9.5px;color:#c8c4d3;line-height:1.45}" +
+        "#syn-duel-warn{position:fixed;inset:0;z-index:2147483000;background:rgba(5,6,8,.62);display:flex;align-items:center;justify-content:center}" +
+        "#syn-duel-warn .box{width:420px;max-width:calc(100vw - 32px);padding:1px;background:#ffb066;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}" +
+        "#syn-duel-warn .in{background:#0c0f0f;padding:16px 18px;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);font-family:'JetBrains Mono',monospace;color:#e2e2e2;font-size:11px;line-height:1.6}" +
+        "#syn-duel-warn h3{margin:0 0 8px;font-size:12px;letter-spacing:.18em;color:#ffb066}#syn-duel-warn .bt{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}" +
+        "#syn-duel-warn button{font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.14em;padding:7px 14px;border:1px solid #474551;background:#15181a;color:#c8c4d3;cursor:pointer}" +
+        "#syn-duel-warn button.go{background:#c6c1ff;color:#2a2279;border-color:#c6c1ff}" +
+        "#syn-duel-ban{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:9992;pointer-events:none;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.12em;padding:7px 14px;background:rgba(12,15,15,.92);border:1px solid #ffb066;color:#ffb066;transition:opacity .4s}";
+      function duStyle() { if (document.getElementById("syn-duel-css")) return; var st = document.createElement("style"); st.id = "syn-duel-css"; st.textContent = DU_CSS; (document.head || document.documentElement).appendChild(st); }
+      function duConfirm() {
+        duStyle();
+        if (document.getElementById("syn-duel-warn")) return;
+        var kb = window.__aegisGetKeybinds && window.__aegisGetKeybinds().duelpilot, key = kb && kb.on && kb.key ? kb.key.toUpperCase() : null;
+        var d = document.createElement("div");
+        d.id = "syn-duel-warn";
+        d.innerHTML = '<div class="box"><div class="in"><h3>DUEL PILOT PLAYS FOR YOU</h3>' +
+          'While it is on it flies, aims and fires your Speedster by itself (its controls replace yours, as the Autopilot\'s do; RCS it switches with Ctrl taps, as you would). ' +
+          'It keeps flying until you switch it off: ' + (key ? "press " + key + ", or " : "") + 'use the Combat window or the side panel (your mouse and keys don\'t take over).' +
+          '<div class="bt"><button class="no">CANCEL</button><button class="go">TURN ON</button></div></div></div>';
+        document.body.appendChild(d);
+        d.querySelector(".no").onclick = function() { d.remove(); DU.changed && DU.changed(); };
+        d.querySelector(".go").onclick = function() { d.remove(); DU.warned = true; duSave(); DU.set(true); };
+      }
+      var banT = 0;
+      function duBanner(on) {
+        duStyle();
+        var b = document.getElementById("syn-duel-ban");
+        if (!b) { b = document.createElement("div"); b.id = "syn-duel-ban"; document.body.appendChild(b); }
+        var kb = window.__aegisGetKeybinds && window.__aegisGetKeybinds().duelpilot, key = kb && kb.on && kb.key ? kb.key.toUpperCase() : null;
+        b.textContent = on ? "▲ DUEL PILOT ON · IT PLAYS FOR YOU" + (key ? " · " + key + " = OFF" : " · SWITCH IT OFF IN THE SIDE PANEL") : "DUEL PILOT OFF · THE SHIP IS YOURS";
+        b.style.borderColor = b.style.color = on ? "#ffb066" : "#c6c1ff";
+        b.style.opacity = "1"; b.style.display = "block";
+        clearTimeout(banT);
+        banT = setTimeout(function() { b.style.opacity = "0"; setTimeout(function() { b.style.display = "none"; }, 450); }, on ? 4000 : 1800);
+      }
+      // ---- the on-screen readout ----
+      var ro = null, roAt = 0;
+      function esc2(s) { return String(s).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+      function duReadout(now) {
+        if (now - roAt < 120) return;
+        roAt = now;
+        var show = DU.on && DU.readout && inGame();
+        if (!show) { if (ro) ro.style.display = "none"; return; }
+        duStyle();
+        if (!ro) { ro = document.createElement("div"); ro.id = "syn-duel-ro"; ro.innerHTML = '<div class="in"></div>'; document.body.appendChild(ro); }
+        ro.style.display = "block";
+        // (beside the side panel when it is open, never under it)
+        var hp = document.getElementById("aegis-hud"), hr = hp && getComputedStyle(hp).display !== "none" && getComputedStyle(hp).visibility !== "hidden" ? hp.getBoundingClientRect() : null;
+        var lx = hr && hr.width > 20 && hr.left < 40 ? Math.round(hr.right + 10) : 14;
+        if (ro.__lx !== lx) { ro.__lx = lx; ro.style.left = lx + "px"; }
+        var o = DU.out, I = DU.I, h = '<div class="hd"><span><span class="tk"></span>DUEL PILOT</span>';
+        if (!o || !DU.active || DU.paused || !o.info) {
+          h += '<span class="st ' + (DU.paused ? "warn" : o && DU.active ? "hot" : "dim") + '">' + (DU.paused ? "PAUSED" : o && DU.active ? o.state : "IDLE") + "</span></div>" +
+            '<div class="row"><span class="k">WHY</span><span>' + esc2(DU.why) + "</span></div>";
+          if (DU.mine) h += '<div class="row"><span class="k">SHIP</span><span>' + esc2(DU.mine.name.toUpperCase()) + "</span></div>";
+          ro.firstChild.innerHTML = h;
+          return;
+        }
+        var inf = o.info, cls = o.state === "PRESS" || o.state === "KNOCKBACK" || o.state === "BUMP" || o.state === "BUMPSHOT" || o.state === "CLAIM" || o.state === "CUT" || o.state === "SPILL" ? "hot" : o.state === "RETREAT" || o.state === "DODGE" || o.state === "EVADE" || o.state === "BRACE" || o.state === "SPACE" ? "warn" : "";
+        h += '<span class="st ' + cls + '">' + o.state + "</span></div>";
+        var pf = window.__synPace && window.__synPace();
+        if (pf && (pf.fps < 40 || pf.wps != null && pf.wps < 18)) h += '<div class="row"><span class="k">SLOW</span><span style="color:#ffb27a">game at ' + pf.fps + ' fps · ' + pf.wps + ' controls/s: keep this window visible, efficiency mode off</span></div>';
+        var ef = Math.max(0, Math.min(1, inf.E / inf.cap)), ff = Math.max(0, Math.min(1, inf.fE / (I.foe.genMax || inf.cap))), cm = I.shot.cost / inf.cap;
+        h += '<div class="row"><span class="k">VS</span><span>' + esc2(duName(DU.foe) || "#" + DU.foe) + (DU.pick ? "" : " · auto") + "</span></div>";
+        h += '<div class="row"><span class="k">MATCH</span><span>' + esc2(inf.myTag) + (inf.foeTag !== inf.myTag ? " vs " + esc2(inf.foeTag) : " mirror") + " → " + inf.style + "</span></div>";
+        h += '<div class="row"><span class="k">ENERGY</span><span>' + Math.round(inf.E) + " / " + Math.round(inf.cap) + ' · them ' + (inf.fEx ? "" : "~") + Math.round(inf.fE) + (inf.fEx ? "" : " est") +
+          '<div class="bar"><i style="width:' + (ef * 100).toFixed(0) + '%"></i><b style="left:' + (cm * 100).toFixed(0) + '%"></b></div><div class="bar"><i style="width:' + (ff * 100).toFixed(0) + '%;background:#ff84a8"></i><b style="left:' + (Math.min(1, I.shot.cost / (I.foe.genMax || inf.cap)) * 100).toFixed(0) + '%"></b></div></span></div>';
+        h += '<div class="row"><span class="k">GEMS</span><span>' + (inf.gemLead >= 0 ? "+" : "") + inf.gemLead + " (" + I.me.crystals + " v " + I.foe.crystals + ")" + (inf.pool ? " · pool " + inf.pool.n : "") + "</span></div>";
+        h += '<div class="row"><span class="k">RANGE</span><span>' + Math.round(inf.dist) + " · hit " + Math.round(inf.pHit * 100) + "%" + (inf.imminent ? " · THEIR SHOT IS DUE" : "") + "</span></div>";
+        h += '<div class="row"><span class="k">STUN</span><span>you ' + Math.round(inf.stun) + "t · them " + Math.round(inf.fstun) + "t</span></div>";
+        h += '<div class="row"><span class="k">RCS</span><span>' + (I.rcs ? (inf.rcs ? "OFF (gliding)" : "ON") + (DU.B && DU.B.rcsWhy ? " · " + esc2(DU.B.rcsWhy.replace(/^RCS (on|off): /, "")) : "") : "no toggle in this mode") + "</span></div>";
+        h += '<div class="why">' + o.why.slice(0, 4).map(esc2).join(" · ") + "</div>";
+        ro.firstChild.innerHTML = h;
+      }
+      (function duLoop() { requestAnimationFrame(duLoop); duReadout(Date.now()); })();
+      setInterval(function() { if (document.hidden) duReadout(Date.now()); }, 250);
+      function pilotFight() { var P = window.__synPilot; A.forceLock = P && P.on && P.alive && P.aim && P.fight != null ? P.fight : null; }
+      // Called by the socket hook with every control message the game sends.
+      window.__synAimRewrite = function(d, ws) {
+        var n = +d;
+        if (!(n >= 0) || n !== Math.floor(n) || n >= 262144) return d;
+        A.ws = ws; A.numeric = typeof d === "number";
+        A.flags = n - n % 4096; A.userDeg = n % 4096 % 360; A.userFire = (A.flags & 8192) !== 0;
+        pilotFight();
+        update();
+        var w = finalWord();
+        if (w == null) { A.sentWord = null; return d; }
+        A.sentWord = w; A.sentAt = performance.now();
+        return A.numeric ? w : String(w);
+      };
+      function keyMatch(e) {
+        var kb = window.__aegisGetKeybinds && window.__aegisGetKeybinds(), b = kb && kb.aimassist;
+        if (!b || !b.on || !b.key) return false;
+        return b.key.length === 1 ? e.key && e.key.toLowerCase() === b.key.toLowerCase() : e.key === b.key;
+      }
+      document.addEventListener("keydown", function(e) {
+        if (e.repeat || !inGame() || e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+        if (keyMatch(e)) { A.keyHeld = true; A.snap = true; }
+      }, true);
+      document.addEventListener("keyup", function(e) { if (keyMatch(e)) A.keyHeld = false; }, true);
+      window.addEventListener("blur", function() { A.keyHeld = false; });
+      // Between the game's own messages (it only sends on change) keep the
+      // heading on the moving solution and the trigger where it should be
+      // (at most ~40 times a second, and at least every 0.4 s); hand the
+      // controls back when done.
+      function pump(ev) {
+        // (switched off in the \ panel: the controls go back to the game's own)
+        if (!featOn("aim")) {
+          if (A.sentWord != null) { var uw0 = A.flags != null && A.userDeg != null ? userWord() : statusWord(); if (uw0 != null) rawSend(uw0); }
+          A.sentWord = null; A.flags = null; A.userDeg = null; A.keyHeld = false; A.lock = null; A.engaged = false; DG.plan = null; KB.plan = null;
+          return;
+        }
+        if (DU.on) DU.frame(Date.now());
+        var duel = duelWord() != null && pilotWord() == null;
+        var dodgeOn = C.dodge && (DG.plan || DG.inc.length || inGame()) || C.kb && (KB.plan || inGame());
+        if (A.flags == null && !pilotWord() && !duel && !dodgeOn && A.sentWord == null) return;
+        if (!inGame()) { A.keyHeld = false; A.lock = null; }
+        pilotFight();
+        if (A.flags != null) update();
+        if (duel) { var nT = Date.now(); DG.inc = DG.inc.filter(function(L) { return nT - L.t0 < L.life + 60; }); DG.plan = null; KB.plan = null; }
+        else {
+          try { dodgeTick(ev); } catch (e) { DG.plan = null; }
+          if (!DG.plan) { try { kbTick(); } catch (e) { KB.plan = null; } } else KB.plan = null;
+        }
+        var w = finalWord(), t = performance.now();
+        if (w == null) {
+          if (A.sentWord != null) { var uw = A.flags != null && A.userDeg != null ? userWord() : statusWord(); if (uw != null) rawSend(uw); }
+          A.sentWord = null;
+          return;
+        }
+        if (w !== A.sentWord && (ev || A.tlpDeg != null || t - A.sentAt > 24) || t - A.sentAt > 400) {
+          A.sentWord = w; A.sentAt = t;
+          rawSend(w);
+        }
+      }
+      A.pump = pump;
+      setInterval(function() { pump(false); }, 16);
+
+      // ---- the game's own controls ----
+      // The game keeps the ship's input (angle, up, glide, strafe...) on an
+      // object of its own and predicts our ship from it: the autopilot writes
+      // its word there so what you see matches what the server gets.
+      var GI = { owner: null, key: null, tried: 0 };
+      function gameInput() {
+        var o = GI.owner, v = o && o[GI.key];
+        if (v && "strafe_left" in v && "release_crystal" in v) return v;
+        if (Date.now() - GI.tried < 2000) return null;
+        GI.tried = Date.now(); GI.owner = null;
+        var root = getGS();
+        if (!root) return null;
+        var seen = new Set(), q = [[root, 0]], n = 0;
+        while (q.length && n < 20000) {
+          var it = q.shift(), obj = it[0];
+          for (var key in obj) {
+            if (++n > 20000) break;
+            var x;
+            try { x = obj[key]; } catch (e) { continue; }
+            if (!x || typeof x !== "object" || seen.has(x)) continue;
+            seen.add(x);
+            if (x.nodeType || x.isObject3D || ArrayBuffer.isView(x) || Array.isArray(x) && x.length > 64) continue;
+            // the ship's controller (it sends the word): its input object, not
+            // the status object that carries the same names from the server
+            if ("previous_shoot" in x && "send" in x) {
+              for (var k2 in x) {
+                var v2;
+                try { v2 = x[k2]; } catch (e) { continue; }
+                if (k2 !== "status" && v2 && typeof v2 === "object" && "strafe_left" in v2 && "release_crystal" in v2 && "angle" in v2) { GI.owner = x; GI.key = k2; return v2; }
+              }
+            }
+            if (it[1] < 5) q.push([x, it[1] + 1]);
+          }
+        }
+        return null;
+      }
+      function writeInput(w) {
+        var inp = gameInput();
+        if (!inp) return;
+        var ch = false;
+        function put(k, v) { if (inp[k] !== v) { inp[k] = v; ch = true; } }
+        if (w == null) { put("up", false); put("glide", false); put("strafe_left", false); put("strafe_right", false); }
+        else { put("angle", w % 4096 % 360); put("up", (w & 4096) !== 0); put("glide", (w & 16384) !== 0); put("strafe_left", (w & 32768) !== 0); put("strafe_right", (w & 65536) !== 0); }
+        if (ch && GI.owner) GI.owner.send = true;
+      }
+      // The game's mouse: where the real one is, and (Q held) a dragged one
+      // that glides onto the target and rides on the shot.
+      var drag = { on: false, x: innerWidth / 2, y: innerHeight / 2, real: { x: innerWidth / 2, y: innerHeight / 2 }, t: 0, el: null };
+      A.drag = drag;
+      A.gameInput = gameInput;
+      window.addEventListener("mousemove", function(e) {
+        if (!e.isTrusted) return;
+        drag.real.x = e.clientX; drag.real.y = e.clientY;
+        // while dragging (or the autopilot flies, or a dodge has the ship)
+        // your own mouse does not reach the game
+        if (drag.on || pilotWord() != null || duelWord() != null || DG.plan) e.stopImmediatePropagation();
+      }, true);
+      function gameEl() {
+        if (drag.el && drag.el.isConnected) return drag.el;
+        var best = null, ba = 0;
+        document.querySelectorAll("canvas").forEach(function(c) {
+          if (c.__syn || getComputedStyle(c).pointerEvents === "none") return;
+          var r = c.getBoundingClientRect(), ar = r.width * r.height;
+          if (ar > ba) { ba = ar; best = c; }
+        });
+        return drag.el = best;
+      }
+      function moveGameMouse(x, y) {
+        var el = gameEl();
+        if (el) el.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window }));
+      }
+      var pilotWas = false, dodgeHeld = null, duelWas = false;
+      // How fast the game is really running here: frames a second (the game
+      // draws and sends from its frames) and control words a second. In a
+      // recorded duel the pilot's words went out on a 100 ms beat for the
+      // whole game (10 a second, normally ~30), its hits fell to 58% (86-88%
+      // in other duels) and the enemy landed 87%: the browser was running
+      // that window slowly (efficiency mode, a covered or minimised window).
+      // Shown in the Duel Pilot readout, and in recordings ("perf" lines).
+      var PF = { n: 0, at: 0, fps: 60 };
+      window.__synPace = function() { return { fps: PF.fps, wps: window.__synCtlRate ? window.__synCtlRate() : null, ping: Math.round(ping()) }; };
+      (function inputs() {
+        requestAnimationFrame(inputs);
+        PF.n++; var pfNow = performance.now(); if (pfNow - PF.at >= 1000) { PF.fps = Math.round(PF.n * 1000 / (pfNow - PF.at || 1000)); PF.n = 0; PF.at = pfNow; }
+        var now = performance.now(), dt = Math.min(.1, (now - (drag.t || now)) / 1000);
+        drag.t = now;
+        // autopilot: its word into the game's own input
+        var pw = pilotWord(), dwv = pw == null ? duelWord() : null;
+        if (pw != null) { writeInput(finalWord()); pilotWas = true; }
+        else if (pilotWas) { writeInput(null); pilotWas = false; }
+        // (the Duel Pilot's word carries the game's own RCS state, so writing
+        // it leaves RCS as it is; handing back clears thrust and strafe only)
+        else if (dwv != null) { writeInput(finalWord()); duelWas = true; }
+        else if (duelWas) {
+          duelWas = false;
+          var giD = gameInput();
+          if (giD) { var chD = false; [ "up", "strafe_left", "strafe_right" ].forEach(function(k) { if (giD[k]) { giD[k] = false; chD = true; } }); if (chD && GI.owner) GI.owner.send = true; }
+        }
+        // Dodge Assist takes the ship the way the autopilot does: its word
+        // goes into the game's own controls (the ship on your screen moves
+        // with it) and your keys and mouse are set aside until the bolt has
+        // passed; then what you had is put back
+        else if (DG.plan || KB.plan) {
+          if (!dodgeHeld) { var gi = gameInput(); dodgeHeld = gi ? { angle: gi.angle, up: gi.up, glide: gi.glide, strafe_left: gi.strafe_left, strafe_right: gi.strafe_right } : {}; }
+          writeInput(finalWord());
+        } else if (dodgeHeld) {
+          var gi2 = gameInput();
+          if (gi2) { var ch2 = false; for (var kk in dodgeHeld) if (gi2[kk] !== dodgeHeld[kk]) { gi2[kk] = dodgeHeld[kk]; ch2 = true; } if (ch2 && GI.owner) GI.owner.send = true; }
+          dodgeHeld = null;
+        }
+        // Q drag
+        var L = A.lastSolve, want = C.drag && C.qsnap && A.keyHeld && C.act !== "fire" && A.engaged && L && pw == null && dwv == null && inGame();
+        if (want) {
+          var cam = getActiveCamera(), gs = getGS(), me = own();
+          var op = cam && me && worldToScreenPx(cam, me.x, me.y, gs), ip = cam && worldToScreenPx(cam, L.ix, L.iy, gs);
+          // (3D mode: the game aims from the middle of its top-down view)
+          if (op && window.__synCam3DOn && window.__synCam3DOn()) { var xf3 = getScreenXform(gs); op = xf3 ? { x: xf3.left + xf3.width / 2, y: xf3.top + xf3.height / 2 } : { x: innerWidth / 2, y: innerHeight / 2 }; }
+          if (op && ip) {
+            var R = Math.max(70, Math.hypot(ip.x - op.x, ip.y - op.y)), a = L.deg * Math.PI / 180;
+            var gx = op.x + Math.cos(a) * R, gy = op.y - Math.sin(a) * R;
+            if (!drag.on) { drag.on = true; drag.x = drag.real.x; drag.y = drag.real.y; }
+            var f = 1 - Math.exp(-dt / .05);
+            drag.x += (gx - drag.x) * f; drag.y += (gy - drag.y) * f;
+            moveGameMouse(drag.x, drag.y);
+          }
+        } else if (drag.on) {
+          drag.on = false;
+          moveGameMouse(drag.real.x, drag.real.y);
+        }
+      })();
+
+      // ---- the lock marker, in the Syndicate look ----
+      var cv = document.createElement("canvas");
+      cv.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:999989;display:none";
+      cv.__syn = true;
+      document.body.appendChild(cv);
+      var ctx = cv.getContext("2d"), dpr = 1;
+      function resize() { dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; }
+      resize();
+      addEventListener("resize", resize);
+      var LIL = "198,193,255", HOT = "255,132,168", MONO = "'JetBrains Mono',monospace";
+      function brackets(x, y, r, len, col, w) {
+        ctx.strokeStyle = col; ctx.lineWidth = w || 1.6;
+        for (var i = 0; i < 4; i++) {
+          var sx = i & 1 ? 1 : -1, sy = i & 2 ? 1 : -1;
+          ctx.beginPath();
+          ctx.moveTo(x + sx * r, y + sy * (r - len));
+          ctx.lineTo(x + sx * r, y + sy * r);
+          ctx.lineTo(x + sx * (r - len), y + sy * r);
+          ctx.stroke();
+        }
+      }
+      function diamond(x, y, r, fill, stroke) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+        if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.2; ctx.stroke(); }
+      }
+      // a bevelled tag (the client's clipped-corner plates)
+      function plate(x, y, w, h) {
+        var b = 6;
+        ctx.beginPath();
+        ctx.moveTo(x + b, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + h - b); ctx.lineTo(x + w - b, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + b); ctx.closePath();
+        ctx.fillStyle = "rgba(12,15,15,.78)"; ctx.fill();
+        ctx.strokeStyle = "rgba(" + LIL + ",.35)"; ctx.lineWidth = 1; ctx.stroke();
+      }
+      function scr(cam, gs, x, y) { return worldToScreenPx(cam, x, y, gs); }
+      (function loop() {
+        requestAnimationFrame(loop);
+        var now = Date.now(), show = C.marker && inGame() && (A.lock != null || A.cand != null) && (active() || now < A.graceUntil || A.forced);
+        if (!show) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
+        var gs = getGS(), cam = getActiveCamera();
+        if (!cam) return;
+        cv.style.display = "block";
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, innerWidth, innerHeight);
+        var tms = performance.now(), live = active();
+        ctx.save();
+        ctx.lineCap = "square";
+        // acquiring: brackets close in as the confirm time runs, with a ring
+        if (A.cand != null && _synStat[A.cand]) {
+          var cs = _synStat[A.cand], cp = scr(cam, gs, cs.x, cs.y);
+          if (cp) {
+            var pr = C.confirm > 0 ? Math.min(1, (now - A.candSince) / C.confirm) : 1, rr = 30 - 10 * pr, ring = rr * 1.42 + 6;
+            brackets(cp.x, cp.y, rr, 7, "rgba(" + LIL + "," + (.35 + .5 * pr) + ")", 1.3);
+            ctx.strokeStyle = "rgba(" + LIL + ",.14)"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, ring, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = "rgba(" + LIL + ",.9)";
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, ring, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2); ctx.stroke();
+            ctx.font = "700 8px " + MONO; ctx.fillStyle = "rgba(" + LIL + ",.8)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillText("LOCKING " + Math.round(pr * 100) + "%", cp.x, cp.y + ring + 10);
+            ctx.textAlign = "left";
+          }
+        }
+        var Ls = A.lock != null ? _synStat[A.lock] : null, sol = A.lastSolve;
+        if (Ls) {
+          var lp = scr(cam, gs, Ls.x, Ls.y);
+          if (lp) {
+            var firing = live && A.fire, onT = sol && sol.hit && sol.aligned, col = firing ? "255,255,255" : onT ? HOT : LIL;
+            var rk = 20 + Math.sin(tms / 260) * 1.2;
+            ctx.shadowColor = "rgba(" + col + ",.8)"; ctx.shadowBlur = firing ? 14 : 6;
+            brackets(lp.x, lp.y, rk, 8, "rgba(" + col + ",.95)", 2);
+            ctx.shadowBlur = 0;
+            // ticks on the axes, slowly turning
+            ctx.strokeStyle = "rgba(" + col + ",.45)"; ctx.lineWidth = 1;
+            for (var q = 0; q < 4; q++) {
+              var a = q * Math.PI / 2 + tms / 1400;
+              ctx.beginPath(); ctx.moveTo(lp.x + Math.cos(a) * (rk + 5), lp.y + Math.sin(a) * (rk + 5)); ctx.lineTo(lp.x + Math.cos(a) * (rk + 10), lp.y + Math.sin(a) * (rk + 10)); ctx.stroke();
+            }
+            diamond(lp.x, lp.y, 2.2, "rgba(" + col + ",.9)");
+            // the tag: state, name, range, and the charge for the big shot
+            var nm = String(_aegisNames[A.lock] || "#" + A.lock).replace(/^\s+|\s+$/g, "").slice(0, 16).toUpperCase();
+            var me = own(), dist = me ? Math.round(Math.hypot(wrap(Ls.x - me.x), wrap(Ls.y - me.y))) : 0;
+            var state = !sol ? "LOCKED" : sol.target !== A.lock ? "OUT OF REACH · SWITCHED" : !sol.hit ? "OUT OF REACH" : firing ? "FIRING" : onT ? "ON TARGET" : "TRACKING";
+            var tx = lp.x + rk + 14, ty = lp.y - rk - 6, nd = need(), en = energyAt(), big = C.autofire === "big" && nd > 0;
+            ctx.font = "700 9px " + MONO;
+            var w = Math.max(ctx.measureText(state).width, ctx.measureText(nm + "  " + dist).width + 4) + 22, h = big ? 44 : 34;
+            if (tx + w > innerWidth - 8) tx = lp.x - rk - 14 - w;
+            plate(tx, ty, w, h);
+            ctx.fillStyle = "rgba(" + col + ",1)"; ctx.fillRect(tx + 7, ty + 9, 3, 3);
+            ctx.fillStyle = "rgba(" + col + ",.95)"; ctx.textBaseline = "middle";
+            ctx.fillText(state, tx + 15, ty + 11);
+            ctx.font = "600 10px " + MONO; ctx.fillStyle = "#e2e2e2";
+            ctx.fillText(nm, tx + 8, ty + 24);
+            ctx.fillStyle = "rgba(" + LIL + ",.6)"; ctx.textAlign = "right";
+            ctx.fillText(String(dist), tx + w - 7, ty + 24); ctx.textAlign = "left";
+            if (big) {
+              var f = en == null ? 0 : Math.max(0, Math.min(1, en / nd)), bw = w - 16;
+              ctx.fillStyle = "rgba(" + LIL + ",.15)"; ctx.fillRect(tx + 8, ty + 34, bw, 3);
+              ctx.fillStyle = f >= 1 ? "rgba(" + HOT + ",1)" : "rgba(" + LIL + ",.85)"; ctx.fillRect(tx + 8, ty + 34, bw * f, 3);
+            }
+            // leader line from the tag to the brackets
+            ctx.strokeStyle = "rgba(" + LIL + ",.3)"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(tx < lp.x ? tx + w : tx, ty + h / 2); ctx.lineTo(lp.x + (tx < lp.x ? -rk : rk), lp.y - rk + 4); ctx.stroke();
+          }
+        }
+        // where the shot meets its ship (the lock, or the one shot meanwhile)
+        if (sol) {
+          var ss = _synStat[sol.target], sp = ss && scr(cam, gs, ss.x, ss.y), ip = scr(cam, gs, sol.ix, sol.iy);
+          if (sol.target !== A.lock && sp) brackets(sp.x, sp.y, 13, 5, "rgba(" + HOT + ",.9)", 1.5);
+          if (sp && ip) {
+            var c2 = sol.hit ? HOT : LIL;
+            ctx.setLineDash([2, 4]); ctx.strokeStyle = "rgba(" + c2 + ",.55)"; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(sp.x, sp.y); ctx.lineTo(ip.x, ip.y); ctx.stroke(); ctx.setLineDash([]);
+            diamond(ip.x, ip.y, 4.5, sol.hit ? "rgba(" + c2 + ",.25)" : null, "rgba(" + c2 + ",.95)");
+            diamond(ip.x, ip.y, 1.4, "rgba(255,255,255,.9)");
+          }
+        }
+        ctx.restore();
+      })();
+    })();
+    (function radarZoomFeature() {
+      var NATIVE = null, TARGET = 1;
+      window.__AEGIS_RADAR_UNIFORM__ = {
+        value: 4
+      };
+      var patchedShader = false;
+      var iv = setInterval(function() {
+        if (patchedShader || !window.THREE || !window.THREE.ShaderMaterial) return;
+        if (window.THREE.ShaderMaterial.__aegisRadarZoom) {
+          patchedShader = true;
+          clearInterval(iv);
+          return;
+        }
+        var Orig = window.THREE.ShaderMaterial;
+        function Patched(params) {
+          try {
+            if (params && params.vertexShader) {
+              var vs = params.vertexShader;
+              var sm = vs.match(/(\w+)\.xy\s*\*=\s*([\d.]+)\s*;/);
+              var hasClamp = sm && vs.indexOf("clamp(" + sm[1] + ".xy") >= 0;
+              if (sm && hasClamp) {
+                var V = sm[1];
+                params.vertexShader = "uniform float uRadarZoom;\n" + vs.replace(new RegExp(V + "\\.xy\\s*\\*=\\s*[\\d.]+\\s*;"), V + ".xy *= uRadarZoom;").replace(new RegExp("clamp\\(" + V + "\\.xy,-\\.?\\d*\\.?\\d+,\\.?\\d*\\.?\\d+\\)"), "clamp(" + V + ".xy,-.999,.999)");
+                params.uniforms = params.uniforms || {};
+                params.uniforms.uRadarZoom = window.__AEGIS_RADAR_UNIFORM__;
+              }
+            }
+          } catch (e) {}
+          return new Orig(params);
+        }
+        Patched.prototype = Orig.prototype;
+        Object.setPrototypeOf(Patched, Orig);
+        Patched.__aegisRadarZoom = true;
+        window.THREE.ShaderMaterial = Patched;
+        patchedShader = true;
+        clearInterval(iv);
+      }, 100);
+      function findRadarBackground(g) {
+        try {
+          var scr = g.display && g.display.screen;
+          if (!scr) return null;
+          var hud = scr.IOOOI && typeof scr.IOOOI.showWeaponStore === "function" ? scr.IOOOI : null;
+          if (!hud) for (var k in scr) {
+            try {
+              var v = scr[k];
+              if (v && typeof v.showWeaponStore === "function") {
+                hud = v;
+                break;
+              }
+            } catch (e) {}
+          }
+          return hud && hud.IOOlI && hud.IOOlI.background;
+        } catch (e) {
+          return null;
+        }
+      }
+      var _lastAppliedZoom = null;
+      setInterval(function() {
+        if (!inGame()) return;
+        try {
+          var g = getGS();
+          if (!g || !g.mode) return;
+          if (NATIVE === null) NATIVE = g.mode.radar_zoom || 4;
+          var eff = featOn("radarzoom") ? TARGET : NATIVE;
+          window.__AEGIS_RADAR_UNIFORM__.value = eff;
+          g.mode.radar_zoom = eff;
+          if (eff !== _lastAppliedZoom) {
+            var bg = findRadarBackground(g);
+            if (bg && bg.texture) {
+              bg.texture.repeat.set(1 / eff, 1 / eff);
+              _lastAppliedZoom = eff;
+            }
+          }
+        } catch (e) {}
+      }, 500);
+    })();
+    (function fullMapRadarNames() {
+      // Names on the radar, each with its tier (Radar Tier Tags), over the
+      // game's own dots, or (Radar Ship Icons) each ship drawn as its own
+      // silhouette (the game's ship icon, coloured ally / enemy / neutral)
+      // in place of its dot. The icons cost the most (an extra masked,
+      // shadowed element per ship moved every frame), so they are off by default.
+      // (survival switches the radar to message 201 once it starts; both are read)
+      var wrap = null, pool = {}, ipool = {}, iconUrls = {};
+      function iconUrl(code) {
+        if (!code) return null;
+        if (iconUrls[code] !== undefined) return iconUrls[code];
+        var url = null;
+        try { var cv = window.IOII0 && window.IOII0.getShipIcon && window.IOII0.getShipIcon(code); url = cv && cv.toDataURL ? cv.toDataURL() : null; } catch (e) {}
+        if (url) iconUrls[code] = url;
+        return url;
+      }
+      function ensureWrap() {
+        if (wrap) return wrap;
+        wrap = document.createElement("div");
+        wrap.id = "aegis-fmr-labels";
+        wrap.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483000;";
+        document.body.appendChild(wrap);
+        return wrap;
+      }
+      function findRadarPanel(g) {
+        try {
+          var scr = g.display && g.display.screen;
+          if (!scr) return null;
+          var hud = scr.IOOOI && typeof scr.IOOOI.showWeaponStore === "function" ? scr.IOOOI : null;
+          if (!hud) for (var k in scr) {
+            try {
+              var v = scr[k];
+              if (v && typeof v.showWeaponStore === "function") {
+                hud = v;
+                break;
+              }
+            } catch (e) {}
+          }
+          return hud && hud.IOOlI;
+        } catch (e) {
+          return null;
+        }
+      }
+      var _diagLogged = false;
+      function getCanvasXform(g) {
+        var canvas = document.querySelector("#canvaswrapper canvas");
+        if (!canvas) return null;
+        var dw = g.display && g.display.width, dh = g.display && g.display.height;
+        if (!(dw > 0) || !(dh > 0)) return null;
+        var rect = canvas.getBoundingClientRect();
+        if (!(rect.width > 0) || !(rect.height > 0)) return null;
+        return {
+          left: rect.left,
+          top: rect.top,
+          sx: rect.width / dw,
+          sy: rect.height / dh
+        };
+      }
+      // The game's own ship dots are blanked (stations and your own marker
+      // stay) and each ship is drawn instead as its icon, pointing the way it
+      // travels, gliding smoothly to each new radar position the way the
+      // game's dots do, its name above it.
+      function hookDots(panel) {
+        var R = panel && (panel.lI1Ol || null);
+        if (!R) for (var k in panel) { var v = panel[k]; if (v && v.lII0l && v.type && typeof v.IOIll === "function") { R = v; break; } }
+        if (!R || R.__synDots) return;
+        var orig = R.IOIll;
+        R.IOIll = function() {
+          var out = orig.apply(this, arguments);
+          try {
+            if (featOn("radarzoom") && featOn("radarnames") && featOn("radaricons") && this.type && this.lII0l) {
+              var n = this.max_pindex || this.size;
+              for (var g = 1; g < n; g++) { var ty = this.type[g]; if (ty >= 1 && ty <= 3) this.lII0l[g] = 0; }
+              var at = this.geometry && this.geometry.getAttribute("lII0l"); if (at) at.needsUpdate = true;
+            }
+          } catch (e) {}
+          return out;
+        };
+        R.__synDots = true;
+      }
+      var C = { t: 0, ok: false }, disp = {}, lastFrame = 0;
+      function hideAll() {
+        for (var k in pool) if (pool[k].style.display !== "none") pool[k].style.display = "none";
+        for (var k2 in ipool) if (ipool[k2].style.display !== "none") ipool[k2].style.display = "none";
+      }
+      function angLerp(a, b, k) { var d = ((b - a) % 360 + 540) % 360 - 180; return a + d * k; }
+      // Where the game draws each ship's dot right now, read from the radar's
+      // own buffers: the game keeps each player's last radar position by id
+      // (posmap) and moves its dot from the old position to the new one over
+      // 60 ticks in the shader; the same sum here puts a name exactly on its
+      // dot every frame (no catching up, no drift). Null when the buffers are
+      // not as expected; the names then follow our own copy of the positions.
+      var TIER_COL = [ "", "#c9d1d9", "#7ee787", "#56d4f5", "#7aa2ff", "#c08bff", "#ffa94d", "#ff5d73" ];
+      function dotContacts(g, panel, zoom) {
+        var P = panel && panel.lI1Ol, U = P && P.material && P.material.uniforms, me = U && U.mypos && U.mypos.value, tu = U && U.l01lO;
+        if (!P || !P.posmap || !(P.iteration >= 0) || !me || !tu || !(isFinite(me.x) && isFinite(me.y) && isFinite(tu.value))) return null;
+        var V = P.vertices, O = P.oldpos, T = P.type, TM = P.time, Z = P.lII0l;
+        if (!V || !O || !T || !TM || !Z) return null;
+        var n = Math.min(512, T.length, TM.length, Z.length, V.length / 3, O.length / 2), byPos = {}, i, k;
+        for (i = 1; i < n; i++) {
+          var ty = T[i];
+          if (!(ty === 1 || ty === 2 || ty === 3 || ty === 12) || V[i * 3 + 2] !== 0 || !(Z[i] > 0 || featOn("radaricons"))) continue;
+          k = V[i * 3] + "," + V[i * 3 + 1];
+          byPos[k] = byPos[k] === undefined ? i : -1;
+        }
+        var it = P.iteration - (g.mode && typeof g.mode.updateRadar === "function" ? 0 : 1), cnt = {}, id, r;
+        for (id = 0; id < 256; id++) { r = P.posmap[id]; if (r && r.iteration === it) { k = r.x + "," + r.y; cnt[k] = (cnt[k] || 0) + 1; } }
+        var out = [], sc = U.I1011 && U.I1011.value || 1;
+        function wrap(v) { return ((v + 1) % 2 + 2) % 2 - 1; }
+        for (id = 0; id < 256; id++) {
+          r = P.posmap[id];
+          if (!r || r.iteration !== it) continue;
+          k = r.x + "," + r.y; i = byPos[k];
+          if (i == null || i < 0 || cnt[k] !== 1) continue;
+          var pr = Math.max(0, Math.min(1, (tu.value - TM[i]) / 60));
+          var x = T[i] === 12 ? 0 : wrap(O[i * 2] * (1 - pr) + V[i * 3] * pr - me.x) * zoom;
+          var y = T[i] === 12 ? 0 : wrap(O[i * 2 + 1] * (1 - pr) + V[i * 3 + 1] * pr - me.y) * zoom;
+          out.push({ id: id, x: Math.max(-.95, Math.min(.95, x)), y: Math.max(-.95, Math.min(.95, y)), size: (Z[i] || 4) * sc });
+        }
+        return out;
+      }
+      function sideCol(id) {
+        if (C.team && typeof _aegisHueOf[id] === "number") return "hsl(" + Math.round(_aegisHueOf[id]) + ",100%,65%)";
+        try {
+          var side = _aegisNames[id] && window.__aegisSideForPlayer && window.__aegisSideForPlayer(_aegisNames[id]);
+          if (side === "ally") return "#2ecc71"; if (side === "enemy") return "#e74c3c";
+        } catch (e) {}
+        return "#fff";
+      }
+      function placeName(container, id, sx, sy, col, code, tiers) {
+        var el = pool[id];
+        if (!el) {
+          el = document.createElement("div");
+          // (the radar name as UMBRA draws it: 9px semi-bold, a dark outline)
+          el.style.cssText = "position:absolute;left:0;top:0;will-change:transform;font:600 9px Arial,Helvetica,sans-serif;color:#fff;white-space:nowrap;line-height:10px;" + "text-shadow:-1px 0 #071016,1px 0 #071016,0 -1px #071016,0 1px #071016,-1px -1px #071016,1px 1px #071016,-1px 1px #071016,1px -1px #071016;";
+          el._n = document.createElement("span");
+          el._t = document.createElement("span");
+          el._t.style.cssText = "display:none;margin-left:3px;padding:0 2px;font-size:8px;line-height:9px;border:1px solid;border-radius:2px;vertical-align:1px;text-shadow:none;background:rgba(7,16,22,.7);";
+          el.appendChild(el._n); el.appendChild(el._t);
+          container.appendChild(el);
+          pool[id] = el;
+        }
+        if (el.style.display !== "block") el.style.display = "block";
+        el.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px) translate(-50%,-100%)";
+        var nm = _aegisNames[id] || "#" + id;
+        if (el._aegisNm !== nm) { el._aegisNm = nm; el._n.textContent = nm; }
+        // the tier is the hundreds of the ship's code (101 is T1, 704 is T7), each its own colour
+        var tr = tiers && code ? Math.floor(code / 100) : 0, tt = tr >= 1 && tr <= 7 ? "T" + tr : "";
+        if (el._aegisT !== tt) { el._aegisT = tt; el._t.textContent = tt; el._t.style.display = tt ? "inline-block" : "none"; if (tt) el._t.style.color = el._t.style.borderColor = TIER_COL[tr]; }
+        if (el._aegisCol !== col) { el._aegisCol = col; el._n.style.color = col; }
+      }
+      function frame() {
+        requestAnimationFrame(frame);
+        var now = Date.now(), fdt = lastFrame ? Math.min(.1, (now - lastFrame) / 1000) : .016; lastFrame = now;
+        var on = featOn("radarzoom") && featOn("radarnames") && inGame();
+        if (!on) { if (wrap) hideAll(); C.ok = false; return; }
+        try {
+          // the slow lookups, a few times a second
+          if (now - C.t > 150) {
+            C.t = now; C.ok = false;
+            var g = getGS();
+            if (!g || !g.mode) return;
+            var panel = findRadarPanel(g);
+            if (!panel || !(panel.l0llO > 0) || !(panel.IllIO > 0)) return;
+            hookDots(panel);
+            var xf = getCanvasXform(g);
+            if (!xf) {
+              if (!_diagLogged) { _diagLogged = true; console.log("[Syndicate] Full Map Radar names: canvas transform unavailable — canvas found:" + !!document.querySelector("#canvaswrapper canvas") + " display.width:" + (g.display && g.display.width)); }
+              return;
+            }
+            var S = Math.min(panel.l0llO, panel.IllIO);
+            C.g = g; C.panel = panel; C.xf = xf; C.S = S; C.cx = panel.px + panel.l0llO - S / 2; C.cy = panel.lIIlI + panel.IllIO - S / 2 - .15 * S;
+            C.eff = window.__AEGIS_RADAR_UNIFORM__ && window.__AEGIS_RADAR_UNIFORM__.value || 1;
+            C.mapHalf = _aegisMapHalf > 0 ? _aegisMapHalf : 400;
+            var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode;
+            C.team = !!(wm && (wm.id === "team" || Array.isArray(wm.teams) && wm.teams.length > 1 || wm.friendly_colors > 0));
+            C.ok = true;
+          }
+          if (!C.ok) return;
+          var myS = getMyStatus(C.g);
+          if (!myS) return;
+          var mapHalf = C.mapHalf, eff = C.eff, xf = C.xf, S = C.S, container = ensureWrap(), seen = {}, ease = 1 - Math.exp(-fdt * 7);
+          var icons = featOn("radaricons"), tiers = featOn("radartier");
+          var dots = icons ? null : dotContacts(C.g, C.panel, eff);
+          if (dots) {
+            for (var di = 0; di < dots.length; di++) {
+              var dc = dots[di], did = dc.id;
+              if (String(did) === String(myS.id)) continue;
+              seen[did] = true;
+              requestName(did);
+              var dsx = xf.left + (C.cx + dc.x * (S / 2)) * xf.sx, dsy = xf.top + (C.cy - dc.y * (S / 2)) * xf.sy;
+              var dship = _aegisShips[did];
+              placeName(container, did, dsx, dsy - Math.max(3, dc.size * xf.sy / 2 + 1), sideCol(did), dship && dship.code, tiers);
+            }
+          } else for (var id in _aegisShips) {
+            if (String(id) === String(myS.id)) continue;
+            var s = _aegisShips[id];
+            if (now - s.ts > SHIP_TTL) continue;
+            if (s.zeroSince != null && now - s.zeroSince > BOT_ZERO_TTL) continue;
+            // where it is now: like the game's own dots, it glides to its latest
+            // radar position and stops there (no running on ahead of the data)
+            var ex = s.x, ey = s.y;
+            var D = disp[id];
+            if (!D || now - D.seen > 1500) D = disp[id] = { x: ex, y: ey, ang: null, seen: now };
+            D.x += wrapDelta2(ex - D.x, mapHalf) * ease; D.y += wrapDelta2(ey - D.y, mapHalf) * ease; D.seen = now;
+            var sp = Math.hypot(s.vx || 0, s.vy || 0);
+            if (sp > 1.5) { var ta = Math.atan2(-(s.vy || 0), s.vx || 0) * 180 / Math.PI + 90; D.ang = D.ang == null ? ta : angLerp(D.ang, ta, 1 - Math.exp(-fdt * 6)); D.ang = (D.ang % 360 + 360) % 360; }
+            var dx = wrapDelta2(D.x - myS.x, mapHalf), dy = wrapDelta2(D.y - myS.y, mapHalf);
+            var zx = dx / mapHalf * eff, zy = dy / mapHalf * eff;
+            if (zx < -1.02 || zx > 1.02 || zy < -1.02 || zy > 1.02) continue;
+            var sx = xf.left + (C.cx + zx * (S / 2)) * xf.sx, sy = xf.top + (C.cy - zy * (S / 2)) * xf.sy;
+            seen[id] = true;
+            requestName(id);
+            var col = sideCol(id);
+            var url = icons ? iconUrl(s.code) : null, ic = ipool[id];
+            if (url) {
+              if (!ic) {
+                // (the shadow sits on a wrapper: a filter on the masked box itself would be masked away)
+                ic = document.createElement("div");
+                ic.style.cssText = "position:absolute;left:0;top:0;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;will-change:transform;filter:drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);";
+                ic._in = document.createElement("div");
+                ic._in.style.cssText = "width:100%;height:100%;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;background:#fff;";
+                ic.appendChild(ic._in);
+                container.appendChild(ic);
+                ipool[id] = ic;
+              }
+              if (ic._u !== url) { ic._u = url; ic._in.style.webkitMaskImage = ic._in.style.maskImage = "url(" + url + ")"; }
+              if (ic.style.display !== "block") ic.style.display = "block";
+              ic.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px) rotate(" + (D.ang || 0).toFixed(1) + "deg)";
+              if (ic._col !== col) { ic._col = col; ic._in.style.background = col; }
+            } else if (ic && ic.style.display !== "none") ic.style.display = "none";
+            placeName(container, id, sx, sy - (url ? 9 : 3), col, s.code, tiers);
+          }
+          for (var pid in pool) if (!seen[pid] && pool[pid].style.display !== "none") pool[pid].style.display = "none";
+          for (var iid in ipool) if (!seen[iid] && ipool[iid].style.display !== "none") ipool[iid].style.display = "none";
+        } catch (e) {}
+      }
+      requestAnimationFrame(frame);
+      function wrapDelta2(d, mapHalf) {
+        var size = mapHalf * 2;
+        if (!(size > 0)) return d;
+        d = (d % size + size) % size;
+        if (d > size / 2) d -= size;
+        return d;
+      }
+    })();
+  }
+
+  // ---- the \ panel's rows for these ----
+  var AIM_CFG = "STUDIO_aim_cfg";
+  function aimCfg() { try { return JSON.parse(LS(AIM_CFG) || "{}") || {}; } catch (e) { return {}; } }
+  function aimKey() { return String(LS("STUDIO_aim_key") || "q").toUpperCase(); }
+  var HEAD = '<div style="opacity:.6;font-size:12px;letter-spacing:.12em;margin-top:12px">';
+  window.__studioExt = {
+    rows: function(row) {
+      var r = function(k, label) { return row(label, 'data-ext="' + k + '"', k === "dodge" ? aimCfg().dodge === true : featOn(k)); };
+      return HEAD + "CAMERA</div>" +
+        r("fov", "FOV zoom (mouse wheel · 0 resets)") +
+        HEAD + "RADAR</div>" +
+        r("radarzoom", "Full map radar") +
+        r("radarnames", "Player names (with full map radar)") +
+        r("radaricons", "Ship icons in place of dots") +
+        r("radartier", "Tier tags on names") +
+        HEAD + "COMBAT</div>" +
+        r("aim", "Aim Assist (hold the key, or fire)") +
+        '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.07)"><span style="flex:1">Aim Assist key</span>' +
+        '<button type="button" data-ext-key style="min-width:44px;font:inherit;color:inherit;background:rgba(127,182,224,.15);border:1px solid rgba(127,182,224,.5);border-radius:4px;padding:2px 8px;cursor:pointer">' + aimKey() + "</button></div>" +
+        r("dodge", "Dodge Assist (steers out of enemy shots)");
+    },
+    bind: function(P) {
+      P.addEventListener("change", function(e) {
+        var t = e.target, k = t && t.getAttribute && t.getAttribute("data-ext");
+        if (!k) return;
+        if (k === "dodge") {
+          var c = aimCfg(); c.dodge = !!t.checked;
+          try { localStorage.setItem(AIM_CFG, JSON.stringify(c)); } catch (x) {}
+          try { window.dispatchEvent(new Event("syn-aim-cfg")); } catch (x) {}
+          return;
+        }
+        featSet(k, !!t.checked);
+      });
+      var kb = P.querySelector("[data-ext-key]");
+      if (!kb) return;
+      kb.addEventListener("click", function(e) {
+        e.preventDefault();
+        kb.textContent = "press a key…";
+        function grab(ev) {
+          window.removeEventListener("keydown", grab, true);
+          if (ev.key === "Escape" || ev.key === "\\") { kb.textContent = aimKey(); return; }
+          ev.preventDefault(); ev.stopImmediatePropagation();
+          if (ev.key && ev.key.length === 1 && ev.key !== " ") { try { localStorage.setItem("STUDIO_aim_key", ev.key.toLowerCase()); } catch (x) {} }
+          kb.textContent = aimKey();
+        }
+        window.addEventListener("keydown", grab, true);
+      });
+    }
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();
