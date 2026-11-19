@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      1.7.0
-// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, no stars, fast respawn, team lock bypass, Aim Assist.
+// @version      1.8.0
+// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, trajectory indicator, no stars, fast respawn, team lock bypass, Aim Assist.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "1.7.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "1.8.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -774,21 +774,37 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // belongs to the lobby, hidden in a match): the game's switches, set
   // through its settings as its menu does, then the Studio ones
   var PANEL = null;
+  // (built from the game's own settings markup, so the game's stylesheet
+  // draws it; where that doesn't reach, a stand-in in the same look)
+  var FB_CSS = ".studio-modal.studio-fb{background:hsla(200,45%,9%,.92);border:1px solid hsla(200,60%,70%,.35);border-radius:6px;box-shadow:0 0 24px hsla(200,80%,50%,.18),0 12px 40px rgba(0,0,0,.6);color:#fff;font-family:Play,sans-serif}" +
+    ".studio-modal.studio-fb .modaltitle{padding:12px 16px;font-size:20px;text-align:center;letter-spacing:.06em;border-bottom:1px solid hsla(200,60%,70%,.2);background:hsla(200,50%,15%,.6)}" +
+    ".studio-modal.studio-fb .modalbody{padding:6px 18px 14px}" +
+    ".studio-modal.studio-fb .option{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;font-size:15px;border-bottom:1px solid hsla(0,0%,100%,.06)}" +
+    ".studio-modal.studio-fb .switch{position:relative;display:inline-block;flex:none;width:44px;height:22px;cursor:pointer}" +
+    ".studio-modal.studio-fb .switch input{position:absolute;opacity:0;width:0;height:0}" +
+    ".studio-modal.studio-fb .slider{position:absolute;inset:0;border-radius:22px;background:hsla(200,20%,40%,.6);transition:.2s}" +
+    ".studio-modal.studio-fb .slider:before{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}" +
+    ".studio-modal.studio-fb input:checked+.slider{background:hsl(200,80%,50%)}" +
+    ".studio-modal.studio-fb input:checked+.slider:before{transform:translateX(22px)}" +
+    ".studio-modal.studio-fb button{font:inherit;color:#fff;background:hsla(200,60%,30%,.7);border:1px solid hsla(200,60%,70%,.4);border-radius:4px;padding:2px 10px;cursor:pointer}";
   function panel() {
     if (PANEL) { PANEL.remove(); PANEL = null; return; }
     var st = CORE.settings();
+    if (!document.getElementById("studio-modal-fb")) { var css = document.createElement("style"); css.id = "studio-modal-fb"; css.textContent = FB_CSS; (document.head || document.documentElement).appendChild(css); }
     PANEL = document.createElement("div");
-    PANEL.style.cssText = "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2147483647;width:min(420px,92vw);max-height:84vh;overflow:auto;font:15px/1.35 Play,system-ui,sans-serif;color:#dfe9f2;background:rgba(18,28,38,.95);border:1px solid rgba(120,170,210,.45);border-radius:8px;padding:12px 16px 14px;box-shadow:0 10px 40px rgba(0,0,0,.6)";
-    function row(label, attr, on) { return '<label style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.07);cursor:pointer"><span style="flex:1">' + label + '</span><input type="checkbox" ' + attr + (on ? " checked" : "") + ' style="width:18px;height:18px;accent-color:#7fb6e0"></label>'; }
-    var h = '<div style="display:flex;align-items:center;margin-bottom:4px"><b style="flex:1;letter-spacing:.1em">SETTINGS</b><span style="opacity:.6;font-size:12px">\\ or Esc to close · ] all mods off/on</span></div>';
+    PANEL.className = "modal studio-modal";
+    PANEL.style.cssText = "position:fixed;left:50%;top:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);margin:0;z-index:2147483647;width:min(440px,92vw);max-height:84vh;overflow:auto;display:block;opacity:1;visibility:visible;box-sizing:border-box";
+    function row(label, attr, on) { return '<div class="option">' + label + '<label class="switch"><input type="checkbox" ' + attr + (on ? ' checked="checked"' : "") + '><div class="slider"></div></label></div>'; }
+    function sec(title) { return '<div class="studio-sec" style="opacity:.55;font-size:.75em;letter-spacing:.14em;margin:14px 0 2px;text-transform:uppercase">' + title + "</div>"; }
+    var h = '<div class="modaltitle">Settings</div><div class="modalbody"><div style="opacity:.55;font-size:.75em;text-align:center;margin:2px 0 4px">\\ or Esc to close · ] all mods off/on</div>';
     if (st && st.parameters) {
-      h += '<div style="opacity:.6;font-size:12px;letter-spacing:.12em;margin-top:8px">GAME</div>';
+      h += sec("Game");
       for (var k in st.parameters) { var P = st.parameters[k]; if (!P || typeof P.value !== "boolean" || P.type || (st.isHidden && st.isHidden(k))) continue; h += row(P.name || k, 'data-game="' + k + '"', P.value); }
     }
-    h += '<div style="opacity:.6;font-size:12px;letter-spacing:.12em;margin-top:12px">' + BRAND + '</div>';
+    h += sec(BRAND);
     rows().forEach(function(r) { h += row(r.name, 'data-studio="' + r.k + '"', r.on); });
-    if (window.__studioExt) h += window.__studioExt.rows(row);
-    PANEL.innerHTML = h;
+    if (window.__studioExt) h += window.__studioExt.rows(row, sec);
+    PANEL.innerHTML = h + "</div>";
     PANEL.addEventListener("change", function(e) {
       var t = e.target, on = !!t.checked, g = t.getAttribute("data-game"), k2 = t.getAttribute("data-studio");
       if (g && st) { try { if (typeof st.set === "function") st.set(g, on); else st.parameters[g].value = on; } catch (x) {} return; }
@@ -796,6 +812,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     });
     PANEL.addEventListener("keydown", function(e) { e.stopPropagation(); });
     (document.body || document.documentElement).appendChild(PANEL);
+    try {
+      var sl = PANEL.querySelector(".slider"), scs = sl && getComputedStyle(sl), pcs = getComputedStyle(PANEL);
+      if (!scs || scs.position !== "absolute" || pcs.backgroundColor === "rgba(0, 0, 0, 0)") PANEL.classList.add("studio-fb");
+    } catch (x) { PANEL.classList.add("studio-fb"); }
     if (window.__studioExt) window.__studioExt.bind(PANEL);
   }
   // F9: a small readout (FPS, drops, quality step), for checking
@@ -841,7 +861,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     nostars:    { key: "STUDIO_nostars",   def: "1" },
     lbicons:    { key: "STUDIO_lbicons",   def: "1" },
     teamlock:   { key: "STUDIO_teamlock",  def: "1" },
-    fastrespawn:{ key: "AEGIS_fastrespawn", def: "1" }
+    fastrespawn:{ key: "AEGIS_fastrespawn", def: "1" },
+    esp:        { key: "STUDIO_esp",       def: "1" },
+    trajectory: { key: "STUDIO_trajectory", def: "1" }
   };
   var FEAT_V = {};
   function featOn(f) {
@@ -2498,6 +2520,136 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           });
         } catch (e) {}
       }, 400);
+    })();
+    // ESP: a line from your ship to every other ship (exact while in view,
+    // the radar's spot beyond it, dashed), with name and distance; team
+    // games colour allies green and enemies red, others in their hue.
+    // Trajectory: the path a shot fired now takes, from the gun along your
+    // heading (the Aim Assist's when it's steering) with the share of your
+    // speed the bolt inherits, out to where it stops.
+    (function espAndTrajectory() {
+      var cv = document.createElement("canvas");
+      cv.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:999987;display:none";
+      document.body.appendChild(cv);
+      var ctx = cv.getContext("2d"), dpr = 1, disp = {}, lastT = 0;
+      function resize() { dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); }
+      resize();
+      addEventListener("resize", resize);
+      function wrapD(d) { var size = _aegisMapHalf * 2; if (!(size > 0)) return d; d = (d % size + size) % size; return d > size / 2 ? d - size : d; }
+      function teamGame() { var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode; return !!(wm && (wm.id === "team" || Array.isArray(wm.teams) && wm.teams.length > 1)); }
+      function col(id, a) {
+        if (teamGame()) {
+          var mt = typeof window.__synMyTeam === "number" ? window.__synMyTeam : null;
+          return mt != null && _aegisTeamOf[id] === mt ? "hsla(140,70%,55%," + a + ")" : "hsla(2,85%,60%," + a + ")";
+        }
+        var h = _aegisHueOf[id];
+        return typeof h === "number" ? "hsla(" + Math.round(h) + ",100%,65%," + a + ")" : "rgba(255,255,255," + a + ")";
+      }
+      // where each ship is: the status packets while fresh, else the radar (eased)
+      function ships(myId, now, ease) {
+        var out = [];
+        for (var id in _synStat) {
+          var s = _synStat[id], n = +id;
+          if (n === myId || now - s.ts > 1500) continue;
+          if (!s.alive) { delete disp[id]; continue; }
+          var age = Math.min(.5, (now - s.ts) / 1000);
+          var x = s.x + s.vx * 60 * age, y = s.y + s.vy * 60 * age;
+          disp[id] = { x: x, y: y, seen: now };
+          out.push({ id: n, x: x, y: y, exact: true });
+        }
+        for (var rid in _aegisShips) {
+          var rn = +rid, st = _synStat[rid];
+          if (rn === myId || st && now - st.ts <= 1500) continue;
+          var r = _aegisShips[rid];
+          if (now - r.ts > SHIP_TTL || r.zeroSince != null && now - r.zeroSince > BOT_ZERO_TTL) continue;
+          var D = disp[rid];
+          if (!D || now - D.seen > 1500) D = disp[rid] = { x: r.x, y: r.y, seen: now };
+          D.x += wrapD(r.x - D.x) * ease; D.y += wrapD(r.y - D.y) * ease; D.seen = now;
+          out.push({ id: rn, x: D.x, y: D.y, exact: false });
+        }
+        return out;
+      }
+      // (a point off screen is pulled back along the line to the edge, for its label)
+      function edge(a, b, m) {
+        var W = innerWidth, H = innerHeight;
+        if (b.x >= m && b.y >= m && b.x <= W - m && b.y <= H - m) return { x: b.x, y: b.y, off: false };
+        var dx = b.x - a.x, dy = b.y - a.y, t = 1;
+        if (dx > 0) t = Math.min(t, (W - m - a.x) / dx); else if (dx < 0) t = Math.min(t, (m - a.x) / dx);
+        if (dy > 0) t = Math.min(t, (H - m - a.y) / dy); else if (dy < 0) t = Math.min(t, (m - a.y) / dy);
+        t = Math.max(0, t);
+        return { x: a.x + dx * t, y: a.y + dy * t, off: true };
+      }
+      function drawEsp(g, my, cam, me, ease) {
+        var now = Date.now(), list = ships(my.id, now, ease);
+        ctx.font = "600 11px Play, Arial, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        ctx.lineJoin = "round";
+        for (var i = 0; i < list.length; i++) {
+          var t = list[i], dx = wrapD(t.x - my.x), dy = wrapD(t.y - my.y);
+          var p = worldToScreenPx(cam, my.x + dx, my.y + dy, g);
+          if (!p) continue;
+          var dist = Math.round(Math.hypot(dx, dy));
+          ctx.save();
+          ctx.strokeStyle = col(t.id, t.exact ? .6 : .38);
+          ctx.lineWidth = t.exact ? 1.5 : 1.2;
+          if (!t.exact) ctx.setLineDash([6, 6]);
+          ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+          ctx.restore();
+          var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id, label = nm + "  " + dist;
+          if (!e.off) { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = col(t.id, .9); ctx.fill(); }
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,16,22,.85)"; ctx.strokeText(label, e.x, e.y - 5);
+          ctx.fillStyle = col(t.id, .95); ctx.fillText(label, e.x, e.y - 5);
+          if (!_aegisNames[t.id]) requestName(t.id);
+        }
+      }
+      function drawTraj(g, my, cam) {
+        var A = window.__synAim, s = _synStat[my.id], now = Date.now();
+        var fresh = !!(s && s.alive && now - s.ts < 400);
+        var deg = A && A.engaged && A.aim != null ? A.aim : fresh ? s.angle : typeof my.r === "number" ? my.r * 180 / Math.PI : null;
+        if (deg == null) return;
+        var S = A && A.speed > 10 ? A.speed : 160, k = A && A.kN ? A.k : 1, fwd = A && A.gun && A.gun.n ? A.gun.fwd : 2.2;
+        var vx = fresh ? s.vx : 0, vy = fresh ? s.vy : 0, a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+        var ox = my.x + c * fwd, oy = my.y + sn * fwd, life = S >= 100 ? -2 * Math.log(1 - 63 / S) : 2, pts = [];
+        for (var i = 0; i <= 32; i++) {
+          var t = life * i / 32, D = S * (1 - Math.exp(-t / 2));
+          var p = worldToScreenPx(cam, ox + c * D + 60 * k * vx * t, oy + sn * D + 60 * k * vy * t, g);
+          if (p) pts.push(p);
+        }
+        if (pts.length < 2) return;
+        var h = typeof _aegisHueOf[my.id] === "number" ? Math.round(_aegisHueOf[my.id]) : 195;
+        var a0 = pts[0], a1 = pts[pts.length - 1], gr = ctx.createLinearGradient(a0.x, a0.y, a1.x, a1.y);
+        gr.addColorStop(0, "hsla(" + h + ",100%,75%,.85)"); gr.addColorStop(1, "hsla(" + h + ",100%,75%,.25)");
+        ctx.save();
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(7,16,22,.45)"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
+        ctx.strokeStyle = gr; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); for (j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
+        // ticks every quarter of the flight, and a ring where it stops
+        ctx.fillStyle = "hsla(" + h + ",100%,80%,.8)";
+        for (j = 8; j < pts.length - 1; j += 8) { ctx.beginPath(); ctx.arc(pts[j].x, pts[j].y, 2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.strokeStyle = "hsla(" + h + ",100%,80%,.7)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(a1.x, a1.y, 5, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      (function loop() {
+        requestAnimationFrame(loop);
+        var now = Date.now(), fdt = lastT ? Math.min(.1, (now - lastT) / 1000) : .016; lastT = now;
+        var esp = featOn("esp"), traj = featOn("trajectory");
+        if (!esp && !traj || !inGame()) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
+        if (cv.style.display !== "block") cv.style.display = "block";
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        try {
+          var g = getGS(), my = g && getMyStatus(g), cam = getActiveCamera();
+          if (!g || !my || !cam || my.alive === false || typeof my.x !== "number") return;
+          var me = worldToScreenPx(cam, my.x, my.y, g);
+          if (!me) return;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          if (esp) drawEsp(g, my, cam, me, 1 - Math.exp(-fdt * 7));
+          if (traj) drawTraj(g, my, cam);
+        } catch (e) {}
+      })();
     })();
     (function fovZoom() {
       var MIN_FOV = 1, MAX_FOV = 170, T_MIN = .4, T_MAX = 3, SENS = 9e-4, TAU = 170;
@@ -5981,28 +6133,28 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   var AIM_CFG = "STUDIO_aim_cfg";
   function aimCfg() { try { return JSON.parse(LS(AIM_CFG) || "{}") || {}; } catch (e) { return {}; } }
   function aimKey() { return String(LS("STUDIO_aim_key") || "q").toUpperCase(); }
-  var HEAD = '<div style="opacity:.6;font-size:12px;letter-spacing:.12em;margin-top:12px">';
   window.__studioExt = {
-    rows: function(row) {
+    rows: function(row, sec) {
       var r = function(k, label) { return row(label, 'data-ext="' + k + '"', k === "dodge" ? aimCfg().dodge === true : featOn(k)); };
-      return HEAD + "CAMERA</div>" +
+      return sec("Camera") +
         r("fov", "FOV zoom (mouse wheel · 0 resets)") +
         r("wide", "Extended FOV view (zoomed out: more of the map)") +
-        HEAD + "VISUALS</div>" +
+        sec("Visuals") +
         r("nostars", "Remove stars") +
+        r("esp", "ESP lines to other ships") +
+        r("trajectory", "Trajectory indicator (where your shots go)") +
         r("lbicons", "Ship icons on the leaderboard") +
-        HEAD + "GAMEPLAY</div>" +
+        sec("Gameplay") +
         r("fastrespawn", "Fast respawn") +
         r("teamlock", "Team lock bypass (join closed teams)") +
-        HEAD + "RADAR</div>" +
+        sec("Radar") +
         r("radarzoom", "Full map radar") +
         r("radarnames", "Player names (with full map radar)") +
         r("radaricons", "Ship icons in place of dots") +
         r("radartier", "Tier tags on names") +
-        HEAD + "COMBAT</div>" +
+        sec("Combat") +
         r("aim", "Aim Assist (hold the key, or fire)") +
-        '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.07)"><span style="flex:1">Aim Assist key</span>' +
-        '<button type="button" data-ext-key style="min-width:44px;font:inherit;color:inherit;background:rgba(127,182,224,.15);border:1px solid rgba(127,182,224,.5);border-radius:4px;padding:2px 8px;cursor:pointer">' + aimKey() + "</button></div>" +
+        '<div class="option">Aim Assist key<button type="button" data-ext-key>' + aimKey() + "</button></div>" +
         r("dodge", "Dodge Assist (steers out of enemy shots)");
     },
     bind: function(P) {
