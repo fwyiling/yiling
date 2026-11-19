@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      1.8.0
-// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, trajectory indicator, no stars, fast respawn, team lock bypass, Aim Assist.
+// @version      1.9.0
+// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "1.8.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "1.9.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -863,8 +863,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     teamlock:   { key: "STUDIO_teamlock",  def: "1" },
     fastrespawn:{ key: "AEGIS_fastrespawn", def: "1" },
     esp:        { key: "STUDIO_esp",       def: "1" },
-    trajectory: { key: "STUDIO_trajectory", def: "1" }
+    saturate:   { key: "STUDIO_saturate",  def: "1" },
+    highcontrast:{ key: "AEGIS_highcontrast", def: "1" },
+    teamhl:     { key: "STUDIO_teamhl",    def: "1" }
   };
+  function espNear() { var v = LS("STUDIO_esp_range"); return v === "near"; }
+  function espDist() { var v = parseFloat(LS("STUDIO_esp_dist")); return v >= 10 ? v : 100; }
   var FEAT_V = {};
   function featOn(f) {
     if (!FEAT[f]) return false;
@@ -2326,13 +2330,19 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
       });
     })();
-    // Team lock bypass: the game's methods that check "&& this.team.open"
-    // get a copy without that check (Syndicate takes the same words out of
-    // the game's source). A copy that can't run outside the game's own
-    // scope falls back to the original for good.
-    (function teamlockBypass() {
-      var RX = /\s*&&\s*this\.team\.open/g, seen = new WeakSet(), found = [];
-      window.__studioTeamlock = found;
+    // Syndicate's patches to the game's source, made to the game's methods
+    // at runtime: a method holding one of these words gets copies with it
+    // changed, used while that switch is on. A copy that can't run outside
+    // the game's own scope falls back to the original for good.
+    //  - team lock bypass: "&& this.team.open" taken out
+    //  - saturated ship colours: "this.hue,.5,1" and "this.hue,.5,.5" made "this.hue,1,1"
+    (function sourcePatches() {
+      var RULES = [
+        { feat: "teamlock", word: "this.team.open", rx: /\s*&&\s*this\.team\.open/g, to: "" },
+        { feat: "saturate", word: "this.hue,.5,", rx: /this\.hue,\.5,(?:1|\.5)(?!\d)/g, to: "this.hue,1,1" }
+      ];
+      var seen = new WeakSet(), found = [];
+      window.__studioPatches = found;
       function patch(holder, name, where) {
         var fn;
         try { fn = holder[name]; } catch (e) { return; }
@@ -2340,25 +2350,35 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         seen.add(fn);
         var src;
         try { src = Function.prototype.toString.call(fn); } catch (e) { return; }
-        if (src.indexOf("this.team.open") < 0 || src.indexOf("[native code]") >= 0) return;
-        var ns = src.replace(RX, "");
-        if (ns === src) return;
-        if (!/^(async\s+)?function\b/.test(ns)) ns = "function " + ns;
-        var nf;
-        try { nf = (0, eval)("(" + ns + ")"); } catch (e) { found.push(where + "." + name + " (can't copy)"); return; }
-        var broken = false;
+        if (src.indexOf("[native code]") >= 0) return;
+        var hits = RULES.filter(function(r) { return src.indexOf(r.word) >= 0 && src.replace(r.rx, r.to) !== src; });
+        if (!hits.length) return;
+        var variants = {}, broken = false, label = where + "." + name + " (" + hits.map(function(r) { return r.feat; }).join(", ") + ")";
+        function build(mask) {
+          if (variants[mask] !== undefined) return variants[mask];
+          var ns = src;
+          hits.forEach(function(r, b) { if (mask & (1 << b)) ns = ns.replace(r.rx, r.to); });
+          if (!/^(async\s+)?function\b/.test(ns)) ns = "function " + ns;
+          var f = null;
+          try { f = (0, eval)("(" + ns + ")"); } catch (e) {}
+          return variants[mask] = f;
+        }
+        if (!build((1 << hits.length) - 1)) { found.push(label + " can't copy"); return; }
         var wrapped = function() {
-          if (broken || !featOn("teamlock")) return fn.apply(this, arguments);
-          try { return nf.apply(this, arguments); }
+          var mask = 0;
+          if (!broken) for (var b = 0; b < hits.length; b++) if (featOn(hits[b].feat)) mask |= 1 << b;
+          var f = mask ? build(mask) : null;
+          if (!f) return fn.apply(this, arguments);
+          try { return f.apply(this, arguments); }
           catch (e) {
             if (!(e instanceof ReferenceError)) throw e;
             broken = true;
-            console.warn("[Studio] team lock bypass: " + where + "." + name + " needs the game's own scope, left as it was");
+            console.warn("[Studio] " + label + " needs the game's own scope, left as it was");
             return fn.apply(this, arguments);
           }
         };
         seen.add(wrapped);
-        try { holder[name] = wrapped; found.push(where + "." + name); } catch (e) {}
+        try { holder[name] = wrapped; found.push(label); } catch (e) {}
       }
       function scan() {
         for (var key in window) {
@@ -2386,6 +2406,41 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }
       // (the game's classes come with its script; looked for a minute)
       var n = 0, iv = setInterval(function() { try { scan(); } catch (e) {} if (++n >= 30) clearInterval(iv); }, 2000);
+    })();
+    // High contrast: every ship built in the full colour finish; team
+    // highlight: in team games, other ships built plain green (yours) or
+    // yellow (the other teams'). Ships take it when the game builds them
+    // (joining, respawning, upgrading).
+    (function shipMaterials() {
+      var CORE = window.__perfCore;
+      if (!CORE || !CORE.whenClass) return;
+      function teamColor(inst) {
+        if (!featOn("teamhl")) return null;
+        var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode;
+        if (!(wm && (wm.id === "team" || Array.isArray(wm.teams) && wm.teams.length > 1))) return null;
+        var id = inst.shipid, mine = window.__synMyShipId, mt = window.__synMyTeam, t = _aegisTeamOf[id];
+        if (id == null || id === mine || typeof mt !== "number" || typeof t !== "number") return null;
+        return t === mt ? 0x90ee90 : 0xeab308;
+      }
+      function darken(c) { var f = .35; return (Math.round((c >> 16 & 255) * f) << 16) | (Math.round((c >> 8 & 255) * f) << 8) | Math.round((c & 255) * f); }
+      CORE.whenClass(function(p) { return typeof p.buildFullColorMaterial === "function" && typeof p.buildDefaultMaterial === "function"; }, function(P) {
+        var full = P.buildFullColorMaterial;
+        Object.getOwnPropertyNames(P).forEach(function(n) {
+          if (!/^build\w*Material$/.test(n) || typeof P[n] !== "function") return;
+          var orig = P[n];
+          P[n] = function() {
+            // (one build at a time: a finish that builds through another one is left alone)
+            if (this.__stMat) return orig.apply(this, arguments);
+            this.__stMat = 1;
+            try {
+              var hl = teamColor(this), T = window.THREE;
+              if (hl != null && T && T.MeshPhongMaterial) { this.material = new T.MeshPhongMaterial({ color: hl, emissive: darken(hl), specular: 0x111111, shininess: 10 }); return; }
+              if (n !== "buildFullColorMaterial" && featOn("highcontrast")) return full.apply(this, arguments);
+              return orig.apply(this, arguments);
+            } finally { this.__stMat = 0; }
+          };
+        });
+      }, 600000);
     })();
     // Leaderboard ship icons: each player's row on the scoreboard gets a gap
     // before the name with their ship's icon drawn in it, in their hue.
@@ -2521,13 +2576,11 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         } catch (e) {}
       }, 400);
     })();
-    // ESP: a line from your ship to every other ship (exact while in view,
-    // the radar's spot beyond it, dashed), with name and distance; team
-    // games colour allies green and enemies red, others in their hue.
-    // Trajectory: the path a shot fired now takes, from the gun along your
-    // heading (the Aim Assist's when it's steering) with the share of your
-    // speed the bolt inherits, out to where it stops.
-    (function espAndTrajectory() {
+    // ESP: a line from your ship to every other ship, or only those within
+    // the near distance (exact while in view, the radar's spot beyond it,
+    // dashed), a light box round each one on screen, name and distance;
+    // team games colour allies green and enemies red, others in their hue.
+    (function esp() {
       var cv = document.createElement("canvas");
       cv.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:999987;display:none";
       document.body.appendChild(cv);
@@ -2584,59 +2637,46 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         ctx.font = "600 11px Play, Arial, sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineJoin = "round";
+        var near = espNear(), maxD = espDist(), RAD = window.__synAim && window.__synAim.RAD || {};
+        var p0 = worldToScreenPx(cam, my.x, my.y, g), p1 = worldToScreenPx(cam, my.x + 10, my.y, g);
+        var ppu = p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10 : 0;
         for (var i = 0; i < list.length; i++) {
           var t = list[i], dx = wrapD(t.x - my.x), dy = wrapD(t.y - my.y);
+          var dist = Math.round(Math.hypot(dx, dy));
+          if (near && dist > maxD) continue;
           var p = worldToScreenPx(cam, my.x + dx, my.y + dy, g);
           if (!p) continue;
-          var dist = Math.round(Math.hypot(dx, dy));
-          ctx.save();
-          ctx.strokeStyle = col(t.id, t.exact ? .6 : .38);
-          ctx.lineWidth = t.exact ? 1.5 : 1.2;
-          if (!t.exact) ctx.setLineDash([6, 6]);
-          ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-          ctx.restore();
           var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id, label = nm + "  " + dist;
-          if (!e.off) { ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fillStyle = col(t.id, .9); ctx.fill(); }
+          // the light box: the ship's hull size, a little room round it
+          var code = (_synStat[t.id] || {}).code || (_aegisShips[t.id] || {}).code, half = !e.off && ppu > 0 ? Math.max(7, (RAD[code] || 3) * 1.45 * ppu) : 0;
+          // (the line stops at the box)
+          var lx = me.x - p.x, ly = me.y - p.y, m = Math.max(Math.abs(lx), Math.abs(ly)), k = half && m > half ? half / m : 0;
+          if (!half || m > half) {
+            ctx.save();
+            ctx.strokeStyle = col(t.id, t.exact ? .6 : .38);
+            ctx.lineWidth = t.exact ? 1.5 : 1.2;
+            if (!t.exact) ctx.setLineDash([6, 6]);
+            ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(p.x + lx * k, p.y + ly * k); ctx.stroke();
+            ctx.restore();
+          }
+          if (half) {
+            ctx.save();
+            ctx.shadowColor = col(t.id, .9); ctx.shadowBlur = 8;
+            ctx.fillStyle = col(t.id, .07); ctx.fillRect(p.x - half, p.y - half, half * 2, half * 2);
+            ctx.strokeStyle = col(t.id, t.exact ? .85 : .5); ctx.lineWidth = 1.2;
+            ctx.strokeRect(p.x - half, p.y - half, half * 2, half * 2);
+            ctx.restore();
+            e = { x: p.x, y: p.y - half + 1, off: false };
+          }
           ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,16,22,.85)"; ctx.strokeText(label, e.x, e.y - 5);
           ctx.fillStyle = col(t.id, .95); ctx.fillText(label, e.x, e.y - 5);
           if (!_aegisNames[t.id]) requestName(t.id);
         }
       }
-      function drawTraj(g, my, cam) {
-        var A = window.__synAim, s = _synStat[my.id], now = Date.now();
-        var fresh = !!(s && s.alive && now - s.ts < 400);
-        var deg = A && A.engaged && A.aim != null ? A.aim : fresh ? s.angle : typeof my.r === "number" ? my.r * 180 / Math.PI : null;
-        if (deg == null) return;
-        var S = A && A.speed > 10 ? A.speed : 160, k = A && A.kN ? A.k : 1, fwd = A && A.gun && A.gun.n ? A.gun.fwd : 2.2;
-        var vx = fresh ? s.vx : 0, vy = fresh ? s.vy : 0, a = deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
-        var ox = my.x + c * fwd, oy = my.y + sn * fwd, life = S >= 100 ? -2 * Math.log(1 - 63 / S) : 2, pts = [];
-        for (var i = 0; i <= 32; i++) {
-          var t = life * i / 32, D = S * (1 - Math.exp(-t / 2));
-          var p = worldToScreenPx(cam, ox + c * D + 60 * k * vx * t, oy + sn * D + 60 * k * vy * t, g);
-          if (p) pts.push(p);
-        }
-        if (pts.length < 2) return;
-        var h = typeof _aegisHueOf[my.id] === "number" ? Math.round(_aegisHueOf[my.id]) : 195;
-        var a0 = pts[0], a1 = pts[pts.length - 1], gr = ctx.createLinearGradient(a0.x, a0.y, a1.x, a1.y);
-        gr.addColorStop(0, "hsla(" + h + ",100%,75%,.85)"); gr.addColorStop(1, "hsla(" + h + ",100%,75%,.25)");
-        ctx.save();
-        ctx.lineCap = "round"; ctx.lineJoin = "round";
-        ctx.strokeStyle = "rgba(7,16,22,.45)"; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
-        ctx.strokeStyle = gr; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(a0.x, a0.y); for (j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
-        // ticks every quarter of the flight, and a ring where it stops
-        ctx.fillStyle = "hsla(" + h + ",100%,80%,.8)";
-        for (j = 8; j < pts.length - 1; j += 8) { ctx.beginPath(); ctx.arc(pts[j].x, pts[j].y, 2, 0, Math.PI * 2); ctx.fill(); }
-        ctx.strokeStyle = "hsla(" + h + ",100%,80%,.7)"; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(a1.x, a1.y, 5, 0, Math.PI * 2); ctx.stroke();
-        ctx.restore();
-      }
       (function loop() {
         requestAnimationFrame(loop);
         var now = Date.now(), fdt = lastT ? Math.min(.1, (now - lastT) / 1000) : .016; lastT = now;
-        var esp = featOn("esp"), traj = featOn("trajectory");
-        if (!esp && !traj || !inGame()) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
+        if (!featOn("esp") || !inGame()) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
         if (cv.style.display !== "block") cv.style.display = "block";
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, cv.width, cv.height);
@@ -2646,8 +2686,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           var me = worldToScreenPx(cam, my.x, my.y, g);
           if (!me) return;
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          if (esp) drawEsp(g, my, cam, me, 1 - Math.exp(-fdt * 7));
-          if (traj) drawTraj(g, my, cam);
+          drawEsp(g, my, cam, me, 1 - Math.exp(-fdt * 7));
         } catch (e) {}
       })();
     })();
@@ -6141,8 +6180,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("wide", "Extended FOV view (zoomed out: more of the map)") +
         sec("Visuals") +
         r("nostars", "Remove stars") +
-        r("esp", "ESP lines to other ships") +
-        r("trajectory", "Trajectory indicator (where your shots go)") +
+        r("esp", "ESP lines and boxes on other ships") +
+        '<div class="option">ESP shows<button type="button" data-ext-espmode>' + (espNear() ? "Near me" : "Everyone") + "</button></div>" +
+        '<div class="option">Near distance <span data-ext-espdist-v>' + espDist() + '</span><input type="range" min="20" max="400" step="10" value="' + espDist() + '" data-ext-espdist style="flex:0 0 46%"></div>' +
+        r("saturate", "Saturated ship colours") +
+        r("highcontrast", "High contrast ships (full colour)") +
+        r("teamhl", "Team highlight (allies green, enemies yellow)") +
         r("lbicons", "Ship icons on the leaderboard") +
         sec("Gameplay") +
         r("fastrespawn", "Fast respawn") +
@@ -6168,6 +6211,16 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           return;
         }
         featSet(k, !!t.checked);
+      });
+      var em = P.querySelector("[data-ext-espmode]"), ed = P.querySelector("[data-ext-espdist]"), edv = P.querySelector("[data-ext-espdist-v]");
+      if (em) em.addEventListener("click", function(e) {
+        e.preventDefault();
+        try { localStorage.setItem("STUDIO_esp_range", espNear() ? "all" : "near"); } catch (x) {}
+        em.textContent = espNear() ? "Near me" : "Everyone";
+      });
+      if (ed) ed.addEventListener("input", function() {
+        try { localStorage.setItem("STUDIO_esp_dist", ed.value); } catch (x) {}
+        if (edv) edv.textContent = ed.value;
       });
       var kb = P.querySelector("[data-ext-key]");
       if (!kb) return;
