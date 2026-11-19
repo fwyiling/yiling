@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      1.6.0
-// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom, full map radar with names, Aim Assist.
+// @version      1.7.0
+// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, no stars, fast respawn, team lock bypass, Aim Assist.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "1.6.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "1.7.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -836,7 +836,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     radarnames: { key: "AEGIS_radarnames", def: "1" },
     radaricons: { key: "AEGIS_radaricons", def: "0" },
     radartier:  { key: "AEGIS_radartier",  def: "1" },
-    aim:        { key: "STUDIO_aim",       def: "0" }
+    aim:        { key: "STUDIO_aim",       def: "0" },
+    wide:       { key: "AEGIS_wideview",   def: "1" },
+    nostars:    { key: "STUDIO_nostars",   def: "1" },
+    lbicons:    { key: "STUDIO_lbicons",   def: "1" },
+    teamlock:   { key: "STUDIO_teamlock",  def: "1" },
+    fastrespawn:{ key: "AEGIS_fastrespawn", def: "1" }
   };
   var FEAT_V = {};
   function featOn(f) {
@@ -1033,6 +1038,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // (the game also opens latency-probe sockets: a socket is the game's
       // for sure once it sends the join request)
       if (!_aegisWS || _aegisWS.readyState > 1) _aegisWS = ws;
+      try { if (window.__synSpecAttach) window.__synSpecAttach(ws); } catch (e) {}
       ws.send = function(d) {
         if (typeof d === "string" && d.indexOf('"ojct:4"') !== -1) { _aegisWS = ws; window.__synGameWS = ws; }
         // Aim Assist: the heading in each control message is swapped for the solved aim
@@ -1159,7 +1165,1340 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     return { aimassist: { key: LS("STUDIO_aim_key") || "q", on: featOn("aim") }, duelpilot: { key: "", on: false } };
   };
 
+  // Fast respawn: the game's respawn wait is skipped and the respawn asked
+  // for at once, then again (gently) while the game still waits
+  var _origSetTimeout = window.setTimeout;
+  window.setTimeout = function(fn, delay) {
+    if (delay > 500 && typeof fn === "function" && featOn("fastrespawn")) {
+      try {
+        var src = Function.prototype.toString.call(fn);
+        if (src.indexOf("killed(") >= 0 || src.indexOf("pending_respawn") >= 0) {
+          fn();
+          _origSetTimeout(function() { try { if (_aegisWS && _aegisWS.readyState === 1) _aegisWS.send(JSON.stringify({ name: "respawn" })); } catch (e) {} }, 50);
+          return;
+        }
+      } catch (e) {}
+    }
+    return _origSetTimeout.apply(this, arguments);
+  };
+  var _fastResp = { last: 0, n: 0 };
+  setInterval(function() {
+    if (!featOn("fastrespawn")) return;
+    try {
+      var s = window.module && window.module.exports && window.module.exports.settings, pending = false;
+      if (!s) return;
+      for (var k in s) { var g = s[k]; if (g && g.pending_respawn && "player_name" in g) { pending = true; break; } }
+      if (!pending) { _fastResp.n = 0; return; }
+      var now = Date.now();
+      if (_fastResp.n >= 4 || now - _fastResp.last < 1500) return;
+      if (_aegisWS && _aegisWS.readyState === 1) { _aegisWS.send(JSON.stringify({ name: "respawn" })); _fastResp.last = now; _fastResp.n++; }
+    } catch (e) {}
+  }, 250);
+  // Extended FOV view: Syndicate's spectator engine, zoomed out with FOV
+  // zoom it grows the asteroid window and places far ships
+  (function synSpectator() {
+    'use strict';
+    var TAN = Math.tan((22.5 * Math.PI) / 180);
+    var BASE_Z = 70;
+    var now = function() { return performance.now(); };
+    var S = {
+      ws: null, welcome: null, seed: null, modeId: null, teams: [], mapSize: 0, world: 0, myId: null,
+      players: new Map(), rocks: new Map(), field: null, tickBase: null, tickAt: 0, tickGuess: false,
+      effects: [], survival: false, live: true
+    };
+    try { if (localStorage.getItem('syn_spec_live') === '0') S.live = false; } catch (e) {}
+    var serverTick = function() { return S.tickBase == null ? null : S.tickBase + (Date.now() - S.tickAt) * 0.06; };
+    function player(id) {
+      var p = S.players.get(id);
+      if (!p) {
+        p = { id: id, name: '', hue: 0, team: null, code: 101, score: 0, rank: 0, alive: false,
+          samples: [], exact: null, known: null, heading: 0, blend: null, wasExact: false, askedName: 0 };
+        S.players.set(id, p);
+      }
+      return p;
+    }
+    function wrapDelta(d) { var W = S.world || 1; d = ((d % W) + W) % W; return d > W / 2 ? d - W : d; }
+    function wrapPos(v) { var W = S.world || 1, h = W / 2; return ((((v + h) % W) + W) % W) - h; }
+    function angleLerp(a, b, k) { var d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * k; }
+    var first = function(a) { return Array.isArray(a) ? a[0] : a; };
+
+    // ── sockets: every game socket is watched; the one that gets "welcome" is the game
+    var watched = new WeakSet();
+    window.__synSpecAttach = function(ws) {
+      if (!ws || watched.has(ws)) return;
+      watched.add(ws);
+      ws.addEventListener('message', function(ev) {
+        var d = ev.data;
+        if (typeof d === 'string') {
+          if (d.indexOf('"welcome"') !== -1 && ws !== S.ws) adopt(ws);
+          if (ws === S.ws) onText(d);
+        } else if (ws === S.ws) {
+          if (d instanceof ArrayBuffer) onBinary(new DataView(d));
+          else if (d instanceof Blob) _synBytes(d).then(function(b) { if (ws === S.ws) onBinary(new DataView(b)); });
+          else if (d && d.arrayBuffer) d.arrayBuffer().then(function(b) { if (ws === S.ws) onBinary(new DataView(b)); });
+        }
+      });
+    };
+    function adopt(ws) {
+      if (SP.active) exitSpectator();
+      S.ws = ws; S.myId = null; S.tickBase = null; S.effects = [];
+      S.players.clear(); S.rocks.clear(); SP.loaded = false;
+    }
+    function inject(buf) {
+      if (!S.ws || typeof S.ws.onmessage !== 'function') return false;
+      S.ws.onmessage({ data: { arrayBuffer: function() { return Promise.resolve(buf); } } });
+      return true;
+    }
+    function sendJSON(obj) { if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify(obj)); }
+    function onText(txt) {
+      if (txt[0] !== '{') return;
+      var m; try { m = JSON.parse(txt); } catch (e) { return; }
+      var d = m.data;
+      if (m.name === 'welcome') {
+        var mode = d.mode || {};
+        S.welcome = d; S.seed = d.seed; S.modeId = mode.id || null; S.teams = mode.teams || [];
+        S.world = d.size || mode.map_size * 10 || 0; S.survival = false; S.field = null;
+        S.mapSize = mode.map_size || S.world / 10;
+        if (d.servertime != null) { S.tickBase = d.servertime * 0.06; S.tickAt = Date.now(); S.tickGuess = true; }
+      } else if (m.name === 'entered') {
+        S.myId = d.shipid;
+      } else if (m.name === 'player_name') {
+        var p = player(d.id); p.name = d.player_name; p.hue = d.hue; p.team = d.friendly;
+      }
+    }
+    function onBinary(v) {
+      var op = v.getUint8(0);
+      if (op === 0) onShipStatus(v);
+      else if (op === 200 || op === 201) { S.survival = op === 201; onScoreboard(v); }
+      else if (op === 110) {
+        var r = rockAt(v.getInt8(2), v.getInt8(3));
+        S.rocks.set(v.getInt8(2) + ',' + v.getInt8(3), v.getUint32(4, true));
+        if (r && (SP.active || testOn)) { S.effects.push({ kind: 'rock', x: r.x, y: r.y, t: now() }); fxRockDestroyed(r, v.getUint8(8)); }
+      } else if (op === 210) {
+        var base = v.getUint32(1, true);
+        for (var o = 5; o + 2 < v.byteLength; o += 3) S.rocks.set(v.getInt8(o) + ',' + v.getInt8(o + 1), base + v.getUint8(o + 2));
+      } else if (op === 150) {
+        var victim = player(v.getUint8(1));
+        if (SP.active || testOn) {
+          var pos = renderPos(victim);
+          if (pos) { fxKill(victim, pos, v.getUint8(2)); S.effects.push({ kind: 'kill', x: pos.x, y: pos.y, t: now() }); }
+        }
+        victim.alive = false; victim.known = null;
+      }
+    }
+    function onShipStatus(v) {
+      var tick = v.getUint32(8, true), est = serverTick();
+      if (est == null || S.tickGuess || tick > est - 2) { S.tickBase = tick; S.tickAt = Date.now(); S.tickGuess = false; }
+      var p = player(v.getUint8(1)), flags = v.getUint8(2);
+      var e = p.exact = {
+        at: now(), tick: tick, x: v.getFloat32(16, true), y: v.getFloat32(20, true),
+        vx: v.getFloat32(24, true), vy: v.getFloat32(28, true), r: v.getFloat32(32, true),
+        alive: (flags & 1) > 0, lives: (flags >> 2) & 7, type: v.getUint16(14, true) & 1023,
+        shield: v.getUint16(42, true), generator: v.getUint16(44, true), gems: v.getUint16(46, true),
+        score: v.getUint32(48, true), levels: v.getUint32(52, true)
+      };
+      p.code = e.type; p.alive = e.alive; p.score = e.score; p.heading = e.r; p.wasExact = true; p.blend = null;
+      p.known = { shield: e.shield, gems: e.gems, generator: e.generator, levels: e.levels, lives: e.lives, code: e.type, at: Date.now() };
+    }
+    function onScoreboard(v) {
+      var half = S.world / 2, t = now(), seen = new Set();
+      for (var i = 0, n = v.getUint8(1); i < n; i++) {
+        var o = 2 + 8 * i, id = v.getUint8(o), p = player(id);
+        var flags = v.getUint8(o + 3), w = v.getUint32(o + 4, true), alive = (flags & 1) > 0;
+        seen.add(id);
+        if (alive && !p.alive) p.samples = [];
+        p.alive = alive; p.rank = i; p.score = w & 0xffffff; p.code = 100 * (1 + ((flags >> 5) & 7)) + 1 + (w >>> 24);
+        p.samples.push({ t: t, x: ((v.getInt8(o + 1) + 0.5) / 128) * half, y: ((v.getInt8(o + 2) + 0.5) / 128) * half });
+        if (p.samples.length > 8) p.samples.shift();
+        // (names: asked only while the spectator view or the map is up)
+        if (!p.name && (SP.active || SP.wide || testOn) && Date.now() - p.askedName > 5000) { p.askedName = Date.now(); sendJSON({ name: 'get_name', data: { id: id } }); }
+      }
+      S.players.forEach(function(_, id) { if (!seen.has(id) && id !== S.myId) S.players.delete(id); });
+      listDirty = true;
+    }
+
+    // ── positions: exact near us, radar (1×/s) far away; LIVE predicts, SMOOTH trails 1.25 s
+    var BOARD_DELAY = 1250, SMOOTH_MS = 90, EXACT_MS = 1000, LIVE_MAX_AHEAD = 1.5, LIVE_SPRING_HZ = 0.8;
+    var exactFresh = function(p, t) { return !!p.exact && t - p.exact.at < EXACT_MS; };
+    // (exact from our own socket: the game draws that ship itself; exact from
+    // a bot's view: the game does not know it, we place it)
+    var ownExact = function(p, t) { return exactFresh(p, t) && !p.exact.bot; };
+    function exactState(p, t) { var e = p.exact, dt = (t - e.at) * 0.06; return { x: wrapPos(e.x + e.vx * dt), y: wrapPos(e.y + e.vy * dt), vx: e.vx, vy: e.vy, exact: true }; }
+    function boardState(p, t) {
+      var s = p.samples;
+      if (!s.length) return null;
+      var rt = t - BOARD_DELAY, i = s.length - 2;
+      while (i >= 0 && s[i].t > rt) i--;
+      if (i < 0) return { x: s[0].x, y: s[0].y, vx: 0, vy: 0 };
+      var P1 = s[i], P2 = s[i + 1];
+      var P0 = s[i - 1] || { x: P1.x - wrapDelta(P2.x - P1.x), y: P1.y - wrapDelta(P2.y - P1.y) };
+      var P3 = s[i + 2] || { x: P2.x + wrapDelta(P2.x - P1.x), y: P2.y + wrapDelta(P2.y - P1.y) };
+      var X = [P0, P1, P2, P3].map(function(q) { return P1.x + wrapDelta(q.x - P1.x); });
+      var Y = [P0, P1, P2, P3].map(function(q) { return P1.y + wrapDelta(q.y - P1.y); });
+      var dt = Math.max(1, P2.t - P1.t), u = (rt - P1.t) / dt, extra = 0;
+      if (u > 1) { extra = Math.min(u - 1, 0.5); u = 1; }
+      var cr = function(a) { return 0.5 * (2 * a[1] + (a[2] - a[0]) * u + (2 * a[0] - 5 * a[1] + 4 * a[2] - a[3]) * u * u + (3 * a[1] - a[0] - 3 * a[2] + a[3]) * u * u * u); };
+      var dcr = function(a) { return 0.5 * ((a[2] - a[0]) + 2 * (2 * a[0] - 5 * a[1] + 4 * a[2] - a[3]) * u + 3 * (3 * a[1] - a[0] - 3 * a[2] + a[3]) * u * u); };
+      var vx = dcr(X), vy = dcr(Y), k = 1000 / 60 / dt;
+      return { x: wrapPos(cr(X) + vx * extra), y: wrapPos(cr(Y) + vy * extra), vx: vx * k, vy: vy * k };
+    }
+    function smooth(p, b, t) {
+      var sm = p.sm;
+      if (!sm || t - sm.t > 2000 || Math.abs(wrapDelta(b.x - sm.x)) + Math.abs(wrapDelta(b.y - sm.y)) > 60) { p.sm = { x: b.x, y: b.y, t: t }; return; }
+      if (t > sm.t) { var k = 1 - Math.exp(-(t - sm.t) / SMOOTH_MS); sm.x = wrapPos(sm.x + wrapDelta(b.x - sm.x) * k); sm.y = wrapPos(sm.y + wrapDelta(b.y - sm.y) * k); sm.t = t; }
+      b.x = sm.x; b.y = sm.y;
+    }
+    function liveModel(p) {
+      var s = p.samples, L = s[s.length - 1], A = s[s.length - 2], dt = A ? (L.t - A.t) / 1000 : 0;
+      return { t: L.t, x: L.x, y: L.y, vx: dt > 0 ? wrapDelta(L.x - A.x) / dt : 0, vy: dt > 0 ? wrapDelta(L.y - A.y) / dt : 0 };
+    }
+    function liveState(p, t) {
+      if (!p.samples.length) return null;
+      var lastT = p.samples[p.samples.length - 1].t;
+      if (!p.lv || p.lv.lastT !== lastT) p.lv = { lastT: lastT, m: liveModel(p) };
+      var m = p.lv.m, age = Math.max(0, Math.min((t - m.t) / 1000, LIVE_MAX_AHEAD));
+      var tgt = { x: wrapPos(m.x + m.vx * age), y: wrapPos(m.y + m.vy * age) }, z = p.spr;
+      if (!z || t - z.t > 500) {
+        z = p.spr = { x: tgt.x, y: tgt.y, vx: m.vx, vy: m.vy, t: t, px: tgt.x, py: tgt.y };
+      } else if (t > z.t) {
+        var dts = (t - z.t) / 1000;
+        var tvx = wrapDelta(tgt.x - z.px) / dts, tvy = wrapDelta(tgt.y - z.py) / dts;
+        if (Math.hypot(tvx, tvy) > 300) { tvx = m.vx; tvy = m.vy; }
+        z.px = tgt.x; z.py = tgt.y;
+        if (Math.abs(wrapDelta(tgt.x - z.x)) + Math.abs(wrapDelta(tgt.y - z.y)) > 80) { z.x = tgt.x; z.y = tgt.y; z.vx = tvx; z.vy = tvy; }
+        else {
+          var w = 2 * Math.PI * LIVE_SPRING_HZ, steps = Math.max(1, Math.ceil(dts / 0.02)), h = dts / steps;
+          for (var i = 0; i < steps; i++) {
+            z.vx += (w * w * wrapDelta(tgt.x - z.x) + 2 * w * (tvx - z.vx)) * h;
+            z.vy += (w * w * wrapDelta(tgt.y - z.y) + 2 * w * (tvy - z.vy)) * h;
+            z.x = wrapPos(z.x + z.vx * h); z.y = wrapPos(z.y + z.vy * h);
+          }
+        }
+        z.t = t;
+      }
+      return { x: z.x, y: z.y, vx: z.vx / 60, vy: z.vy / 60 };
+    }
+    function renderPos(p, t) {
+      t = t || now();
+      if (exactFresh(p, t)) { var e = exactState(p, t); p.sm = { x: e.x, y: e.y, t: t }; return e; }
+      var b;
+      if (S.live) b = liveState(p, t);
+      else if ((b = boardState(p, t))) smooth(p, b, t);
+      if (!b) return null;
+      if (p.wasExact && p.exact) {
+        var ex = exactState(p, Math.min(t, p.exact.at + EXACT_MS));
+        p.blend = { dx: wrapDelta(ex.x - b.x), dy: wrapDelta(ex.y - b.y), at: t };
+        p.wasExact = false;
+      }
+      if (p.blend) {
+        var k = 1 - (t - p.blend.at) / 1200;
+        if (k <= 0) p.blend = null; else { b.x = wrapPos(b.x + p.blend.dx * k); b.y = wrapPos(b.y + p.blend.dy * k); }
+      }
+      return b;
+    }
+
+    // ── game internals, found by readable names or (whitespace-free) source
+    var squash = function(s) { return String(s).replace(/\s+/g, ''); };
+    function findClass(test) {
+      var names = Object.getOwnPropertyNames(window);
+      for (var i = 0; i < names.length; i++) {
+        try { var v = window[names[i]]; if (typeof v === 'function' && v.prototype && test(v)) return v; } catch (e) {}
+      }
+      return null;
+    }
+    function protoFnBySource(cls, needle) {
+      var keys = Object.getOwnPropertyNames(cls.prototype);
+      for (var i = 0; i < keys.length; i++) {
+        var d = Object.getOwnPropertyDescriptor(cls.prototype, keys[i]);
+        if (d && typeof d.value === 'function' && squash(d.value.toString()).indexOf(needle) !== -1) return keys[i];
+      }
+      return null;
+    }
+    function wrapProto(cls, name, fn) { var orig = cls.prototype[name]; cls.prototype[name] = function() { return fn(orig, this, arguments); }; }
+    var G = {
+      hooked: false, world: null, camFn: null, camKey: null, tickKey: null,
+      Scene: null, scene: null, renderFn: null, sceneCamKey: null, cursor: null, lastTry: 0,
+      game: function() {
+        if (!this.world) return null;
+        if (this._gameOf !== this.world) {
+          this._game = Object.values(this.world).find(function(v) { return v && v.mode && v.mode.options && v.names; }) || null;
+          this._gameOf = this._game ? this.world : null;
+        }
+        return this._game;
+      },
+      cam: function() { return this.world && this.camKey ? this.world[this.camKey] : null; },
+      tick: function() {
+        var w = this.world, est = serverTick();
+        if (!w || est == null) return est;
+        if (this.tickKey && typeof w[this.tickKey] === 'number' && Math.abs(w[this.tickKey] - est) < 600) return w[this.tickKey];
+        var best = null, bd = 600, keys = Object.keys(w);
+        for (var i = 0; i < keys.length; i++) {
+          var v = w[keys[i]];
+          if (typeof v === 'number' && Number.isInteger(v) && v > 1000 && Math.abs(v - est) < bd) { bd = Math.abs(v - est); best = keys[i]; }
+        }
+        this.tickKey = best;
+        return best ? w[best] : est;
+      },
+      shipType: function(code) {
+        var g = this.game();
+        if (!g || !g.mode) return null;
+        if (this._typesOf !== g.mode) {
+          var vals = Object.values(g.mode);
+          this._types = vals.find(function(v) { return v && v.types_by_code; });
+          this._models = vals.find(function(v) { return v && v.ships_by_code; });
+          this._typesOf = g.mode;
+        }
+        var t = this._types && this._types.types_by_code[code], m = this._models && this._models.ships_by_code[code];
+        return t || m ? { t: t, m: m } : null;
+      }
+    };
+    function installHooks() {
+      if (G.hooked) return true;
+      // (a scan of every global is not free: at most once a second until found)
+      var t = now();
+      if (t - G.lastTry < 1000) return false;
+      G.lastTry = t;
+      if (!window.THREE || !THREE.PerspectiveCamera) return false;
+      var World = findClass(function(c) { return typeof c.prototype.initCamera === 'function' && typeof c.prototype.asteroidStatus === 'function'; });
+      G.camFn = World && protoFnBySource(World, '.zoom=.995*');
+      if (!G.camFn) return false;
+      G.camKey = (squash(World.prototype[G.camFn].toString()).match(/this\.(\w+)\.zoom=\.995\*/) || [])[1];
+      wrapProto(World, G.camFn, function(orig, self, args) {
+        G.world = self;
+        if (SP.active) return spectatorTick(self);
+        var r = orig.apply(self, args);
+        if (SP.wide) { try { synthShips(); driveShips(self); } catch (e) {} }
+        return r;
+      });
+      wrapProto(THREE.PerspectiveCamera, 'updateProjectionMatrix', function(orig, cam, args) {
+        if (G.scene && G.sceneCamKey && cam === G.scene[G.sceneCamKey]) {
+          if (SP.active) {
+            if (SP.orig == null) SP.orig = { z: cam.position.z, far: cam.far };
+            cam.position.z = SP.z; cam.far = Math.max(1000, SP.z + 200);
+          } else if (SP.orig != null) {
+            // (back to exactly what the game had)
+            cam.position.z = SP.orig.z; cam.far = SP.orig.far; SP.orig = null;
+          }
+        }
+        return orig.apply(cam, args);
+      });
+      if (typeof window.Cursor === 'function' && window.Cursor.prototype.set) {
+        wrapProto(window.Cursor, 'set', function(orig, self, args) { G.cursor = self; return orig.apply(self, args); });
+      }
+      G.hooked = true;
+      return true;
+    }
+    function installSceneHooks() {
+      var g = G.game();
+      if (G.Scene && (G.renderFn || G._sceneGame === g)) return true;
+      var scene = g && Object.values(g).find(function(v) { return v && typeof v === 'object' && Object.values(v).some(isRockRenderer); });
+      if (!scene) return false;
+      var fn = protoFnBySource(scene.constructor, '.fov=45*this.');
+      G.Scene = scene.constructor; G.scene = scene; G._sceneGame = g;
+      if (fn) {
+        G.renderFn = fn;
+        G.sceneCamKey = (squash(scene.constructor.prototype[fn].toString()).match(/this\.(\w+)\.fov=45\*this\./) || [])[1];
+        wrapProto(G.Scene, fn, function(orig, self, args) { G.scene = self; return orig.apply(self, args); });
+      } else {
+        // (the render step is wrapped by another hook, ours or another
+        // script's: the scene camera is then found by what it is; the scene
+        // is found again for every new game)
+        G.sceneCamKey = Object.keys(scene).find(function(k) { return scene[k] instanceof THREE.PerspectiveCamera; }) || null;
+      }
+      return !!G.sceneCamKey;
+    }
+
+    // ── rocks: the game's own generator, for the whole map
+    var MODE_CLASS = { team: 'TeamMode', survival: 'SurvivalMode', invasion: 'InvasionMode', deathmatch: 'DeathMatchMode', battleroyale: 'BattleRoyaleMode', modding: 'ModdingMode' };
+    function buildField() {
+      if (S.seed == null || !S.mapSize) return null;
+      G.FieldClass = G.FieldClass || findClass(function(c) { return typeof c.prototype.getCustomMap === 'function'; });
+      if (!G.FieldClass) return null;
+      var options = (S.welcome && S.welcome.mode) || {};
+      var cls = window[MODE_CLASS[S.modeId]] || window.Mode;
+      var density = cls && cls.prototype && cls.prototype.asteroidsDensityModifier;
+      var mode = { options: options, asteroidsDensityModifier: function(x, y) { return density ? density.call({ options: options }, x, y) : 1; } };
+      var half = S.mapSize / 2, gen = new G.FieldClass(S.seed, half, mode), out = {}, list = [];
+      list.index = new Map();
+      for (var cx = -half; cx < half; cx++) {
+        for (var cy = -half; cy < half; cy++) {
+          gen.get(cx, cy, out);
+          if (!out.on) continue;
+          var r = { cx: cx, cy: cy, x: out.x * 10, y: out.y * 10, size: out.size * 10 };
+          list.push(r); list.index.set(cx + ',' + cy, r);
+        }
+      }
+      return list;
+    }
+    var rockAt = function(cx, cy) { return (S.field && S.field.index.get(cx + ',' + cy)) || null; };
+    function rockScale(r, tick) {
+      var key = r.cx + ',' + r.cy, resp = S.rocks.get(key);
+      if (resp == null || tick == null) return 1;
+      if (tick <= 60 * resp - 60) return 0;
+      if (tick < 60 * resp) return Math.sqrt((tick - (60 * resp - 60)) / 60);
+      S.rocks.delete(key);
+      return 1;
+    }
+    var isRockRenderer = function(v) { return v && typeof v === 'object' && typeof v.rebuild === 'function' && typeof v.number === 'number' && Array.isArray(v.models); };
+    function rockRenderer() {
+      var g = G.game(), list = [G.scene].concat(g ? Object.values(g) : []);
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (!c || typeof c !== 'object') continue;
+        var r = Object.values(c).find(isRockRenderer);
+        if (r) { G.scene = G.scene || c; return r; }
+      }
+      return null;
+    }
+    function* growRocksJob(inst, N) {
+      var group = Object.values(inst).find(function(v) { return v instanceof THREE.Group; });
+      if (!group) throw new Error('rock renderer has no group');
+      var n0 = inst.number, old = group.children.slice(), fresh = [];
+      for (var h = 0; h < N; h++) {
+        for (var r = 0; r < N; r++) {
+          var ref = old[(h % 10) * n0 + (r % 10)];
+          var mi = ref && ref.model != null ? ref.model : (h * 7 + r * 3) % inst.models.length;
+          var m = inst.models[mi].getInstance();
+          m.model = mi;
+          if (ref) { m.rotation.x = ref.rotation.x; m.rotation.y = ref.rotation.y; }
+          m.visible = false;
+          fresh.push(m);
+        }
+        yield fresh.length / (N * N);
+      }
+      group.children.length = 0;
+      for (var i = 0; i < fresh.length; i++) group.add(fresh[i]);
+      if (!SP.rocksOrig || SP.rocksOrig.inst !== inst) SP.rocksOrig = { inst: inst, group: group, children: old, number: n0 };
+      inst.number = N;
+      SP.rocksInst = inst; SP.rocksN = N;
+    }
+
+    // ── ship stats (the game's own formulas)
+    function specValue(v, upg, level) { if (!Array.isArray(v)) return typeof v === 'number' ? v : 0; var i = Math.max(0, Math.min(1, upg / Math.max(1, level))); return v[0] * (1 - i) + v[1] * i; }
+    var shieldSpec = function(st) { return st && st.t && st.t.specs && st.t.specs.shield; };
+    var knownFor = function(p) { return p.known && p.known.code === p.code ? p.known : null; };
+    function shieldCapacity(st, levels, fallback) { var spec = shieldSpec(st); return Math.max(1, spec ? specValue(spec.capacity, (levels >>> 0) & 15, st.t.level || 1) : fallback || 1); }
+    var gemsCapacity = function(st, code) { var l = (st && st.t && st.t.level) || Math.floor(code / 100) || 1; return l * l * 20; };
+    function estimateShield(p) {
+      var st = G.shipType(p.code), spec = shieldSpec(st), k = knownFor(p);
+      var cap = Math.max(spec ? shieldCapacity(st, k ? k.levels : 0) : 100, k ? k.shield : 0);
+      if (!k) return cap;
+      var reload = spec ? specValue(spec.reload, (k.levels >>> 4) & 15, st.t.level || 1) : 3;
+      var factor = (S.welcome && S.welcome.mode && S.welcome.mode.shield_regen_factor) || 1;
+      return Math.min(cap, k.shield + factor * reload * ((Date.now() - k.at) / 1000));
+    }
+
+    // ── the spectator camera and far ships
+    var SP = { active: false, orig: null, loaded: false, loading: false, x: 0, y: 0, z: BASE_Z, zTarget: BASE_Z,
+      follow: null, userZoomed: false, drag: null, mouseX: 0, mouseY: 0, rocksInst: null, rocksN: 0, lastSynth: 0, keysDown: new Set() };
+    var maxZ = function() { return Math.max(BASE_Z, Math.min(S.world / 2, (SP.rocksN || 20) * 5) / TAN); };
+    var unitsPerPixel = function() { return (2 * SP.z * TAN) / innerHeight; };
+    function povZ(code) {
+      var st = G.shipType(code);
+      var radius = (st && ((st.t && st.t.radius) || (st.m && st.m.radius))) || 3;
+      var zoom = Math.pow(radius / 3, 0.3) / ((st && ((st.m && st.m.zoom) || (st.t && st.t.zoom))) || 1);
+      return (BASE_Z * Math.tan((22.5 * zoom * Math.PI) / 180)) / TAN;
+    }
+    function spectatorTick(world) {
+      var cam = world[G.camKey];
+      if (cam) {
+        var ks = Object.keys(cam);
+        for (var i = 0; i < ks.length; i++) if (typeof cam[ks[i]] === 'number') cam[ks[i]] = 0;
+        cam.x = SP.x; cam.y = SP.y; cam.zoom = 1;
+      }
+      synthShips();
+      driveShips(world);
+    }
+    function synthShips() {
+      var t = now();
+      if (t - SP.lastSynth < 200) return;
+      SP.lastSynth = t;
+      var tick = G.tick();
+      if (tick == null) return;
+      // (Wide View: only ships inside the zoomed-out window; every ship the
+      // game is handed it simulates and draws each frame, seen or not)
+      var cam = !SP.active && G.cam(), reach = Math.max(SP.wideN, 20) * 5 + 20;
+      S.players.forEach(function(p) {
+        if (p.id === S.myId || !p.alive || (!p.samples.length && !exactFresh(p, t)) || ownExact(p, t)) return;
+        var st = renderPos(p, t);
+        if (!st) return;
+        if (cam && (Math.abs(wrapDelta(st.x - cam.x)) > reach || Math.abs(wrapDelta(st.y - cam.y)) > reach)) return;
+        inject(buildShipPacket(p, st, Math.round(tick)));
+      });
+    }
+    // (each ship entity's status object, looked up once, not every tick)
+    var statusOf = new WeakMap();
+    function driveShips(world) {
+      if (!Array.isArray(world.ships)) return;
+      var statusById = new Map();
+      for (var i = 0; i < world.ships.length; i++) {
+        var e = world.ships[i], s = statusOf.get(e);
+        if (s === undefined) {
+          var v = Object.values(e).find(function(o) { return o && o.status && typeof o.status.x === 'number' && o.status.id != null; });
+          s = v ? v.status : null;
+          statusOf.set(e, s);
+        }
+        if (s) statusById.set(s.id, s);
+      }
+      var t = now();
+      S.players.forEach(function(p) {
+        var s = p.id !== S.myId && p.alive && !ownExact(p, t) && statusById.get(p.id);
+        var st = s && renderPos(p, t);
+        if (!st) return;
+        var sp = Math.hypot(st.vx, st.vy);
+        if (p.aim && t < p.aim.until) p.heading = angleLerp(p.heading, p.aim.a, 0.25);
+        else if (sp > 0.03) p.heading = angleLerp(p.heading, Math.atan2(st.vy, st.vx), 0.08);
+        if (sp > 0.32) p.up = true; else if (sp < 0.18) p.up = false;
+        s.x = st.x; s.y = st.y; s.r = p.heading; s.up = !!p.up;
+        s.angle = ((Math.round((p.heading * 180) / Math.PI) % 360) + 360) % 360;
+      });
+    }
+    function buildShipPacket(p, st, tick) {
+      var v = new DataView(new ArrayBuffer(56)), k = knownFor(p), deg = Math.round((p.heading * 180) / Math.PI);
+      v.setUint8(0, 0); v.setUint8(1, p.id);
+      v.setUint8(2, (p.alive ? 1 : 0) | (p.up ? 2 : 0) | ((((k && k.lives) || 0) & 7) << 2));
+      v.setUint8(3, Math.round(((p.hue || 0) * 256) / 360) & 255);
+      v.setUint32(4, 0, true); v.setUint32(8, tick, true);
+      v.setUint16(12, ((deg % 360) + 360) % 360, true); v.setUint16(14, p.code & 1023, true);
+      [st.x, st.y, st.vx, st.vy, p.heading].forEach(function(f, i) { v.setFloat32(16 + 4 * i, f, true); });
+      v.setUint8(41, Math.min(255, p.rank || 0));
+      v.setUint16(42, Math.round(estimateShield(p)), true);
+      v.setUint16(44, k ? k.generator : 0, true); v.setUint16(46, k ? k.gems : 0, true);
+      v.setUint32(48, p.score >>> 0, true); v.setUint32(52, k ? k.levels >>> 0 : 0, true);
+      return v.buffer;
+    }
+    // reconstructed shots and gems out of our bubble (who broke which rock,
+    // who killed whom: the server tells the whole map); a reconstruction
+    var FX = { laserId: 61000, gemId: 61000 };
+    var fxId = function(key) { var v = FX[key]; FX[key] = v >= 65000 ? 61000 : v + 1; return v; };
+    function inMyBubble(x, y) { var me = S.players.get(S.myId); return !!(me && me.exact) && Math.hypot(wrapDelta(x - me.exact.x), wrapDelta(y - me.exact.y)) < 110; }
+    function laserSpecs(code) { var st = G.shipType(code), L = st && st.t && st.t.lasers; return Array.isArray(L) && L.length ? L : [{ x: 0, y: -2, speed: 150, damage: 5, type: 1, number: 1, spread: 0 }]; }
+    function fireAt(p, tx, ty, volleys, gapMs) {
+      var t = now(), pos = renderPos(p, t);
+      if (!pos) return;
+      var dx = wrapDelta(tx - pos.x), dy = wrapDelta(ty - pos.y);
+      if (Math.hypot(dx, dy) > 95) return;
+      var ang = Math.atan2(dy, dx);
+      p.aim = { a: ang, until: t + volleys * gapMs + 400 };
+      for (var i = 0; i < volleys; i++) setTimeout(function() { fireVolley(p, ang); }, 60 + i * gapMs);
+    }
+    function fireVolley(p, ang) {
+      var pos = SP.active && p.alive && renderPos(p, now()), tick = G.tick();
+      if (!pos || tick == null) return;
+      var fx = Math.cos(ang), fy = Math.sin(ang), recs = [];
+      laserSpecs(p.code).forEach(function(L) {
+        var n = Math.max(1, Math.min(8, L.number || 1)), spread = ((L.spread || 0) * Math.PI) / 180, ox = +L.x || 0, oy = +L.y || 0;
+        for (var k = 0; k < n; k++) recs.push([pos.x - fx * oy + fy * ox, pos.y - fy * oy - fx * ox, pos.vx || 0, pos.vy || 0, first(L.speed) || 150, ang + (n > 1 ? (k / (n - 1) - 0.5) * spread : 0), L.type || 1, Math.min(255, first(L.damage) || 5)]);
+      });
+      var v = new DataView(new ArrayBuffer(8 + 32 * recs.length));
+      v.setUint8(0, 100); v.setUint8(1, p.id); v.setUint32(4, Math.round(tick), true);
+      recs.forEach(function(r, i) {
+        var o = 8 + 32 * i;
+        [r[0], r[1], 0, r[2], r[3], r[4]].forEach(function(f, j) { v.setFloat32(o + 4 * j, f, true); });
+        v.setUint16(o + 24, fxId('laserId'), true); v.setFloat32(o + 26, r[5], true); v.setUint8(o + 30, r[6]); v.setUint8(o + 31, r[7]);
+      });
+      inject(v.buffer);
+    }
+    function dropGems(x, y, count, points, eaterId, eatAfterMs) {
+      var tick = G.tick();
+      if (tick == null) return;
+      var n = Math.max(1, Math.min(8, count)), v = new DataView(new ArrayBuffer(5 + 19 * n)), ids = [];
+      v.setUint8(0, 120); v.setUint32(1, Math.round(tick), true);
+      for (var i = 0; i < n; i++) {
+        var o = 5 + 19 * i, a = Math.random() * 2 * Math.PI, r = 2 + Math.random() * 4, id = fxId('gemId');
+        ids.push(id);
+        v.setUint8(o, Math.max(1, Math.min(255, Math.round(points)))); v.setUint16(o + 1, id, true);
+        [x, y, Math.cos(a) * r, Math.sin(a) * r].forEach(function(f, j) { v.setFloat32(o + 3 + 4 * j, f, true); });
+      }
+      inject(v.buffer);
+      if (eaterId == null) return;
+      ids.forEach(function(id, i) {
+        setTimeout(function() {
+          if (!SP.active) return;
+          var w = new DataView(new ArrayBuffer(4));
+          w.setUint8(0, 121); w.setUint8(1, eaterId); w.setUint16(2, id, true);
+          inject(w.buffer);
+        }, eatAfterMs + i * 110);
+      });
+    }
+    function fxRockDestroyed(r, shooterId) {
+      if (!SP.active || inMyBubble(r.x, r.y)) return;
+      var sh = S.players.get(shooterId), ok = sh && sh.alive && !exactFresh(sh, now());
+      if (ok) fireAt(sh, r.x, r.y, 2, 170);
+      dropGems(r.x, r.y, 2 + Math.round(r.size / 3), Math.max(1, Math.round(r.size)), ok ? sh.id : null, 900);
+    }
+    function fxKill(victim, pos, killerId) {
+      if (!SP.active || inMyBubble(pos.x, pos.y)) return;
+      var k = S.players.get(killerId), ok = k && k.alive && k.id !== victim.id && !exactFresh(k, now());
+      if (ok) fireAt(k, pos.x, pos.y, 3, 160);
+      var level = Math.floor(victim.code / 100) || 1, gems = (victim.known && victim.known.gems) || level * level * 6;
+      var n = Math.max(2, Math.min(8, Math.round(gems / 15)));
+      dropGems(pos.x, pos.y, n, Math.max(1, gems / n), ok ? k.id : null, 1300);
+    }
+
+    // ── on / off
+    function toggleSpectator() { if (SP.loading) return; if (SP.active) exitSpectator(); else enterSpectator(); }
+    function enterSpectator() {
+      if (!S.welcome) return toast('Start a game first');
+      G.lastTry = 0;
+      if (!installHooks() || !G.world) return notReady('world');
+      if (!installSceneHooks()) return notReady('scene');
+      releaseHeldInput();
+      var cam = G.cam();
+      SP.x = cam ? cam.x : 0; SP.y = cam ? cam.y : 0; SP.z = BASE_Z; SP.zTarget = BASE_Z; SP.follow = null; SP.active = true;
+      if (G.cursor) G.cursor.visible = false;
+      document.body.classList.add('syn-spec-on');
+      listDirty = true;
+      S.players.forEach(function(p) { p.askedName = 0; });
+      if (SP.loaded && SP.rocksInst === rockRenderer()) ui.show(); else runLoading();
+      paintHud();
+    }
+    function notReady(what) { toast('Game not ready yet (' + what + ' not found) — try again in a moment'); }
+    // the game's own 20×20 rock window back (the big one cost frames after
+    // leaving: the game walks every rock of it each frame)
+    function shrinkRocks() {
+      var o = SP.rocksOrig;
+      if (!o || SP.rocksInst !== o.inst) return;
+      try {
+        // (dropped in one go: removing 10 000 children one by one is quadratic)
+        o.group.children.length = 0;
+        o.children.forEach(function(m) { o.group.add(m); });
+        o.inst.number = o.number;
+      } catch (e) {}
+      SP.rocksOrig = null; SP.rocksInst = null; SP.rocksN = 0; SP.loaded = false;
+    }
+    function exitSpectator() {
+      SP.active = false; SP.drag = null; SP.follow = null;
+      shrinkRocks();
+      document.body.classList.remove('syn-spec-on');
+      if (G.cursor) G.cursor.visible = true;
+      try { if (G.world && G.world.initCamera) G.world.initCamera(1); } catch (e) {}
+      ui.hide();
+      paintHud();
+    }
+    function paintHud() {
+      var r = document.getElementById('aegis-hud-spec-row');
+      if (r) r.classList.toggle('on', SP.active);
+    }
+    function runLoading() {
+      SP.loading = true;
+      var L = ui.loading;
+      L.start();
+      var steps = [
+        function* () { yield 0.5; L.detail(0, 'seed ' + S.seed + ' · ' + (S.modeId || '?') + ' · ' + S.mapSize + '×' + S.mapSize + ' cells (' + S.world + ' units)'); },
+        function* () {
+          S.field = S.field || buildField();
+          var inst = rockRenderer();
+          if (!inst) throw new Error('rock renderer not found');
+          var N = Math.max(20, Math.min(100, Math.ceil(S.mapSize / 10) * 10));
+          if (SP.rocksInst !== inst || SP.rocksN < N) yield* growRocksJob(inst, N);
+          var dead = S.field ? S.field.filter(function(r) { return rockScale(r, serverTick()) === 0; }).length : 0;
+          L.detail(1, (S.field ? S.field.length : '?') + ' rocks · ' + dead + ' destroyed · window ' + SP.rocksN + '×' + SP.rocksN);
+        },
+        function* () {
+          var t0 = now();
+          while (now() - t0 < 3000) {
+            var all = Array.from(S.players.values());
+            var named = all.filter(function(p) { return p.name; }).length, ready = all.filter(function(p) { return p.samples.length >= 2; }).length;
+            L.detail(2, all.length + ' players · ' + named + ' names · ' + ready + ' with position');
+            if (all.length && named === all.length && ready >= all.filter(function(p) { return p.alive; }).length) break;
+            yield Math.min(0.99, (now() - t0) / 3000);
+          }
+        },
+        function* () {
+          SP.lastSynth = 0; synthShips();
+          for (var t0 = now(); now() - t0 < 400;) yield (now() - t0) / 400;
+          L.detail(3, 'ships in place · name, shield and gems in the list');
+        }
+      ];
+      var si = 0, it = null;
+      (function frame() {
+        if (!SP.active) { SP.loading = false; L.hide(); return; }
+        try {
+          for (var t0 = now(); now() - t0 < 12;) {
+            if (!it) { L.step(si); it = steps[si](); }
+            var r = it.next();
+            if (!r.done) { L.progress(si, r.value); continue; }
+            L.done(si); it = null;
+            if (++si >= steps.length) {
+              SP.loaded = true; SP.loading = false;
+              setTimeout(function() { L.hide(); if (SP.active) ui.show(); }, 350);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('[Syndicate spectator] loading failed', e);
+          L.error(si, String(e.message || e));
+          SP.loading = false;
+          setTimeout(function() { L.hide(); exitSpectator(); }, 2500);
+          return;
+        }
+        requestAnimationFrame(frame);
+      })();
+    }
+
+    // ── input: while on, nothing reaches our own ship
+    var BLOCK = ['keydown', 'keyup', 'keypress', 'mousedown', 'mouseup', 'mousemove', 'click', 'dblclick', 'contextmenu', 'wheel', 'mousewheel', 'DOMMouseScroll', 'touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup', 'pointermove'];
+    // (Studio: only its wide view is used; spectator mode has no key, ] is all mods off)
+    var specKey = function() { return null; };
+    function onAnyInput(e) {
+      if (e.__synspec) return;
+      if (e.type === 'keydown') SP.keysDown.add(e.keyCode);
+      if (e.type === 'keyup') SP.keysDown.delete(e.keyCode);
+      var a = document.activeElement;
+      var typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      if (e.type === 'keydown' && !typing && !e.ctrlKey && !e.altKey && !e.metaKey && (e.key === specKey() || (e.key === '[' && (SP.active || testOn)))) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (e.key === specKey()) toggleSpectator(); else testOn = !testOn;
+        return;
+      }
+      if (!SP.active) return;
+      if (e.target && e.target.closest && e.target.closest('.syn-spec-ui, #aegis, #aegis-hud, #aegis-bots-win')) return;
+      // Our ship dead: the game's respawn screen needs its clicks and keys
+      // (they were all swallowed and the Respawn button did nothing).
+      var me = S.players.get(S.myId);
+      // (our own status says it first: the radar can still list us as alive)
+      if (me && (!me.alive || (me.exact && !me.exact.alive && now() - me.exact.at < 3000))) { if (e.type === 'mousemove') { SP.mouseX = e.clientX; SP.mouseY = e.clientY; } return; }
+      // Only what is aimed at the game itself is ours: the game's own
+      // buttons and panels (respawn, menus, chat) keep working.
+      if (e.type.indexOf('key') !== 0 && e.type !== 'mousemove' && e.type !== 'mouseup' && e.type !== 'wheel' && e.target && e.target.tagName && e.target.tagName !== 'CANVAS' && e.target !== document.body && e.target !== document.documentElement) return;
+      e.stopImmediatePropagation();
+      if (e.type.indexOf('key') === 0) {
+        if (e.type === 'keydown' && e.key === 'Escape') SP.follow = null;
+        if (e.type === 'keydown' && e.key && e.key.toLowerCase() === 'l') toggleLive();
+        if (e.type === 'keydown' && e.key === '[') testOn = !testOn;
+        if (!/^F\d+$/.test(e.key)) e.preventDefault();
+        return;
+      }
+      if (e.type === 'mousemove') {
+        SP.mouseX = e.clientX; SP.mouseY = e.clientY;
+        if (SP.drag) { var upp = unitsPerPixel(); SP.x = wrapPos(SP.drag.x - (e.clientX - SP.drag.mx) * upp); SP.y = wrapPos(SP.drag.y + (e.clientY - SP.drag.my) * upp); }
+      } else if (e.type === 'mousedown') {
+        e.preventDefault();
+        if (e.button === 2) { SP.follow = null; SP.drag = { mx: e.clientX, my: e.clientY, x: SP.x, y: SP.y }; }
+        else if (e.button === 0) { var id = shipUnderMouse(e.clientX, e.clientY); if (id != null) followPlayer(id); }
+      } else if (e.type === 'mouseup') {
+        if (e.button === 2) SP.drag = null;
+      } else if (e.type === 'wheel') {
+        e.preventDefault();
+        if (SP.follow != null) SP.userZoomed = true;
+        SP.zTarget = Math.max(25, Math.min(maxZ(), SP.zTarget * Math.pow(1.0015, e.deltaY)));
+      } else if (e.type === 'contextmenu' || e.type === 'mousewheel' || e.type === 'DOMMouseScroll') {
+        e.preventDefault();
+      }
+    }
+    BLOCK.forEach(function(type) { window.addEventListener(type, onAnyInput, { capture: true, passive: false }); });
+    function toggleLive() {
+      S.live = !S.live;
+      try { localStorage.setItem('syn_spec_live', S.live ? '1' : '0'); } catch (e) {}
+      S.players.forEach(function(p) { p.lv = p.sm = p.spr = null; });
+      toast(S.live ? 'Movement: LIVE (predicted, no delay)' : 'Movement: SMOOTH (1.25 s behind, fluid)');
+    }
+    function releaseHeldInput() {
+      SP.keysDown.forEach(function(code) {
+        var ev = new KeyboardEvent('keyup', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'keyCode', { get: function() { return code; } });
+        Object.defineProperty(ev, 'which', { get: function() { return code; } });
+        ev.__synspec = true;
+        document.dispatchEvent(ev);
+      });
+      SP.keysDown.clear();
+      [0, 2].forEach(function(button) {
+        var ev = new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: button, clientX: SP.mouseX, clientY: SP.mouseY });
+        ev.__synspec = true;
+        document.dispatchEvent(ev);
+      });
+    }
+    function worldToScreen(x, y) { var upp = unitsPerPixel(); return { sx: innerWidth / 2 + wrapDelta(x - SP.x) / upp, sy: innerHeight / 2 - wrapDelta(y - SP.y) / upp }; }
+    function shipUnderMouse(mx, my) {
+      var best = null, bd = 40, t = now();
+      S.players.forEach(function(p) {
+        var pos = p.alive && renderPos(p, t);
+        if (!pos) return;
+        var s = worldToScreen(pos.x, pos.y), d = Math.hypot(s.sx - mx, s.sy - my);
+        if (d < bd) { bd = d; best = p.id; }
+      });
+      return best;
+    }
+    function followPlayer(id) { var p = S.players.get(id); if (p) { SP.follow = id; SP.userZoomed = false; SP.zTarget = Math.min(maxZ(), povZ(p.code)); listDirty = true; } }
+    function cameraFrame() {
+      var t = now(), dt = Math.min(0.1, Math.max(0, (t - (SP.lastFrame || t)) / 1000));
+      SP.lastFrame = t;
+      var ease = function(tau) { return 1 - Math.exp(-dt / tau); };
+      var p = SP.follow != null && S.players.get(SP.follow), pos = p && p.alive && renderPos(p, t);
+      if (pos) {
+        if (SP.lookId !== p.id) { SP.lookId = p.id; SP.lvx = pos.vx || 0; SP.lvy = pos.vy || 0; }
+        SP.lvx += ((pos.vx || 0) - SP.lvx) * ease(0.4); SP.lvy += ((pos.vy || 0) - SP.lvy) * ease(0.4);
+        SP.x = wrapPos(SP.x + wrapDelta(pos.x + 30 * SP.lvx - SP.x) * ease(0.13));
+        SP.y = wrapPos(SP.y + wrapDelta(pos.y + 30 * SP.lvy - SP.y) * ease(0.13));
+        if (!SP.userZoomed) SP.zTarget = Math.min(maxZ(), povZ(p.code));
+      }
+      SP.z += (SP.zTarget - SP.z) * ease(0.1);
+    }
+
+    // ── UI (Syndicate look)
+    var CSS = [
+      '.syn-spec-ui{font-family:Rajdhani,"Segoe UI",sans-serif;color:#e2e2e2;user-select:none;-webkit-font-smoothing:antialiased}',
+      'body.syn-spec-on canvas{cursor:none!important}',
+      '#syn-spec-list{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:100000;width:286px;max-height:80vh;overflow-y:auto;scrollbar-width:none;padding:1px;display:none;background:#474551;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}',
+      '#syn-spec-list::-webkit-scrollbar{display:none}',
+      '#syn-spec-list .in{background:rgba(18,20,20,.94);padding:6px 0 8px;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}',
+      '#syn-spec-list .ttl{display:flex;justify-content:space-between;align-items:center;padding:6px 12px 8px;font-size:11px;font-weight:700;letter-spacing:.22em;color:#c6c1ff;border-bottom:1px solid rgba(198,193,255,.18);margin-bottom:4px}',
+      '#syn-spec-list .ttl b{font-family:"JetBrains Mono",monospace;font-weight:500;letter-spacing:.06em;color:#928f9c}',
+      '#syn-spec-list .hdr{font-size:10px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;padding:7px 12px 3px}',
+      '#syn-spec-list .row{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:4px 12px;cursor:pointer;font-size:13px;line-height:1.15;border-left:2px solid transparent}',
+      '#syn-spec-list .row:hover{background:rgba(198,193,255,.07)}',
+      '#syn-spec-list .row.sel{background:rgba(198,193,255,.14);border-left-color:#c6c1ff}',
+      '#syn-spec-list .row.dead{opacity:.38}',
+      '#syn-spec-list img{width:24px;height:24px;object-fit:contain}',
+      '#syn-spec-list .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}',
+      '#syn-spec-list .sc{font-family:"JetBrains Mono",monospace;font-size:11px;text-align:right;color:#c8c4d3}',
+      '#syn-spec-list .pg{font-size:9px;color:#928f9c}',
+      '#syn-spec-list .bars{display:grid;gap:2px;margin-top:3px}',
+      '#syn-spec-list .bar{height:3px;background:rgba(255,255,255,.08);overflow:hidden}',
+      '#syn-spec-list .bar i{display:block;height:100%;transition:width .25s linear}',
+      '#syn-spec-list .bar.sh i{background:linear-gradient(90deg,#7b74e6,#c6c1ff)}',
+      '#syn-spec-list .bar.gm i{background:linear-gradient(90deg,#c25b8b,#ffb4d6)}',
+      '#syn-spec-list .bar.unk{background:repeating-linear-gradient(90deg,rgba(255,180,214,.22) 0 4px,transparent 4px 8px)}',
+      '#syn-spec-list .row.est .bar i{opacity:.55}',
+      '#syn-spec-bar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;display:none;pointer-events:none;background:#474551;padding:1px;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}',
+      '#syn-spec-bar .in{background:rgba(18,20,20,.92);padding:5px 14px;font-size:12px;letter-spacing:.06em;color:#c8c4d3;white-space:nowrap;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}',
+      '#syn-spec-bar b{color:#c6c1ff;letter-spacing:.2em;margin-right:6px}',
+      '#syn-spec-bar kbd{font-family:"JetBrains Mono",monospace;font-size:10px;color:#121414;background:#c6c1ff;padding:0 4px;margin:0 3px}',
+      '#syn-spec-load{position:fixed;inset:0;z-index:100001;display:none;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(30,28,52,.94),rgba(8,9,10,.97))}',
+      '#syn-spec-load .box{width:min(460px,90vw)}',
+      '#syn-spec-load h1{font-size:22px;letter-spacing:.32em;text-align:center;margin:0 0 6px;font-weight:700;color:#c6c1ff}',
+      '#syn-spec-load h2{font-size:10px;letter-spacing:.3em;text-align:center;margin:0 0 22px;font-weight:600;color:#928f9c}',
+      '#syn-spec-load .st{margin:12px 0}',
+      '#syn-spec-load .st.wait{opacity:.32}',
+      '#syn-spec-load .st.err .t{color:#ffb4ab}',
+      '#syn-spec-load .t{display:flex;justify-content:space-between;font-size:14px;font-weight:600;letter-spacing:.06em}',
+      '#syn-spec-load .d{font-family:"JetBrains Mono",monospace;font-size:10px;color:#928f9c;min-height:14px;margin-top:3px}',
+      '#syn-spec-load .p{height:3px;background:rgba(255,255,255,.08);margin-top:5px}',
+      '#syn-spec-load .p i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7b74e6,#c6c1ff)}',
+      '#syn-spec-toast{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:100002;display:none;pointer-events:none;background:#474551;padding:1px;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}',
+      '#syn-spec-toast .in{background:rgba(18,20,20,.95);padding:10px 18px;font-size:13px;letter-spacing:.05em;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}'
+    ].join('\n');
+    function el(tag, attrs, parent) {
+      if (!document.getElementById('syn-spec-css')) document.head.appendChild(Object.assign(document.createElement('style'), { id: 'syn-spec-css', textContent: CSS }));
+      var e = Object.assign(document.createElement(tag), attrs || {});
+      if (parent) parent.appendChild(e);
+      return e;
+    }
+    var esc = function(s) { return String(s).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+    var myPing = function() { var g = G.game(); return g && g.ping != null ? g.ping : '?'; };
+    var hsl = function(h, l) { return 'hsl(' + (h || 0) + ',75%,' + l + '%)'; };
+    function toast(msg) {
+      var t = document.getElementById('syn-spec-toast');
+      if (!t) { t = el('div', { id: 'syn-spec-toast', className: 'syn-spec-ui' }, document.body); el('div', { className: 'in' }, t); }
+      t.firstChild.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(function() { t.style.display = 'none'; }, 1800);
+    }
+    var icons = new Map();
+    function shipIcon(code) {
+      if (!icons.has(code)) {
+        G.IconClass = G.IconClass || findClass(function(c) { return typeof c.getShipIcon === 'function'; });
+        var canvas = null;
+        try { canvas = G.IconClass && G.IconClass.getShipIcon(code); } catch (e) {}
+        if (!canvas) return null;
+        icons.set(code, { canvas: canvas, url: canvas.toDataURL ? canvas.toDataURL() : '' });
+      }
+      return icons.get(code);
+    }
+    var listDirty = true;
+    var ui = {
+      list: null, inner: null, bar: null, lastBuild: 0, lastHtml: '',
+      show: function() {
+        if (!this.list) {
+          this.list = el('div', { id: 'syn-spec-list', className: 'syn-spec-ui' }, document.body);
+          this.inner = el('div', { className: 'in' }, this.list);
+          this.bar = el('div', { id: 'syn-spec-bar', className: 'syn-spec-ui' }, document.body);
+          el('div', { className: 'in' }, this.bar);
+          var self = this;
+          ['mousedown', 'mouseup', 'click', 'wheel', 'contextmenu'].forEach(function(type) { self.list.addEventListener(type, function(e) { e.stopPropagation(); }); });
+          // (mousedown: a click is lost when its row is rebuilt under it)
+          this.list.addEventListener('mousedown', function(e) {
+            var row = e.button === 0 && e.target.closest('.row');
+            if (row) { followPlayer(+row.dataset.id); self.lastBuild = 0; }
+          });
+        }
+        this.list.style.display = this.bar.style.display = 'block';
+        this.lastHtml = ''; this.lastBuild = 0;
+      },
+      hide: function() { if (this.list) this.list.style.display = this.bar.style.display = 'none'; },
+      update: function() {
+        var t = now();
+        if (!SP.active || !this.list || this.list.style.display === 'none' || t - this.lastBuild < 250) return;
+        this.lastBuild = t;
+        // (beside the Syndicate HUD panel while it is open, not under it)
+        var hp = document.getElementById('aegis-hud');
+        var left = hp && hp.style.display !== 'none' && hp.offsetWidth ? Math.round(hp.getBoundingClientRect().right + 8) + 'px' : '0px';
+        if (this.list.style.left !== left) this.list.style.left = left;
+        var key = specKey();
+        var barHtml = '<b>SPECTATOR</b><kbd>' + esc(key) + '</kbd> exit · <kbd>SCROLL</kbd> zoom · <kbd>R-DRAG</kbd> move · <kbd>CLICK</kbd> follow · <kbd>ESC</kbd> unfollow · <kbd>[</kbd> map · <kbd>L</kbd> ' + (S.live ? 'live' : 'smooth') + ' · ' + myPing() + ' ms';
+        if (this.bar.firstChild.innerHTML !== barHtml) this.bar.firstChild.innerHTML = barHtml;
+        var groups = new Map();
+        S.players.forEach(function(p) {
+          var k = S.teams.length && p.team != null ? p.team : -1;
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k).push(p);
+        });
+        var html = ['<div class="ttl">ALL PLAYERS<b>' + S.players.size + '</b></div>'], self = this;
+        Array.from(groups.keys()).sort(function(a, b) { return a - b; }).forEach(function(k) {
+          var list = groups.get(k).sort(function(a, b) { return b.score - a.score; }), team = S.teams[k];
+          var title = team ? team.faction : S.survival || S.modeId === 'survival' ? 'Survival' : 'Players';
+          html.push('<div class="hdr" style="color:' + (team ? hsl(team.hue, 72) : '#928f9c') + '">' + esc(title + ' · ' + list.length) + '</div>');
+          list.forEach(function(p) { html.push(self.row(p, t)); });
+        });
+        var out = html.join('');
+        if (out !== this.lastHtml) { this.inner.innerHTML = out; this.lastHtml = out; }
+      },
+      row: function(p, t) {
+        var exact = exactFresh(p, t), k = knownFor(p), st = G.shipType(p.code), me = p.id === S.myId;
+        var shield = exact ? p.exact.shield : Math.round(estimateShield(p));
+        var shieldMax = shieldCapacity(st, exact ? p.exact.levels : k ? k.levels : 0, shield);
+        var gems = exact ? p.exact.gems : k ? k.gems : null, gemsMax = gemsCapacity(st, p.code);
+        var age = k && !exact ? Math.round((Date.now() - k.at) / 1000) : 0;
+        var pct = function(a, b) { return Math.max(0, Math.min(100, (100 * a) / Math.max(1, b))).toFixed(0); };
+        var tip = (st && st.t ? st.t.name : p.code) + ' · shield ' + shield + '/' + Math.round(shieldMax) + ' · gems ' + (gems == null ? '?' : gems) + '/' + gemsMax + (exact ? ' · live' : age ? ' · last seen ' + age + 's ago' : ' · estimated');
+        var icon = shipIcon(p.code);
+        return '<div class="row' + (p.alive ? '' : ' dead') + (SP.follow === p.id ? ' sel' : '') + (exact ? '' : ' est') + '" data-id="' + p.id + '" title="' + esc(tip) + '">' +
+          '<img src="' + (icon ? icon.url : '') + '">' +
+          '<div><div class="nm" style="color:' + hsl(p.hue, 74) + '">' + esc(p.name || '#' + p.id) + (me ? ' (you)' : '') + '</div>' +
+          '<div class="bars"><div class="bar sh"><i style="width:' + pct(shield, shieldMax) + '%"></i></div>' +
+          '<div class="bar gm' + (gems == null ? ' unk' : '') + '"><i style="width:' + (gems == null ? 0 : pct(gems, gemsMax)) + '%"></i></div></div></div>' +
+          '<div class="sc">' + p.score + (me ? '<div class="pg">' + myPing() + ' ms</div>' : '') + '</div></div>';
+      },
+      loading: {
+        root: null, rows: [],
+        start: function() {
+          if (!this.root) {
+            this.root = el('div', { id: 'syn-spec-load', className: 'syn-spec-ui' }, document.body);
+            var box = el('div', { className: 'box' }, this.root);
+            el('h1', { textContent: 'SPECTATOR MODE' }, box);
+            el('h2', { textContent: '[≜] SYNDICATE' }, box);
+            this.rows = ['01 · FIND MAP', '02 · GENERATE MAP', '03 · FIND PLAYERS', '04 · PLACE PLAYERS'].map(function(name) {
+              var r = el('div', {}, box), t = el('div', { className: 't' }, r);
+              el('span', { textContent: name }, t);
+              return { r: r, s: el('span', {}, t), d: el('div', { className: 'd' }, r), i: el('i', null, el('div', { className: 'p' }, r)) };
+            });
+          }
+          this.rows.forEach(function(row) { row.r.className = 'st wait'; row.s.textContent = row.d.textContent = ''; row.i.style.width = '0'; });
+          this.root.style.display = 'flex';
+        },
+        step: function(i) { this.rows[i].r.className = 'st'; this.rows[i].s.textContent = '…'; },
+        progress: function(i, k) { this.rows[i].i.style.width = Math.round(100 * Math.max(0, Math.min(1, k))) + '%'; },
+        detail: function(i, txt) { this.rows[i].d.textContent = txt; },
+        done: function(i) { this.rows[i].i.style.width = '100%'; this.rows[i].s.textContent = '✓'; },
+        error: function(i, msg) { this.rows[i].r.className = 'st err'; this.rows[i].s.textContent = '✗'; this.rows[i].d.textContent = msg; },
+        hide: function() { if (this.root) this.root.style.display = 'none'; }
+      }
+    };
+
+    // ── overlay canvas: crosshair, far-out labels, map overview
+    var testOn = false, canvas = null, ctx = null;
+    function label(txt, x, y, color, size, align) {
+      ctx.font = '600 ' + (size || 12) + 'px Rajdhani, Arial, sans-serif'; ctx.textAlign = align || 'left';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.fillStyle = color;
+      ctx.strokeText(txt, x, y); ctx.fillText(txt, x, y);
+      ctx.lineWidth = 1; ctx.textAlign = 'left';
+    }
+    function dot(x, y, r, color) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+    function drawOverlay() {
+      if (!testOn && !SP.active) { if (canvas && canvas.style.display !== 'none') canvas.style.display = 'none'; return; }
+      if (!canvas) {
+        canvas = el('canvas', { id: 'syn-spec-overlay' }, document.body);
+        Object.assign(canvas.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', zIndex: 99999, pointerEvents: 'none' });
+        ctx = canvas.getContext('2d');
+      }
+      canvas.style.display = 'block';
+      var dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+      if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      if (SP.active && !SP.loading) drawSpectatorOverlay(W, H);
+      if (testOn) drawTestMap(W, H);
+    }
+    function drawSpectatorOverlay(W, H) {
+      var t = now();
+      if (SP.z > 180) {
+        ctx.globalAlpha = Math.min(1, (SP.z - 180) / 120);
+        S.players.forEach(function(p) {
+          var pos = p.alive && renderPos(p, t);
+          if (!pos) return;
+          var s = worldToScreen(pos.x, pos.y);
+          if (s.sx < -50 || s.sy < -50 || s.sx > W + 50 || s.sy > H + 50) return;
+          dot(s.sx, s.sy, 3, hsl(p.hue, 65));
+          label((p.name || '#' + p.id) + '  ' + p.score, s.sx, s.sy - 8, hsl(p.hue, 80), 12, 'center');
+        });
+        ctx.globalAlpha = 1;
+      }
+      var f = SP.follow != null && S.players.get(SP.follow);
+      if (f) label('◉ FOLLOWING · ' + (f.name || '#' + f.id), W / 2, H - 70, '#c6c1ff', 15, 'center');
+      // crosshair
+      var mx = SP.mouseX, my = SP.mouseY;
+      ctx.strokeStyle = '#c6c1ff'; ctx.lineWidth = 1.5; ctx.shadowBlur = 4; ctx.shadowColor = '#000';
+      ctx.beginPath(); ctx.arc(mx, my, 9, 0, Math.PI * 2);
+      ctx.moveTo(mx - 15, my); ctx.lineTo(mx - 5, my); ctx.moveTo(mx + 5, my); ctx.lineTo(mx + 15, my);
+      ctx.moveTo(mx, my - 15); ctx.lineTo(mx, my - 5); ctx.moveTo(mx, my + 5); ctx.lineTo(mx, my + 15);
+      ctx.stroke();
+      ctx.shadowBlur = 0; ctx.lineWidth = 1;
+    }
+    function drawTestMap(W, H) {
+      if (!S.world) return label('Waiting for a game…', 20, 30, '#e2e2e2', 16);
+      S.field = S.field || buildField();
+      // (below the spectator bar, right of the player list, and clear of the
+      // game's scoreboard and radar on the right; it used to run under all three)
+      var listOn = SP.active && ui.list && ui.list.style.display !== 'none';
+      var ox = listOn ? (parseInt(ui.list.style.left, 10) || 0) + 300 : 20, oy = SP.active ? 56 : 20;
+      var size = Math.max(240, Math.min(W - ox - 340 - 290, H - oy - 20)), sc = size / S.world;
+      var half = S.world / 2, wrapW = function(v) { return ((v + half) % S.world + S.world) % S.world - half; };
+      var px = function(x) { return ox + (wrapW(x) / S.world + 0.5) * size; }, py = function(y) { return oy + (0.5 - wrapW(y) / S.world) * size; };
+      ctx.fillStyle = 'rgba(12,15,15,.9)'; ctx.fillRect(ox, oy, size, size);
+      ctx.strokeStyle = 'rgba(198,193,255,.35)'; ctx.strokeRect(ox, oy, size, size);
+      ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, size, size); ctx.clip();
+      var tick = serverTick(), dead = 0;
+      if (!S.field) label('Rock generator not found', ox + 10, oy + 20, '#ffb4ab', 13);
+      (S.field || []).forEach(function(r) {
+        var k = rockScale(r, tick);
+        if (k <= 0) dead++;
+        else dot(px(r.x), py(r.y), Math.max(0.8, r.size * sc * k), k < 1 ? 'rgba(155,231,176,.9)' : 'rgba(146,143,156,.7)');
+      });
+      var t = now();
+      S.effects = S.effects.filter(function(e) { return t - e.t < 1500; });
+      ctx.lineWidth = 2;
+      S.effects.forEach(function(e) {
+        var a = 1 - (t - e.t) / 1500;
+        ctx.strokeStyle = (e.kind === 'kill' ? 'rgba(255,180,171,' : 'rgba(198,193,255,') + a + ')';
+        ctx.beginPath(); ctx.arc(px(e.x), py(e.y), (e.kind === 'kill' ? 18 : 8) * (1.2 - a), 0, Math.PI * 2); ctx.stroke();
+      });
+      ctx.lineWidth = 1;
+      if (SP.active) { var hw = (SP.z * TAN * W) / H, hh = SP.z * TAN; ctx.strokeStyle = 'rgba(198,193,255,.85)'; ctx.strokeRect(px(SP.x - hw), py(SP.y + hh), 2 * hw * sc, 2 * hh * sc); }
+      var list = Array.from(S.players.values()).sort(function(a, b) { return b.score - a.score; });
+      list.forEach(function(p) {
+        var pos = p.alive && renderPos(p, t);
+        if (!pos) return;
+        var x = px(pos.x), y = py(pos.y);
+        dot(x, y, p.id === S.myId ? 6 : 4, hsl(p.hue, 65));
+        if (pos.exact) { ctx.strokeStyle = '#e2e2e2'; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke(); }
+        label(p.name || '#' + p.id, x + 7, y - 6, hsl(p.hue, 80), 12);
+      });
+      ctx.restore();
+      var lx = ox + size + 16, ly = oy + 18;
+      label(String(S.welcome.name || '') + '  ·  mode: ' + S.modeId + (S.survival ? ' (survival)' : ''), lx, ly, '#c6c1ff', 14);
+      label('seed ' + S.seed + ' · map ' + S.mapSize + '×' + S.mapSize + ' cells · ' + S.world + ' units', lx, (ly += 16), '#928f9c', 12);
+      label('rocks: ' + (S.field ? S.field.length : '?') + ' · destroyed: ' + dead + ' · tick ' + (tick ? Math.round(tick) : '?'), lx, (ly += 16), '#928f9c', 12);
+      ly += 10;
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i];
+        if (ly > oy + size - 10) break;
+        var icon = shipIcon(p.code);
+        if (icon) try { ctx.drawImage(icon.canvas, lx, ly + 2, 18, 18); } catch (e) {}
+        var txt = (p.name || '#' + p.id) + '  ' + p.score;
+        if (p.known) txt += '  shield ' + p.known.shield + ' · gems ' + p.known.gems + (exactFresh(p, t) ? '' : ' (' + Math.round((Date.now() - p.known.at) / 1000) + 's old)');
+        label(txt, lx + 24, ly + 15, p.alive ? hsl(p.hue, 75) : '#777', 12);
+        ly += 21;
+      }
+    }
+
+    window.__synSpectator = {
+      toggle: toggleSpectator, isOn: function() { return SP.active; }, map: function() { testOn = !testOn; }, _G: G,
+      status: function() {
+        return { hooked: G.hooked, world: !!G.world, camFn: G.camFn, camKey: G.camKey, scene: !!G.scene, renderFn: G.renderFn,
+          sceneCamKey: G.sceneCamKey, rocksN: SP.rocksN, tick: G.tick(), serverTick: serverTick(), players: S.players.size, active: SP.active, z: SP.z, wide: SP.wide, wideN: SP.wideN, myId: S.myId, me: (function() { var m = S.players.get(S.myId); return m ? { alive: m.alive, exact: !!(m.exact && m.exact.alive) } : null; })() };
+      }
+    };
+    // ── wide view: zoomed out with FOV Zoom, the rock window grows to fit
+    // and far ships are placed like in spectator mode
+    SP.wide = false; SP.wideN = 0; SP.growing = false;
+    function wideFrame() {
+      var f = window.__synFovFactor ? window.__synFovFactor() : 1;
+      var want = !SP.active && !SP.loading && !!S.welcome && featOn('wide') && !window.__synWideBlock && f > 1.25 && G.hooked && !!G.world;
+      if (want && !SP.wide) { SP.wide = true; SP.lastSynth = 0; }
+      if (!want && SP.wide) { SP.wide = false; if (!SP.active) shrinkRocks(); SP.wideN = 0; return; }
+      if (!SP.wide || SP.growing) return;
+      if (!installSceneHooks()) return;
+      // (the game's window is 20×20 cells around the camera: enough for the
+      // zoom-out, in steps of 10, at most 60)
+      var N = Math.min(60, Math.max(20, Math.ceil((20 * f + 4) / 10) * 10));
+      if (N <= SP.rocksN || N === SP.wideN) return;
+      var inst = rockRenderer();
+      if (!inst) return;
+      SP.growing = true; SP.wideN = N;
+      var job = growRocksJob(inst, N);
+      (function step() {
+        try {
+          for (var t0 = now(); now() - t0 < 6;) { if (job.next().done) { SP.growing = false; return; } }
+        } catch (e) { SP.growing = false; return; }
+        requestAnimationFrame(step);
+      })();
+    }
+    // ── what our bots see (app only): exact positions far beyond our own view
+    var lastFeed = 0, feedBusy = false;
+    function botFeed() {
+      if (!(SP.active || SP.wide) || feedBusy || now() - lastFeed < 100) return;
+      if (typeof isApp !== 'function' || !isApp()) return;
+      lastFeed = now(); feedBusy = true;
+      try {
+        window.__TAURI__.core.invoke('bot_seen_ships', { maxAge: 0.5 }).then(function(list) {
+          feedBusy = false;
+          var t = now();
+          (list || []).forEach(function(sh) {
+            if (sh.id === S.myId) return;
+            var p = player(sh.id);
+            if (p.exact && !p.exact.bot && t - p.exact.at < EXACT_MS) return;
+            var at = t - (sh.age || 0) * 1000;
+            if (p.exact && p.exact.bot && p.exact.at >= at) return;
+            var lv = p.known ? p.known.levels : 0;
+            p.exact = { at: at, tick: 0, x: sh.x, y: sh.y, vx: sh.vx, vy: sh.vy, r: sh.r, alive: sh.alive, lives: 0, type: sh.code,
+              shield: sh.shield, generator: sh.gen, gems: sh.crystals, score: sh.score, levels: lv, bot: true };
+            p.code = sh.code; p.alive = sh.alive; p.heading = sh.r; p.wasExact = true; p.blend = null; p.up = sh.up;
+            p.known = { shield: sh.shield, gems: sh.crystals, generator: sh.gen, levels: lv, lives: 0, code: sh.code, at: Date.now() };
+          });
+        }, function() { feedBusy = false; });
+      } catch (e) { feedBusy = false; }
+    }
+    // main loop: next to nothing while off (a hook attempt at most once a second)
+    var loopErrs = {};
+    (function loop() {
+      try {
+        if (document.body && (S.welcome || SP.active)) {
+          if (installHooks() && G.world) installSceneHooks();
+          if (SP.active) { cameraFrame(); ui.update(); }
+          wideFrame();
+          botFeed();
+          drawOverlay();
+        }
+      } catch (e) {
+        // (once per kind of error: logging every frame costs frames itself)
+        var k = String(e && e.message);
+        if (!loopErrs[k]) { loopErrs[k] = 1; console.error('[Syndicate spectator]', e); }
+        if (window.__synNoteError) window.__synNoteError('[spectator] ' + k, 'syndicate');
+      }
+      requestAnimationFrame(loop);
+    })();
+  })();
+
   function start() {
+    // Remove stars: the star layer is the Points with a "startype"
+    // attribute (the perf core tells them from sparks the same way)
+    (function removeStars() {
+      var CORE = window.__perfCore, STARS = [];
+      if (!CORE || !CORE.onRender) return;
+      CORE.onRender(function(scene, cam, I) {
+        if (!I || !scene) return;
+        if (I.starAt !== I.at) {
+          I.starAt = I.at;
+          STARS = STARS.filter(function(o) { return !!o.parent; });
+          scene.traverse(function(o) {
+            if (o.type === "Points" && o.geometry && o.geometry.attributes && o.geometry.attributes.startype && STARS.indexOf(o) < 0) STARS.push(o);
+          });
+        }
+        var off = featOn("nostars");
+        for (var i = 0; i < STARS.length; i++) {
+          var o = STARS[i];
+          if (off) { if (o.visible) { o.visible = false; o.__stStar = 1; } }
+          else if (o.__stStar) { o.visible = true; o.__stStar = 0; }
+        }
+      });
+    })();
+    // Team lock bypass: the game's methods that check "&& this.team.open"
+    // get a copy without that check (Syndicate takes the same words out of
+    // the game's source). A copy that can't run outside the game's own
+    // scope falls back to the original for good.
+    (function teamlockBypass() {
+      var RX = /\s*&&\s*this\.team\.open/g, seen = new WeakSet(), found = [];
+      window.__studioTeamlock = found;
+      function patch(holder, name, where) {
+        var fn;
+        try { fn = holder[name]; } catch (e) { return; }
+        if (typeof fn !== "function" || seen.has(fn)) return;
+        seen.add(fn);
+        var src;
+        try { src = Function.prototype.toString.call(fn); } catch (e) { return; }
+        if (src.indexOf("this.team.open") < 0 || src.indexOf("[native code]") >= 0) return;
+        var ns = src.replace(RX, "");
+        if (ns === src) return;
+        if (!/^(async\s+)?function\b/.test(ns)) ns = "function " + ns;
+        var nf;
+        try { nf = (0, eval)("(" + ns + ")"); } catch (e) { found.push(where + "." + name + " (can't copy)"); return; }
+        var broken = false;
+        var wrapped = function() {
+          if (broken || !featOn("teamlock")) return fn.apply(this, arguments);
+          try { return nf.apply(this, arguments); }
+          catch (e) {
+            if (!(e instanceof ReferenceError)) throw e;
+            broken = true;
+            console.warn("[Studio] team lock bypass: " + where + "." + name + " needs the game's own scope, left as it was");
+            return fn.apply(this, arguments);
+          }
+        };
+        seen.add(wrapped);
+        try { holder[name] = wrapped; found.push(where + "." + name); } catch (e) {}
+      }
+      function scan() {
+        for (var key in window) {
+          var cls;
+          try { cls = window[key]; } catch (e) { continue; }
+          if (typeof cls !== "function" || seen.has(cls)) continue;
+          var p = cls.prototype;
+          if (p) {
+            var names;
+            try { names = Object.getOwnPropertyNames(p); } catch (e) { names = []; }
+            for (var i = 0; i < names.length; i++) {
+              if (names[i] === "constructor") continue;
+              var d = Object.getOwnPropertyDescriptor(p, names[i]);
+              if (d && typeof d.value === "function") patch(p, names[i], key + ".prototype");
+            }
+          }
+          var st;
+          try { st = Object.getOwnPropertyNames(cls); } catch (e) { st = []; }
+          for (var j = 0; j < st.length; j++) {
+            if (st[j] === "prototype" || st[j] === "caller" || st[j] === "arguments") continue;
+            var d2 = Object.getOwnPropertyDescriptor(cls, st[j]);
+            if (d2 && typeof d2.value === "function") patch(cls, st[j], key);
+          }
+        }
+      }
+      // (the game's classes come with its script; looked for a minute)
+      var n = 0, iv = setInterval(function() { try { scan(); } catch (e) {} if (++n >= 30) clearInterval(iv); }, 2000);
+    })();
+    // Leaderboard ship icons: each player's row on the scoreboard gets a gap
+    // before the name with their ship's icon drawn in it, in their hue.
+    (function leaderboardIcons() {
+      var GAP = "  ", hooked = [], iconOwner = null, iconAt = 0, tint = {}, byName = {}, names = [], nameAt = 0;
+      function norm(s) { return String(s || "").replace(/(…|\.\.\.)\s*$/, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+      function shipIcon(code) {
+        if (!iconOwner) {
+          if (window.IOII0 && typeof window.IOII0.getShipIcon === "function") iconOwner = window.IOII0;
+          else if (Date.now() - iconAt > 3000) {
+            iconAt = Date.now();
+            for (var k in window) {
+              try { var v = window[k]; if (v && (typeof v === "function" || typeof v === "object") && typeof v.getShipIcon === "function") { iconOwner = v; break; } } catch (e) {}
+            }
+          }
+        }
+        try { return iconOwner ? iconOwner.getShipIcon(code) : null; } catch (e) { return null; }
+      }
+      function tinted(code, hue) {
+        var key = code + ":" + hue;
+        if (tint[key]) return tint[key];
+        var src = shipIcon(code);
+        if (!src || !(src.width > 0) || !(src.height > 0)) return null;
+        var c = document.createElement("canvas");
+        c.width = src.width; c.height = src.height;
+        var x = c.getContext("2d");
+        x.drawImage(src, 0, 0);
+        x.globalCompositeOperation = "source-in";
+        x.fillStyle = hue == null ? "#fff" : "hsl(" + hue + ",100%,62%)";
+        x.fillRect(0, 0, c.width, c.height);
+        return tint[key] = c;
+      }
+      function refreshNames() {
+        var now = Date.now();
+        if (now - nameAt < 1000) return;
+        nameAt = now; byName = {}; names = [];
+        function add(id, nm) {
+          var t = norm(nm);
+          if (!t) return;
+          if (byName[t] === undefined) { byName[t] = +id; names.push(t); } else if (byName[t] !== +id) byName[t] = -1;
+        }
+        for (var id in _aegisNames) add(id, _aegisNames[id]);
+        try {
+          var g = getGS(), d = g && g.names && g.names.data;
+          if (Array.isArray(d)) d.forEach(function(p) { if (p && p.player_name != null && p.id != null) { add(p.id, p.player_name); if (typeof p.hue === "number" && typeof _aegisHueOf[p.id] !== "number") _aegisHueOf[p.id] = p.hue; } });
+        } catch (e) {}
+      }
+      function idFor(text) {
+        var t = norm(text);
+        if (!t || /^[\d\s.,:]+$/.test(t)) return null;
+        var id = byName[t];
+        if (id >= 0) return id;
+        if (id === -1 || t.length < 4) return null;
+        // (a long name the board cut short: the one name it starts)
+        var hit = null;
+        for (var i = 0; i < names.length; i++) if (names[i].length > t.length && names[i].indexOf(t) === 0) { if (hit != null) return null; hit = byName[names[i]]; }
+        return hit >= 0 ? hit : null;
+      }
+      function codeOf(id) {
+        var s = _synStat[id];
+        if (s && s.code && Date.now() - s.ts < 5000) return s.code;
+        var r = _aegisShips[id];
+        return r && r.code ? r.code : s && s.code ? s.code : null;
+      }
+      function rowIcon(ctx, text, x) {
+        if (typeof text !== "string") return null;
+        var m = /^(\s*\d{1,3}[.)]\s*)?([\s\S]+)$/.exec(text);
+        if (!m) return null;
+        var pre = m[1] || "", rest = m[2], id = idFor(rest);
+        if (id == null) return null;
+        var code = codeOf(id);
+        if (!code) return null;
+        var hue = typeof _aegisHueOf[id] === "number" ? Math.round(_aegisHueOf[id]) : null;
+        var img = tinted(code, hue);
+        if (!img) return null;
+        var nt = pre + GAP + rest;
+        var fs = /(\d+(?:\.\d+)?)px/.exec(ctx.font), px = fs ? +fs[1] : 14;
+        var wAll = ctx.measureText(nt).width, wPre = ctx.measureText(pre).width, wGap = ctx.measureText(GAP).width;
+        var al = ctx.textAlign, left = al === "right" || al === "end" ? x - wAll : al === "center" ? x - wAll / 2 : x;
+        var sz = Math.min(wGap * .95, px * 1.15);
+        return { text: nt, img: img, ix: left + wPre + (wGap - sz) / 2, sz: sz };
+      }
+      function findDraw(proto) {
+        var ns = Object.getOwnPropertyNames(proto);
+        for (var i = 0; i < ns.length; i++) {
+          var fn;
+          try { fn = proto[ns[i]]; } catch (e) { continue; }
+          if (typeof fn !== "function") continue;
+          try {
+            var src = Function.prototype.toString.call(fn);
+            if (src.length > 500 && src.indexOf("fillText") >= 0 && src.indexOf("fillStyle") >= 0 && src.indexOf("hue") >= 0) return ns[i];
+          } catch (e) {}
+        }
+        return null;
+      }
+      function hook(proto) {
+        var name = findDraw(proto);
+        if (!name || proto[name].__stLB) return false;
+        var orig = proto[name];
+        proto[name] = function(ctx) {
+          if (!ctx || typeof ctx.fillText !== "function" || !featOn("lbicons")) return orig.apply(this, arguments);
+          refreshNames();
+          var own = Object.prototype.hasOwnProperty.call(ctx, "fillText"), oFT = ctx.fillText;
+          ctx.fillText = function(text, x, y) {
+            var r = null;
+            try { r = rowIcon(ctx, text, x); } catch (e) {}
+            if (!r) return oFT.apply(ctx, arguments);
+            try { return oFT.call(ctx, r.text, x, y); }
+            finally {
+              try {
+                var b = ctx.textBaseline, ty = b === "middle" ? y - r.sz / 2 : b === "top" || b === "hanging" ? y : y - r.sz * .82;
+                ctx.drawImage(r.img, r.ix, ty, r.sz, r.sz);
+              } catch (e) {}
+            }
+          };
+          try { return orig.apply(this, arguments); }
+          finally { if (own) ctx.fillText = oFT; else delete ctx.fillText; }
+        };
+        proto[name].__stLB = true;
+        return true;
+      }
+      setInterval(function() {
+        try {
+          var g = getGS(), mode = g && g.mode;
+          if (!mode) return;
+          var boards = [];
+          if (mode.scoreboard) boards.push(mode.scoreboard);
+          if (Array.isArray(mode.teamboards)) mode.teamboards.forEach(function(tb) { if (tb) boards.push(tb); });
+          boards.forEach(function(b) {
+            var p = Object.getPrototypeOf(b);
+            if (p && hooked.indexOf(p) < 0 && hook(p)) hooked.push(p);
+          });
+        } catch (e) {}
+      }, 400);
+    })();
     (function fovZoom() {
       var MIN_FOV = 1, MAX_FOV = 170, T_MIN = .4, T_MAX = 3, SENS = 9e-4, TAU = 170;
       var _fovFactor = 1, _fovTarget = 1, _fovInstalled = false, _nativeZoom = false;
@@ -1200,7 +2539,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       window.addEventListener("wheel", function(e) {
         if (window.__synSpectator && window.__synSpectator.isOn()) return;
         if (!featOn("fov") || !inGame()) return;
-        if (e.target && e.target.closest && e.target.closest("#aegis-hud,#aegis-radar-wrap,#aegis-bots-win")) return;
+        if (!e.target || e.target.tagName !== "CANVAS") return;
         _nativeZoom = false;
         var dir = e.deltaY > 0 ? 1 : -1;
         _fovTarget = clamp(_fovTarget * Math.exp(dir * Math.abs(e.deltaY) * SENS), T_MIN, T_MAX);
@@ -1219,7 +2558,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       });
     })();
     (function aimAssist() {
-      var CFG_KEY = "STUDIO_aim_cfg", CFG_DEF = { act: "both", confirm: 120, targets: "aim", cone: 45, autofire: "big", gate: true, others: true, marker: true, qsnap: true, drag: true, dodge: false, dodgeHow: "auto", dodgeMin: 0, kb: false, kbTurn: true, steady: false };
+      var CFG_KEY = "STUDIO_aim_cfg", CFG_DEF = { act: "both", confirm: 0, targets: "aim", cone: 30, autofire: "big", gate: true, others: true, marker: true, qsnap: true, drag: true, dodge: false, dodgeHow: "auto", dodgeMin: 0, kb: false, kbTurn: true, steady: false };
       function readCfg() {
         var c = {};
         try { c = JSON.parse(localStorage.getItem(CFG_KEY) || "{}") || {}; } catch (e) {}
@@ -4648,6 +5987,13 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       var r = function(k, label) { return row(label, 'data-ext="' + k + '"', k === "dodge" ? aimCfg().dodge === true : featOn(k)); };
       return HEAD + "CAMERA</div>" +
         r("fov", "FOV zoom (mouse wheel · 0 resets)") +
+        r("wide", "Extended FOV view (zoomed out: more of the map)") +
+        HEAD + "VISUALS</div>" +
+        r("nostars", "Remove stars") +
+        r("lbicons", "Ship icons on the leaderboard") +
+        HEAD + "GAMEPLAY</div>" +
+        r("fastrespawn", "Fast respawn") +
+        r("teamlock", "Team lock bypass (join closed teams)") +
         HEAD + "RADAR</div>" +
         r("radarzoom", "Full map radar") +
         r("radarnames", "Player names (with full map radar)") +
