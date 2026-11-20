@@ -51,7 +51,7 @@ pub fn run() {
                 "main",
                 WebviewUrl::External("https://starblast.io/".parse().unwrap()),
             )
-            .title("Syndicate Studio")
+            .title("starblast.io")
             .inner_size(1600.0, 900.0)
             .min_inner_size(960.0, 540.0)
             .resizable(true)

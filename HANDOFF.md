@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.1.0.
+starblast.io logo. Current version: 2.2.0.
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -79,13 +79,13 @@ Push to the branch, or run the workflow by hand, and the installer lands in dist
 
 WebView2 flags are in lib.rs. GPU: discrete GPU, GPU blocklist ignored, GPU raster and zero-copy. CPU: no occlusion or background throttling (so recording behind OBS works). RAM: no spare renderer, no back-forward cache, no translate, autofill server, casting or optimization-guide downloads. The window is black until the game paints.
 
-The icon: the workflow fetches the starblast.io logo (tools/make-icon.mjs), runs `tauri icon --fit contain` into src-tauri/icons/ and commits the icons with the installers; if starblast.io can't be reached it builds with the committed icons. On Linux, `cargo check` needs icons/icon.png, which the workflow generates.
+The icon: studio-desktop/app-icon.svg is the starblast.io logo redrawn as vectors (the site only serves a 64 px icon, which looked pixelated), rendered to app-icon.png at 1024 (any SVG renderer, e.g. resvg). The workflow runs `tauri icon` on it into src-tauri/icons/ and commits the icons with the installers. Without app-icon.png it falls back to tools/make-icon.mjs (the logo from the game's own page).
 
 There is also a sisyphus-desktop/ in the repo: a copy of studio-desktop that hasn't been rebranded yet. The client reads `window.__studioBrand` for its section titles.
 
 ## Decisions already made
 
 - The owner asked again for the Syndicate features (version 1.6.0 on): they are in, each on its own switch; `]` turns them all off with the rest.
-- The app's icon is the starblast.io logo, at the owner's request; its name stays Syndicate Studio.
+- The app's icon is the starblast.io logo and the app is named starblast.io (window title and installer), at the owner's request. Its identifier stays com.syndicate.studio, so its saved settings carry over.
 - Low-Poly was removed at the owner's request.
 - Control messages must stay at 90 per second or fewer (the socket wrapper enforces it).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.1.0
+// @version      2.2.0
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.1.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.2.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and

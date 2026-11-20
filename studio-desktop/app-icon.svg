@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="285 117 735 735" width="1024" height="1024">
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#43709a"/>
+      <stop offset="0.55" stop-color="#2a5378"/>
+      <stop offset="1" stop-color="#12385a"/>
+    </linearGradient>
+  </defs>
+  <!-- the emblem's outline: circle and tail, a thin soft edge round the white rim -->
+  <g fill="#9fb0bf" stroke="#9fb0bf" stroke-width="10" stroke-linejoin="round">
+    <circle cx="675" cy="483" r="333"/>
+    <path d="M548 452 L318 538 Q296 550 304 566 Q312 582 334 578 L552 522 Z"/>
+  </g>
+  <!-- white rim -->
+  <circle cx="675" cy="483" r="333" fill="#f4f7fa"/>
+  <!-- navy disc -->
+  <circle cx="675" cy="483" r="322" fill="url(#navy)"/>
+  <g fill="#ffffff" stroke="#ffffff" stroke-linejoin="round" stroke-width="12">
+    <!-- tail, out past the rim -->
+    <path d="M538 457 L318 540 Q300 550 306 563 Q313 576 332 573 L540 521 Z"/>
+    <!-- collar band -->
+    <path d="M552 438 L582 428 L604 512 L574 524 Z"/>
+    <!-- hull -->
+    <path d="M588 308 L690 276 L768 325 L872 370 L888 412 L842 470 L794 566 L770 592 L668 610 L622 512 L610 430 Z"/>
+    <!-- top wing plate -->
+    <path d="M576 262 L656 236 L684 248 L690 262 L594 292 Z"/>
+    <!-- bottom wing plate -->
+    <path d="M676 626 L774 606 L786 640 L700 664 L682 652 Z"/>
+    <!-- nose cap -->
+    <path d="M896 366 Q922 372 926 396 Q924 416 908 418 Q896 404 892 384 Z"/>
+  </g>
+  <!-- cockpit -->
+  <path d="M628 452 L664 418 L748 404 L790 424 L762 466 L694 486 L634 472 Z" fill="#2c557a" stroke="#2c557a" stroke-width="8" stroke-linejoin="round"/>
+</svg>
