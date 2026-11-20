@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124
 // @namespace    syndicate
-// @version      2.4.0
+// @version      2.5.0
 // @description  The Studio client with the game on three.js r124 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -715,7 +715,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.4.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -866,6 +866,11 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     teamlock:   { key: "STUDIO_teamlock",  def: "1" },
     fastrespawn:{ key: "AEGIS_fastrespawn", def: "1" },
     esp:        { key: "STUDIO_esp",       def: "1" },
+    espboxes:   { key: "STUDIO_esp_boxes", def: "1" },
+    tagextra:   { key: "STUDIO_tagextra",  def: "1" },
+    tagzoomscale:{ key: "AEGIS_tagzoomscale", def: "1" },
+    aimfire:    { key: "STUDIO_aim_fire",  def: null },
+    survtimer:  { key: "STUDIO_survtimer", def: "1" },
     saturate:   { key: "STUDIO_saturate",  def: "1" },
     highcontrast:{ key: "AEGIS_highcontrast", def: "1" },
     teamhl:     { key: "STUDIO_teamhl",    def: "1" }
@@ -877,9 +882,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     if (!FEAT[f]) return false;
     if (window.__studio && window.__studio.allOff) return false;
     var v = FEAT_V[f];
-    if (v === undefined) v = FEAT_V[f] = (LS(FEAT[f].key) || FEAT[f].def) === "1";
+    // (a switch split off another starts as that one was: aim when firing, from Aim Assist)
+    if (v === undefined) v = FEAT_V[f] = (LS(FEAT[f].key) || (FEAT[f].def == null ? LS("STUDIO_aim") || "0" : FEAT[f].def)) === "1";
     return v;
   }
+  // Aim Assist is on when either of its triggers is: the held key, or firing
+  function aimOn() { return featOn("aim") || featOn("aimfire"); }
   function featSet(f, on) {
     FEAT_V[f] = !!on;
     try { localStorage.setItem(FEAT[f].key, on ? "1" : "0"); } catch (e) {}
@@ -1073,7 +1081,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // Aim Assist: the heading in each control message is swapped for the solved aim
         if (typeof d === "number" || typeof d === "string" && /^\d+$/.test(d)) {
           var ad = d;
-          if (featOn("aim") && window.__synAimRewrite) { try { ad = window.__synAimRewrite(d, ws); } catch (e) { ad = d; } }
+          if (aimOn() && window.__synAimRewrite) { try { ad = window.__synAimRewrite(d, ws); } catch (e) { ad = d; } }
           return _synCtlSend(ws, ad);
         }
         return Object.getPrototypeOf(ws).send.apply(ws, arguments);
@@ -2643,32 +2651,53 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         return c;
       }
-      // how far a ship's model reaches from its middle (its visible meshes), once per model
-      var RADC = new WeakMap();
-      function modelRadius(m) {
-        var r = RADC.get(m);
-        if (r) return r;
-        var T = window.THREE;
-        r = 0;
+      // a ship model's outline: its hull's farthest points in 16 directions,
+      // in the model's own space (the hull only: not the name plate, flames,
+      // shield or outlines, which are see-through), once per model; drawn
+      // through the model's matrix each frame, they give a box that fits the
+      // ship as it's turned (a big ship's long wings no longer make a box
+      // round its whole turning circle)
+      var HULL = new WeakMap(), DIRS = [];
+      for (var di = 0; di < 16; di++) DIRS.push([Math.cos(di * Math.PI / 8), Math.sin(di * Math.PI / 8)]);
+      function hullPoints(m) {
+        var h = HULL.get(m);
+        if (h) return h;
+        var T = window.THREE, best = DIRS.map(function() { return null; }), bestD = DIRS.map(function() { return -Infinity; });
         try {
           m.updateMatrixWorld(true);
-          var mp = new T.Vector3().setFromMatrixPosition(m.matrixWorld), v = new T.Vector3();
+          var inv = new T.Matrix4(), rel = new T.Matrix4(), v = new T.Vector3();
+          typeof inv.invert === "function" ? inv.copy(m.matrixWorld).invert() : inv.getInverse(m.matrixWorld);
           m.traverse(function(o) {
-            // (the hull only: not the name plate, flames, shield or outlines, which are see-through)
             var mt = o.material;
             if (!o.isMesh || !o.visible || o.__stOL || !o.geometry || !mt || mt.transparent || (T.AdditiveBlending && mt.blending === T.AdditiveBlending)) return;
-            var gm = o.geometry;
-            if (!gm.boundingBox) gm.computeBoundingBox();
-            var b = gm.boundingBox;
-            if (!b) return;
-            for (var i = 0; i < 8; i++) {
-              v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(o.matrixWorld);
-              r = Math.max(r, Math.hypot(v.x - mp.x, v.y - mp.y));
+            rel.multiplyMatrices(inv, o.matrixWorld);
+            var g = o.geometry, pa = g.attributes && g.attributes.position, vs = g.vertices, n = pa ? pa.count : vs ? vs.length : 0, step = Math.max(1, Math.floor(n / 3000));
+            for (var i = 0; i < n; i += step) {
+              if (pa) v.set(pa.getX(i), pa.getY(i), pa.getZ(i)); else v.copy(vs[i]);
+              v.applyMatrix4(rel);
+              for (var k = 0; k < 16; k++) { var d = v.x * DIRS[k][0] + v.y * DIRS[k][1]; if (d > bestD[k]) { bestD[k] = d; best[k] = [v.x, v.y, v.z]; } }
             }
           });
-        } catch (e) { r = 0; }
-        if (r > 0) RADC.set(m, r);
-        return r || 3;
+        } catch (e) {}
+        h = best.filter(function(q) { return q; });
+        if (h.length) HULL.set(m, h);
+        return h;
+      }
+      // a drawn ship's box on screen: its outline points through its matrix,
+      // shifted like its middle (the map wraps), as a rectangle
+      var _hv = null;
+      function shipBox(m, cam, g, shx, shy) {
+        var pts = hullPoints(m), T = window.THREE;
+        if (!pts.length || !T) return null;
+        if (!_hv) _hv = new T.Vector3();
+        var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (var i = 0; i < pts.length; i++) {
+          _hv.set(pts[i][0], pts[i][1], pts[i][2]).applyMatrix4(m.matrixWorld);
+          var q = worldToScreenPx(cam, _hv.x + shx, _hv.y + shy, g);
+          if (!q) return null;
+          if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+        }
+        return { x0: x0 - 4, y0: y0 - 4, x1: x1 + 4, y1: y1 + 4 };
       }
       // the ships the game is drawing this frame, by id
       function drawnShips() {
@@ -2791,7 +2820,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var me = worldToScreenPx(cam, mx, my, g);
         if (!me) return;
         var p1 = worldToScreenPx(cam, mx + 10, my, g), ppu = p1 ? Math.hypot(p1.x - me.x, p1.y - me.y) / 10 : 0;
-        var near = espNear(), maxD = espDist(), RAD = window.__synAim && window.__synAim.RAD || {};
+        var near = espNear(), maxD = espDist(), boxes = featOn("espboxes"), RAD = window.__synAim && window.__synAim.RAD || {};
         ctx.font = "600 11px Play, Arial, sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineJoin = "round";
@@ -2801,13 +2830,22 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           if (near && dist > maxD) continue;
           var p = worldToScreenPx(cam, mx + dx, my + dy, g);
           if (!p) continue;
-          var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id, label = nm + "  " + dist;
-          // the light box: the ship's model as drawn, a little room round it
-          var R = t.m ? modelRadius(t.m) : (RAD[(_aegisShips[t.id] || {}).code] || 3) * .8;
-          var half = !e.off && ppu > 0 ? Math.max(6, R * 1.08 * ppu) : 0;
+          var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id;
+          // the box: the drawn ship's outline (or, from the radar, its hull size)
+          var B = null;
+          if (boxes && !e.off && ppu > 0) {
+            if (t.m) B = shipBox(t.m, cam, g, mx + dx - t.x, my + dy - t.y);
+            if (!B) { var hr = Math.max(6, (RAD[(_aegisShips[t.id] || {}).code] || 3) * .8 * ppu); B = { x0: p.x - hr, y0: p.y - hr, x1: p.x + hr, y1: p.y + hr }; }
+          }
           // (the line stops at the box)
-          var lx = me.x - p.x, ly = me.y - p.y, mm = Math.max(Math.abs(lx), Math.abs(ly)), k = half && mm > half ? half / mm : 0;
-          if (!half || mm > half) {
+          var lx = me.x - p.x, ly = me.y - p.y, k = 0, inBox = false;
+          if (B) {
+            var hw = Math.max(p.x - B.x0, B.x1 - p.x), hh = Math.max(p.y - B.y0, B.y1 - p.y);
+            inBox = Math.abs(lx) <= hw && Math.abs(ly) <= hh;
+            k = Math.min(Math.abs(lx) > 0 ? hw / Math.abs(lx) : Infinity, Math.abs(ly) > 0 ? hh / Math.abs(ly) : Infinity);
+            if (!isFinite(k)) k = 0;
+          }
+          if (!inBox) {
             ctx.save();
             ctx.strokeStyle = col(t.id, t.exact ? .6 : .38);
             ctx.lineWidth = t.exact ? 1.5 : 1.2;
@@ -2815,17 +2853,19 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(p.x + lx * k, p.y + ly * k); ctx.stroke();
             ctx.restore();
           }
-          if (half) {
+          if (B) {
             ctx.save();
             ctx.shadowColor = col(t.id, .9); ctx.shadowBlur = 8;
-            ctx.fillStyle = col(t.id, .07); ctx.fillRect(p.x - half, p.y - half, half * 2, half * 2);
+            ctx.fillStyle = col(t.id, .07); ctx.fillRect(B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0);
             ctx.strokeStyle = col(t.id, t.exact ? .85 : .5); ctx.lineWidth = 1.2;
-            ctx.strokeRect(p.x - half, p.y - half, half * 2, half * 2);
+            ctx.strokeRect(B.x0, B.y0, B.x1 - B.x0, B.y1 - B.y0);
             ctx.restore();
-            e = { x: p.x, y: p.y - half + 1, off: false };
           }
-          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,16,22,.85)"; ctx.strokeText(label, e.x, e.y - 5);
-          ctx.fillStyle = col(t.id, .95); ctx.fillText(label, e.x, e.y - 5);
+          // the label: a ship on screen carries the game's own tag (its name),
+          // so only the distance; off screen, at the edge, name and distance
+          var label = e.off ? nm + "  " + dist : String(dist), lyPos = e.off ? e.y - 5 : B ? B.y0 - 3 : p.y - 10;
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,16,22,.85)"; ctx.strokeText(label, e.x, lyPos);
+          ctx.fillStyle = col(t.id, .95); ctx.fillText(label, e.x, lyPos);
           if (!_aegisNames[t.id]) requestName(t.id);
         }
       }
@@ -2963,6 +3003,139 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           return r;
         };
       }, 600000);
+    })();
+    // Ship tags (the game's name tag under each ship): a strip under each
+    // other ship's tag with its energy bar and the lives it has left, in the
+    // tag's own look; and tags (strip with them) that grow as you zoom out,
+    // so they stay readable (Syndicate's "tags scale with zoom").
+    (function shipTags() {
+      var CORE = window.__perfCore, seen = new WeakSet();
+      if (!CORE || !CORE.whenClass) return;
+      function src(fn) { try { return Function.prototype.toString.call(fn); } catch (e) { return ""; } }
+      // the tag class: one method draws the shield and gems bars, another
+      // updates from the ship's status and its ShipInstance
+      function find(p) {
+        if (seen.has(p)) return null;
+        seen.add(p);
+        var draw = null, upd = null;
+        Object.getOwnPropertyNames(p).forEach(function(n) {
+          var f; try { f = p[n]; } catch (e) { return; }
+          if (typeof f !== "function" || n === "constructor") return;
+          var s = src(f);
+          if (s.indexOf('"hsla(180,100%,75%,.75)"') >= 0 && s.indexOf(".65*") >= 0 && s.indexOf(".85*") >= 0) draw = n;
+          if (s.indexOf("shield_capacity") >= 0 && s.indexOf("crystals_capacity") >= 0) upd = n;
+        });
+        return draw && upd ? { draw: draw, upd: upd } : null;
+      }
+      function strip(tag) {
+        var X = tag.__sbStrip, T = window.THREE;
+        if (X || !T || !tag.ll100) return X;
+        var cv = document.createElement("canvas");
+        cv.width = 256; cv.height = 24;
+        var tex = new T.Texture(cv);
+        tex.minFilter = T.LinearFilter;
+        var mat = new T.MeshBasicMaterial({ color: 0xffffff, map: tex, transparent: true, depthWrite: false, depthTest: false });
+        // (the tag's plane is 1 x 1 for its 256 x 64 canvas: this strip is 24 high, just under it)
+        var mesh = new T.Mesh(new T.PlaneGeometry(1, 24 / 64), mat);
+        mesh.position.set(0, -.5 - 12 / 64 - .02, 0);
+        mesh.renderOrder = tag.ll100.renderOrder;
+        tag.ll100.add(mesh);
+        return tag.__sbStrip = { cv: cv, tex: tex, mesh: mesh, key: null };
+      }
+      function drawStrip(X, hue, energy, lives) {
+        var c = X.cv.getContext("2d"), W = X.cv.width, H = X.cv.height, I = W / 32, right = lives != null ? W - 7 * I : W - 2 * I;
+        c.clearRect(0, 0, W, H);
+        if (energy != null) {
+          c.fillStyle = "rgba(0,0,0,.5)";
+          c.fillRect(2 * I - 1, 4, right - 2 * I + 2, H - 8);
+          c.fillStyle = "hsla(50,100%,70%,.85)";
+          c.fillRect(2 * I, 5, (right - 2 * I) * Math.max(0, Math.min(1, energy / 100)), H - 10);
+        }
+        if (lives != null) {
+          // a small heart, then the count, in the tag's colour
+          var hx = W - 5.6 * I, hy = H / 2, r = H * .2;
+          c.fillStyle = "hsl(" + hue + ",50%,80%)";
+          c.beginPath();
+          c.moveTo(hx, hy + r * 1.3);
+          c.bezierCurveTo(hx - r * 2.2, hy - r * .2, hx - r * .9, hy - r * 1.9, hx, hy - r * .6);
+          c.bezierCurveTo(hx + r * .9, hy - r * 1.9, hx + r * 2.2, hy - r * .2, hx, hy + r * 1.3);
+          c.fill();
+          c.font = Math.round(H * .62) + "pt Play";
+          c.textAlign = "left"; c.textBaseline = "middle";
+          c.fillText(String(lives), hx + r * 2, hy + 1);
+        }
+        X.tex.needsUpdate = true;
+      }
+      CORE.whenClass(function(p) { return !!find(p); }, function(P) {
+        seen = new WeakSet();
+        var k = find(P);
+        if (!k) return;
+        var draw = P[k.draw], upd = P[k.upd];
+        // the game sets the tag's size when it draws it: kept as the base
+        P[k.draw] = function() {
+          var r = draw.apply(this, arguments);
+          try { if (this.ll100) { this.__sbBase = [this.ll100.scale.x, this.ll100.scale.y]; } } catch (e) {}
+          return r;
+        };
+        P[k.upd] = function(g, name, st, ins) {
+          var r = upd.apply(this, arguments);
+          try {
+            var m = this.ll100;
+            if (m && this.__sbBase) {
+              var mul = featOn("tagzoomscale") ? Math.max(1, window.__aegisFovFactor || 1) : 1;
+              if (m.scale.x !== this.__sbBase[0] * mul) m.scale.set(this.__sbBase[0] * mul, this.__sbBase[1] * mul, 1);
+            }
+            var mine = st && (st.id === window.__synMyShipId || g && g.IOOII && g.IOOII.O1OI0 && g.IOOII.O1OI0.status === st);
+            var on = featOn("tagextra") && st && !mine && !this.anonymous;
+            var X = on ? strip(this) : this.__sbStrip;
+            if (!X) return r;
+            X.mesh.visible = !!on;
+            if (!on) return r;
+            var energy = ins && ins.generator_capacity > 0 && typeof st.generator === "number" ? Math.round(100 * st.generator / ins.generator_capacity) : null;
+            // lives left, as the game counts its own (lives - 1); none where
+            // a starting ship has unlimited lives, or the count isn't sent
+            var lives = typeof st.lives === "number" && st.lives > 0 ? st.lives - 1 : null, md = g && g.mode;
+            if (lives != null && md && md.infinite_base_lives && md.options && Math.floor(st.type / 100) === Math.floor((md.options.starting_ship || 101) / 100)) lives = null;
+            var key = energy + "|" + lives + "|" + this.hue;
+            if (key !== X.key) { X.key = key; drawStrip(X, this.hue, energy, lives); }
+          } catch (e) {}
+          return r;
+        };
+      }, 600000);
+    })();
+    // Survival timer: the time until Survival starts (when joining closes,
+    // the mode's max_enter_time from the game's start), then "SURVIVAL",
+    // top middle, in the game's own look.
+    (function survivalTimer() {
+      var el = null, base = null;
+      setInterval(function() {
+        try {
+          var g = getGS(), md = g && g.mode, info = md && md.game_info, w = g && g.IOOII && g.IOOII.Ol110;
+          if (!featOn("survtimer") || !inGame() || !md || md.id !== "survival" || !info) { if (el) el.style.display = "none"; base = null; return; }
+          if (!base || base.info !== info) {
+            if (typeof info.servertime !== "number") return;
+            base = { info: info, start: Date.now() - info.servertime };
+          }
+          if (!el) {
+            el = document.createElement("div");
+            el.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9990;pointer-events:none;font:16px/1 Play,Verdana,sans-serif;letter-spacing:.06em;padding:6px 14px 7px;border-radius:3px;text-shadow:0 0 6px currentColor";
+            document.body.appendChild(el);
+          }
+          var hue = typeof info.system_hue === "number" ? info.system_hue : 200;
+          var left = (+md.max_enter_time || 1800) * 1000 - (Date.now() - base.start), txt, warn = false;
+          if (w && w.survival || left <= 0) { txt = "SURVIVAL"; warn = true; }
+          else {
+            var m = Math.floor(left / 60000), s = Math.floor(left / 1000) % 60;
+            txt = "SURVIVAL IN " + m + ":" + (s < 10 ? "0" : "") + s;
+            warn = left < 5 * 60000;
+          }
+          el.textContent = txt;
+          el.style.color = warn ? "hsl(15,100%,70%)" : "hsl(" + hue + ",50%,85%)";
+          el.style.background = "hsla(" + hue + ",50%,12%,.7)";
+          el.style.border = "1px solid " + (warn ? "hsla(15,100%,70%,.6)" : "hsla(" + hue + ",50%,70%,.5)");
+          el.style.display = "block";
+        } catch (e) {}
+      }, 500);
     })();
     (function fovZoom() {
       var MIN_FOV = 1, MAX_FOV = 170, T_MIN = .4, T_MAX = 3, SENS = 9e-4, TAU = 170;
@@ -3445,8 +3618,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         return r;
       }
+      // (its two triggers, each on its own switch: holding its key, firing)
       function active() {
-        return C.act !== "fire" && A.keyHeld || C.act !== "key" && A.userFire;
+        return featOn("aim") && A.keyHeld || featOn("aimfire") && A.userFire;
       }
       // The speed to lead for: the big gun's, unless the ship also has small
       // guns of another speed and the big gun will not go with the next shot
@@ -5876,7 +6050,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // controls back when done.
       function pump(ev) {
         // (switched off in the \ panel: the controls go back to the game's own)
-        if (!featOn("aim")) {
+        if (!aimOn()) {
           if (A.sentWord != null) { var uw0 = A.flags != null && A.userDeg != null ? userWord() : statusWord(); if (uw0 != null) rawSend(uw0); }
           A.sentWord = null; A.flags = null; A.userDeg = null; A.keyHeld = false; A.lock = null; A.engaged = false; DG.plan = null; KB.plan = null;
           return;
@@ -6494,12 +6668,16 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("wide", "Extended FOV view (zoomed out: more of the map)") +
         sec("Visuals") +
         r("nostars", "Remove stars") +
-        r("esp", "ESP lines and boxes on other ships") +
+        r("esp", "ESP lines to other ships") +
+        r("espboxes", "ESP boxes round the ships") +
         '<div class="option">ESP shows<button type="button" data-ext-espmode>' + (espNear() ? "Near me" : "Everyone") + "</button></div>" +
         '<div class="option">Near distance <span data-ext-espdist-v>' + espDist() + '</span><input type="range" min="20" max="400" step="10" value="' + espDist() + '" data-ext-espdist style="flex:0 0 46%"></div>' +
         r("saturate", "Saturated ship colours") +
         r("highcontrast", "High contrast ships (full colour)") +
         r("teamhl", "Team highlight (allies green, enemies yellow)") +
+        r("tagextra", "Ship tags: energy bar and lives left") +
+        r("tagzoomscale", "Ship tags grow as you zoom out") +
+        r("survtimer", "Survival timer") +
         r("lbicons", "Ship icons on the leaderboard") +
         sec("Gameplay") +
         r("fastrespawn", "Fast respawn") +
@@ -6510,7 +6688,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("radaricons", "Ship icons in place of dots") +
         r("radartier", "Tier tags on names") +
         sec("Combat") +
-        r("aim", "Aim Assist (hold the key, or fire)") +
+        r("aim", "Aim Assist while holding its key") +
+        r("aimfire", "Aim Assist while firing") +
         '<div class="option">Aim Assist key<button type="button" data-ext-key>' + aimKey() + "</button></div>" +
         r("dodge", "Dodge Assist (steers out of enemy shots)");
     },

@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.4.0.
+starblast.io logo. Current version: 2.5.0 (the r124 app: 1.2.0).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -38,6 +38,10 @@ app and the tests find the client by relative path.
    - Leave Game: `GameMenu.createMainMenu` gets a game `MenuButton` "LEAVE GAME" with the game's own `quit_to_menu` action (back to the start page).
    - ESP draws each ship in view at its model (`world.ships[i].model`, where the game draws it) straight after the game's world render (`__perfCore.afterRender`, the game's camera), boxed by the model's hull meshes; ships out of view come from the radar (about once a second, coarse steps), flown on between samples: a least-squares fit of the last few samples (at least 0.6 s apart) for velocity, a turn rate from how the fitted heading moves, the drawn spot following with a 0.25 s correction; a ship leaving the view carries on from where it was drawn. Simulated: mean error 2.6 units (the radar step is 4.7), ~1 unit of movement per frame.
    - Aim Assist physics per ship come from the game's own ShipInstance (top speed, inertia, turn, upgrades and mods included), else the mode's ship types with the upgrade levels in the status packets (`lv`, 4 bits per stat), else the level-1 table. It always leads for the biggest gun (its speed measured from your volleys, else your ship's own number); the muzzle is measured up to 30 forward (the Shadow X-3's is ~15).
+   - ESP boxes (own switch) fit each drawn ship: its hull's farthest points in 16 directions (once per model), through its matrix each frame. A ship on screen gets only its distance (the game's tag has the name); off screen, name and distance at the edge.
+   - Ship tags: a strip under each other ship's tag (the game's tag class, found by its bars and its shield/crystals update) with its energy (status.generator / ShipInstance.generator_capacity) and lives left (status.lives - 1); tags scale with the FOV zoom (`AEGIS_tagzoomscale`).
+   - Survival timer: until joining closes (mode.max_enter_time from the welcome's servertime), then SURVIVAL.
+   - Aim Assist has two triggers, each its own switch: holding its key (`STUDIO_aim`), firing (`STUDIO_aim_fire`, starts as `STUDIO_aim` was).
    - It wraps the WebSocket constructor to read the game's messages (ship status, radar, volleys, names) and caps control messages at 90 per second.
    - Game hooks found at runtime: `TeamBoard` (team lock), `IOII0` (ship finishes: High Contrast, team highlight, saturated glow), the scoreboard's draw method (icons), and a copy of `IOII0`/`WeaponModel` `IOIll` with `this.hue,1,1` (saturation). Checked against index.js; `window.__studioPatches` lists what was patched.
 
