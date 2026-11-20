@@ -40,7 +40,10 @@ async function go() {
   // result (live-binding semantics). The legacy layer needs to replace e.g.
   // T.BoxGeometry with its own wrapper, so convert all getter-only properties
   // to writable value properties immediately after the IIFE runs.
-  three += '\n(function(){var T=window.THREE;if(!T)return;Object.getOwnPropertyNames(T).forEach(function(k){var d=Object.getOwnPropertyDescriptor(T,k);if(d&&d.get&&!d.set){try{var v=d.get();Object.defineProperty(T,k,{value:v,writable:true,configurable:true,enumerable:!!d.enumerable});}catch(e){}}});})();\n';
+  // The post-processing must reference the local THREE variable (the IIFE result),
+  // NOT window.THREE: during early() the swap has window.THREE intercepted as a
+  // getter/setter and reading it while swapping===true returns undefined.
+  three += '\n(function(T){if(!T)return;Object.getOwnPropertyNames(T).forEach(function(k){var d=Object.getOwnPropertyDescriptor(T,k);if(d&&d.get&&!d.set){try{var v=d.get();Object.defineProperty(T,k,{value:v,writable:true,configurable:true,enumerable:!!d.enumerable});}catch(e){}}});})(typeof THREE!=="undefined"?THREE:null);\n';
 
   // read shared components (same as build-r159.js)
   const geoPath = path.join(__dirname, 'node_modules/three-r125/examples/jsm/deprecated/Geometry.js');
