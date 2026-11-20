@@ -74,6 +74,17 @@ The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build
 - Checked in the mock: the game draws the same as r124 (planet, ships, lights, HUD, crosshair); corestate hooks, bench VERIFY mismatch 0, keytest, aimsplit, aim shot modes, tags and panel pass.
 - Further (r160+): no single-file build (bundle the module), legacy lights gone at r165 (light strengths by hand), WebGL1 gone at r163.
 
+## three.js r167 (game only, test build)
+
+`node tools/build-r167.js` writes `clients/starblast-r167.user.js` (the game alone, no client). The user tested it on starblast.io and it works.
+
+- r167 has no `build/three.min.js`: esbuild (in `tools/`) turns `build/three.module.min.js` into an IIFE. esbuild's exports are non-configurable getters, so `window.THREE` is set to a plain copy of them; otherwise the legacy layer can't replace `THREE.BoxGeometry` etc.
+- Legacy lights are gone at r165: when `ShaderChunk.lights_pars_begin` has no `LEGACY_LIGHTS`, `three-legacy.js` patches it (light colours × PI, r124's linear distance fade), as legacy mode did. r124/r159 are not affected.
+- Same legacy + compat layers as r159 otherwise. `sbThreeLegacy` takes an optional third argument, the renderer name to wrap (default `WebGLRenderer`).
+- WebGPU was tried and dropped: the WebGPU build has a top-level await, and the game's 10 GLSL ShaderMaterials would need porting.
+- Checked in the mock with the script injected both before and after the game's script: no three.js errors, renders like r159.
+- Found while comparing: the sun's gravity-field rings (`Repulsor`, setting `gravity_field`) draw on r85 and r167 but not on r124/r159. Not fixed; the user didn't ask.
+
 ## Keys and settings
 
 - `\` settings panel in game (game switches + Studio switches + the ported ones), Esc closes. It's built from the game's own settings markup (`.modal`, `.option`, `.switch`), with a stand-in style if the game's stylesheet doesn't reach it
