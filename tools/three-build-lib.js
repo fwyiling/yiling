@@ -121,6 +121,35 @@ ${setup.replace(/^/gm, '  ')}
 sbThree.late();
 `;
 }
+// The app's version (it runs the script before any of the page's): the new
+// three.js runs right here as the page's three.js, and the page's own (r85)
+// is never run: its <script> is turned off as the parser adds it (a parser
+// script's type is read after the observers have run). Had r85 run anyway,
+// it would fill the same window.THREE with its classes: checked at load.
+function appLoader(setup, rev) {
+  return `var sbThree = (function() {
+  "use strict";
+${setup.replace(/^/gm, '  ')}
+  var T = window.THREE;
+  if (!T || T.REVISION !== ${JSON.stringify(rev)}) { console.warn("[three r${rev}] did not load: THREE r" + (T && T.REVISION)); return {}; }
+  window.__sbThreeSwap = ${JSON.stringify(rev)};
+  try { sbSetup(T); } catch (e) { console.warn("[three r${rev}] adapting failed", e); }
+  var off = 0, mo = new MutationObserver(function(ms) {
+    for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) {
+      var n = ms[i].addedNodes[j];
+      if (n.tagName === "SCRIPT" && /\\/three(\\.min)?\\.js(\\?|$)/.test(n.src || "")) { n.type = "javascript/blocked"; off++; }
+    }
+  });
+  mo.observe(document, { childList: true, subtree: true });
+  document.addEventListener("DOMContentLoaded", function() {
+    mo.disconnect();
+    if (window.THREE !== T || T.REVISION !== ${JSON.stringify(rev)}) console.warn("[three r${rev}] the page's own three.js ran anyway: THREE r" + (window.THREE && window.THREE.REVISION));
+    else console.log("[three r${rev}] loaded as the page's three.js (" + (off ? "the page's own not run" : "the page had none") + ")");
+  });
+  return {};
+})();
+`;
+}
 function write(rel, text, rev) {
   fs.writeFileSync(path.join(root, rel), text);
   console.log('wrote ' + rel + ' (' + Math.round(text.length / 1024) + ' KB, three r' + rev + ')');
@@ -146,5 +175,8 @@ function build(o) {
   const body = client.slice(client.indexOf('// ==/UserScript==') + '// ==/UserScript=='.length);
   const cver = (client.match(/@version\s+(\S+)/) || [])[1] || '0';
   write(o.studio, header('Syndicate Studio on three.js r' + rev, 'The Studio client with the game on three.js r' + rev + ' (WebGL2) in place of r85.', cver, ver) + sw + body.replace(/^\s*\n/, '') + '\nsbThree.early();\n', rev);
+  // the app's: three.js as code (run once, not held as text), then the client
+  if (o.app) write(o.app, header('Syndicate Studio on three.js r' + rev + ' (app)', 'The Studio client with the game on three.js r' + rev + ', for the app (runs before the page; the page\'s own three.js is not run).', cver, ver) +
+    three.replace(/\s*$/, '\n;\n') + appLoader(o.setup, rev) + body.replace(/^\s*\n/, ''), rev);
 }
 module.exports = { build, root, swapper };

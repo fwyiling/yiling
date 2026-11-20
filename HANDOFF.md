@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.1 (the r124 app: 1.2.1).
+starblast.io logo. Current version: 2.5.1 (the r124 app: 1.2.2).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -61,6 +61,8 @@ What the game needs from r124 (each checked in the mock against r85):
 - `.shading` (also in material options), `addAttribute`, `renderer.context`: mapped without r124's per-call warnings.
 
 The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build step was taken out). The r124 app: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
+
+The app (1.2.2 on) uses `clients/studio-r124-app.user.js` instead (`build()`'s `app` output): the app runs it before any page script, so r124 runs right there as code (not held as a string and injected), `sbSetup` adapts it, and the page's own r85 `<script>` is never run (a MutationObserver sets its type to `javascript/blocked` as the parser adds it; r85 does `THREE = THREE || {}` and would fill r124's object). Then the client, which finds `window.THREE` already r124. At load it logs `[three r124] loaded as the page's three.js` or warns if r85 ran anyway. Measured in Chromium: three.js start-up ~45 ms (r85 run + r124 string inject) down to ~22 ms; in-game cost unchanged. Mock: corestate same as studio-r124, bench VERIFY 0 mismatches, keytest passes. The Tampermonkey scripts keep the swap (they can be injected late).
 
 ## three.js r159 (test build, not in the app yet)
 

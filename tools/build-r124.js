@@ -6,4 +6,4 @@ const fs = require('fs'), path = require('path');
 const { build, root } = require('./three-build-lib');
 const compat = fs.readFileSync(path.join(root, 'clients/shared/three-r124-compat.js'), 'utf8');
 build({ pkg: 'three', rev: '124', setup: compat + '\nfunction sbSetup(T) { sbThreeCompat(T); }\n',
-  game: ['clients/starblast-r124.user.js', '1.1.0'], studio: 'clients/studio-r124.user.js' });
+  game: ['clients/starblast-r124.user.js', '1.1.0'], studio: 'clients/studio-r124.user.js', app: 'clients/studio-r124-app.user.js' });
