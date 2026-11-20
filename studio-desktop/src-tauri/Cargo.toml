@@ -1,6 +1,6 @@
 [package]
 name = "syndicate-studio"
-version = "2.0.0"
+version = "2.1.0"
 description = "Starblast client: the game with the Studio client built in, light on GPU, CPU and RAM"
 edition = "2021"
 

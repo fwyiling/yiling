@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.0.0
-// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist.
+// @version      2.1.0
+// @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.0.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.1.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -2717,6 +2717,113 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           drawEsp(g, my, cam, me, 1 - Math.exp(-fdt * 7));
         } catch (e) {}
       })();
+    })();
+    // Join custom game: a mode after the game's own (after Create custom
+    // game) under PLAY. With it picked, a box like the name box opens under
+    // it for the game's link; PLAY (or Enter) joins the way opening the link
+    // does: the link goes in the address and the game reads it again
+    // ("#id@ip:port" a private game, "#id" a game by its id).
+    (function joinCustomGame() {
+      var CORE = window.__perfCore, JOIN = "studio_join", box = null, home = null;
+      if (!CORE || !CORE.whenClass) return;
+      function isNormal(modes) { return Array.isArray(modes) && modes.length && !modes.some(function(m) { return m && (m.id === "private" || m.id === "join"); }); }
+      function addMode(h) {
+        if (!isNormal(h.game_modes) || h.game_modes.some(function(m) { return m && m.id === JOIN; })) return false;
+        h.game_modes.push({ name: "Join custom game", id: JOIN, custom_color: false });
+        return true;
+      }
+      function parseLink(v) {
+        v = String(v || "").trim();
+        var m = v.match(/#?(\d+)@([\w][\w.-]*):(\d+)/);
+        if (m) return "#" + m[1] + "@" + m[2] + ":" + m[3];
+        m = v.match(/(?:#|^)(\d+)\/?$/);
+        return m ? "#" + m[1] : null;
+      }
+      function ensureBox() {
+        if (box && box.isConnected) return box;
+        var form = document.getElementById("player"), name = form && form.querySelector(".inputwrapper");
+        if (!name) return null;
+        // (inside the form: the game's own name-box styles, and Enter plays)
+        box = document.createElement("div");
+        box.className = "inputwrapper";
+        box.id = "studio-join";
+        box.style.display = "none";
+        box.innerHTML = '<input tabindex="0" type="text" spellcheck="false" autocomplete="off" placeholder="Paste the game link">';
+        var inp = box.firstChild;
+        inp.addEventListener("keydown", function(e) { if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.stopPropagation(); });
+        inp.addEventListener("input", function() { box.style.boxShadow = ""; });
+        name.parentNode.insertBefore(box, name.nextSibling);
+        return box;
+      }
+      function sync(h) {
+        var b = ensureBox(), m = h && h.game_modes && h.game_modes[h.selectedMode];
+        if (!b) return;
+        var on = !!(m && m.id === JOIN);
+        if ((b.style.display !== "none") !== on) {
+          // (on its own line under the name box: the game's box is inline)
+          b.style.display = on ? "table" : "none";
+          b.style.margin = on ? "10px auto 0" : "";
+          if (on) setTimeout(function() { try { b.firstChild.focus(); } catch (e) {} }, 50);
+        }
+      }
+      CORE.whenClass(function(p) { return typeof p.gameModesLoader === "function" && typeof p.startGame === "function" && typeof p.changeGameMode === "function"; }, function(P) {
+        var load = P.gameModesLoader, start = P.startGame, change = P.changeGameMode;
+        P.gameModesLoader = function() { var r = load.apply(this, arguments); home = this; addMode(this); return r; };
+        P.changeGameMode = function() { var r = change.apply(this, arguments); home = this; sync(this); return r; };
+        P.startGame = function(ev) {
+          var m = this.game_modes && this.game_modes[this.selectedMode];
+          if (!m || m.id !== JOIN) return start.apply(this, arguments);
+          if (ev && ev.preventDefault) ev.preventDefault();
+          var b = ensureBox(), hash = parseLink(b && b.firstChild.value);
+          if (!hash) {
+            if (b) { b.style.boxShadow = "0 0 8px hsla(0,100%,65%,1)"; try { b.firstChild.focus(); } catch (e) {} }
+            return;
+          }
+          try { history.replaceState(null, "", location.pathname + location.search + hash); } catch (e) { location.hash = hash; }
+          load.call(this);
+          this.selectedMode = 0;
+          if (b) b.style.display = "none";
+          return start.apply(this, arguments);
+        };
+      }, 600000);
+      // (the hook can come after the game built PLAY's mode list: then the
+      // mode and its label are added to what's there)
+      var tries = 0, iv = setInterval(function() {
+        try {
+          if (++tries > 240) return clearInterval(iv);
+          var h = home, g = getGS();
+          if (!h && g) for (var k in g) { var v = g[k]; if (v && Array.isArray(v.game_modes) && typeof v.startGame === "function") { h = home = v; break; } }
+          var list = document.getElementById("game_modes");
+          if (!h || !list || !list.children.length) return;
+          if (addMode(h) || list.children.length < h.game_modes.length) {
+            if (list.children.length < h.game_modes.length) { var sp = document.createElement("span"); sp.textContent = "Join custom game"; list.appendChild(sp); }
+            var nx = document.getElementById("nextMode");
+            if (nx && h.selectedMode < h.game_modes.length - 1) nx.style.visibility = "visible";
+          }
+          ensureBox();
+          clearInterval(iv);
+        } catch (e) {}
+      }, 500);
+    })();
+    // Leave Game in the game's menu (Esc, on the right): a button of the
+    // game's own, using the game's own "quit to menu" (back to the start page).
+    (function leaveGameButton() {
+      var CORE = window.__perfCore;
+      if (!CORE || !CORE.whenClass) return;
+      CORE.whenClass(function(p, key) { return key === "GameMenu" && typeof p.createMainMenu === "function" && typeof p.addButton === "function"; }, function(P) {
+        var create = P.createMainMenu;
+        P.createMainMenu = function() {
+          var r = create.apply(this, arguments);
+          try {
+            var G = this.OIO0I, MB = window.MenuButton;
+            if (MB && G && !G.is_mobile_app && Array.isArray(this.buttons) && !this.buttons.some(function(b) { return b && (b.id === "quit_to_menu" || b.id === "quit"); })) {
+              this.leave = new MB(G, this, "LEAVE GAME", "quit_to_menu");
+              this.addButton(this.leave);
+            }
+          } catch (e) {}
+          return r;
+        };
+      }, 600000);
     })();
     (function fovZoom() {
       var MIN_FOV = 1, MAX_FOV = 170, T_MIN = .4, T_MAX = 3, SENS = 9e-4, TAU = 170;
