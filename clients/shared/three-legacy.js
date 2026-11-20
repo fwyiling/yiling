@@ -12,7 +12,7 @@
 //    BufferGeometry.fromGeometry;
 //  - the r124 look: no colour management, linear output, legacy lights
 //    (r155 on: physically based), point lights fading as in r124 (decay 1).
-function sbThreeLegacy(T, makeGeometry) {
+function sbThreeLegacy(T, makeGeometry, rendererName) {
   if (!T || T.__sbLegacy || T.Geometry) return;
   try { Object.defineProperty(T, "__sbLegacy", { value: true }); } catch (e) { return; }
   // ---- the look
@@ -130,7 +130,7 @@ function sbThreeLegacy(T, makeGeometry) {
       nu.set.call(this, v);
     } });
   // ---- each renderer: its draws, its look
-  var R = T.WebGLRenderer;
+  var nm = rendererName || "WebGLRenderer", R = T[nm];
   var Renderer = function() {
     var r = Reflect.construct(R, arguments, new.target || Renderer);
     if ("_useLegacyLights" in r) r._useLegacyLights = true; else if ("useLegacyLights" in r) r.useLegacyLights = true; else if ("physicallyCorrectLights" in r) r.physicallyCorrectLights = false;
@@ -140,7 +140,7 @@ function sbThreeLegacy(T, makeGeometry) {
     return r;
   };
   Renderer.prototype = R.prototype;
-  T.WebGLRenderer = Renderer;
+  T[nm] = Renderer;
   // point and spot lights fade over their distance as in r124 (r155 made
   // the default fall-off 2)
   [["PointLight", 3], ["SpotLight", 5]].forEach(function(p) {

@@ -147,4 +147,4 @@ function build(o) {
   const cver = (client.match(/@version\s+(\S+)/) || [])[1] || '0';
   write(o.studio, header('Syndicate Studio on three.js r' + rev, 'The Studio client with the game on three.js r' + rev + ' (WebGL2) in place of r85.', cver, ver) + sw + body.replace(/^\s*\n/, '') + '\nsbThree.early();\n', rev);
 }
-module.exports = { build, root };
+module.exports = { build, root, swapper };
