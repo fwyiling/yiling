@@ -3,7 +3,16 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 // The Studio client (clients/studio-client.user.js), built into the app: it
 // runs at the start of every starblast.io page load (the main frame only,
 // not the page's iframes), before the game makes its WebGL context.
-const STUDIO_CLIENT: &str = include_str!("../../../clients/studio-client.user.js");
+#[cfg(not(feature = "r124"))]
+const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-client.user.js");
+#[cfg(not(feature = "r124"))]
+const TITLE: &str = "starblast.io";
+// The r124 test build (--features r124): the game alone on three.js r124
+// (clients/starblast-r124.user.js, built by tools/build-r124.js), no client.
+#[cfg(feature = "r124")]
+const PAGE_SCRIPT: &str = include_str!("../../../clients/starblast-r124.user.js");
+#[cfg(feature = "r124")]
+const TITLE: &str = "starblast.io r124";
 
 // WebView2 (the Edge engine the app runs the game in) flags. Setting these
 // replaces the app's defaults, so the features Tauri itself turns off
@@ -51,7 +60,7 @@ pub fn run() {
                 "main",
                 WebviewUrl::External("https://starblast.io/".parse().unwrap()),
             )
-            .title("starblast.io")
+            .title(TITLE)
             .inner_size(1600.0, 900.0)
             .min_inner_size(960.0, 540.0)
             .resizable(true)
@@ -60,7 +69,7 @@ pub fn run() {
             .background_color(tauri::window::Color(0, 0, 0, 255))
             .additional_browser_args(BROWSER_ARGS)
             .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-            .initialization_script(STUDIO_CLIENT)
+            .initialization_script(PAGE_SCRIPT)
             .build()?;
             Ok(())
         })

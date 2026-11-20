@@ -8,6 +8,10 @@ edition = "2021"
 name = "studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# the game alone on three.js r124, no client (a separate app: tauri.r124.conf.json)
+r124 = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

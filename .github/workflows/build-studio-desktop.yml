@@ -14,6 +14,7 @@ on:
     paths:
       - 'studio-desktop/**'
       - 'clients/studio-client.user.js'
+      - 'clients/starblast-r124.user.js'
       - 'tools/make-icon.mjs'
       - '.github/workflows/build-studio-desktop.yml'
   workflow_dispatch: {}
@@ -68,6 +69,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: studio-desktop
+
+      # the test app: the game alone on three.js r124 (installs beside the main one)
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: studio-desktop
+          args: --config src-tauri/tauri.r124.conf.json --features r124
 
       - name: Check the app needs no Visual C++ runtime
         shell: bash

@@ -43,6 +43,19 @@ app and the tests find the client by relative path.
 
 Sections 1–4 change no pixel. Verify mode checks every skipped call against the real GPU state and every skipped upload against the canvas pixels.
 
+## three.js r124 (test build, no client)
+
+The game ships three.js r85. `clients/starblast-r124.user.js` runs it on r124 (WebGL2) instead, with no client: the page's r85 still loads, and the moment its script has run (a microtask, before the game's own script) `window.THREE` is replaced by r124, adapted by `clients/shared/three-r124-compat.js`. Rebuild with `(cd tools && npm i) && node tools/build-r124.js`.
+
+What the game needs from r124 (each checked in the mock against r85):
+- Shaders: GLSL ES 3.0 has a built-in `texture()`; the game names variables and uniforms `texture` (renamed to `sbTexture` at compile, the uniform aliased).
+- Faces: r124 turns meshes mirrored by a negative scale inside out (front faces clockwise), r85 did not; the HUD (a flipped orthographic camera, panels mirrored back) depends on r85's way, so `state.setMaterial` is told not to flip.
+- Sprites: r124's sprite shader drops the sign of `scale.x`; the HUD's sprites rely on it (restored in the shader).
+- Polyhedra: r85 split faces into 2^detail rows, r124 into detail + 1 (planets and rocks were coarse); the game's detail is converted.
+- `.shading` (also in material options), `addAttribute`, `renderer.context`: mapped without r124's per-call warnings.
+
+The desktop app builds a second app from it: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app). The Studio client is not yet adapted to r124 (its perf core hooks r85 internals).
+
 ## Keys and settings
 
 - `\` settings panel in game (game switches + Studio switches + the ported ones), Esc closes. It's built from the game's own settings markup (`.modal`, `.option`, `.switch`), with a stand-in style if the game's stylesheet doesn't reach it
