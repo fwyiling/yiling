@@ -36,6 +36,11 @@ async function go() {
     write: false,
   });
   let three = result.outputFiles[0].text;
+  // esbuild converts ES module named exports to read-only getters on the IIFE
+  // result (live-binding semantics). The legacy layer needs to replace e.g.
+  // T.BoxGeometry with its own wrapper, so convert all getter-only properties
+  // to writable value properties immediately after the IIFE runs.
+  three += '\n(function(){var T=window.THREE;if(!T)return;Object.getOwnPropertyNames(T).forEach(function(k){var d=Object.getOwnPropertyDescriptor(T,k);if(d&&d.get&&!d.set){try{var v=d.get();Object.defineProperty(T,k,{value:v,writable:true,configurable:true,enumerable:!!d.enumerable});}catch(e){}}});})();\n';
 
   // read shared components (same as build-r159.js)
   const geoPath = path.join(__dirname, 'node_modules/three-r125/examples/jsm/deprecated/Geometry.js');
