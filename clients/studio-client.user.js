@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.3.0
+// @version      2.4.0
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.3.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.4.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -2615,7 +2615,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       var cv = document.createElement("canvas");
       cv.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:999987;display:none";
       document.body.appendChild(cv);
-      var ctx = cv.getContext("2d"), dpr = 1, disp = {}, lastT = 0, drewAt = 0, CORE = window.__perfCore;
+      var ctx = cv.getContext("2d"), dpr = 1, lastT = 0, drewAt = 0, CORE = window.__perfCore;
       function resize() { dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); }
       resize();
       addEventListener("resize", resize);
@@ -2677,14 +2677,85 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         return { list: out, me: sc && sc.ship && sc.ship.OOO1l && sc.ship.OOO1l.position };
       }
-      // every ship to show: drawn ones exact, the rest from the radar (eased)
-      function ships(myId, now, ease, drawn) {
+      // Far ships: the radar gives each one's spot about once a second, in
+      // coarse steps. Each is flown on between samples along the trend of
+      // its last few (a least-squares fit, which also smooths the steps), at
+      // most 1.5 s past the latest, and the drawn spot follows that with an
+      // exponential correction, so it glides instead of jumping when a
+      // sample lands. A ship leaving the view carries on from where it was
+      // drawn, at the speed it was going.
+      var TRK = {};
+      function trk(id, x, y, now) {
+        var T = TRK[id];
+        if (!T || now - T.seen > 4000) T = TRK[id] = { s: [], ts: 0, x: x, y: y, vx: 0, vy: 0, w: 0, ex: null, seen: now };
+        return T;
+      }
+      function seenExact(id, x, y, now) {
+        var T = trk(id, x, y, now), E = T.ex;
+        if (E && now - E.t > 4 && now - E.t < 500) {
+          var dt = (now - E.t) / 1000, nvx = wrapD(x - E.x) / dt, nvy = wrapD(y - E.y) / dt;
+          T.vx = T.vx * .85 + nvx * .15; T.vy = T.vy * .85 + nvy * .15;
+        }
+        T.ex = { t: now, x: x, y: y }; T.x = x; T.y = y; T.seen = now;
+        T.s = [{ t: now, x: x, y: y }];
+        var r = _aegisShips[id]; T.ts = r ? r.ts : 0;
+      }
+      function farPos(id, r, now, dt) {
+        var T = trk(id, r.x, r.y, now);
+        T.seen = now;
+        if (r.ts !== T.ts) {
+          T.ts = r.ts;
+          var L = T.s[T.s.length - 1], sx = L ? L.x + wrapD(r.x - L.x) : r.x, sy = L ? L.y + wrapD(r.y - L.y) : r.y;
+          // (a jump no ship could make: respawned, or a new ship on the id)
+          if (L && Math.hypot(sx - L.x, sy - L.y) > Math.max(40, 70 * (r.ts - L.t) / 1000)) { T.s = []; T.vx = T.vy = 0; T.w = 0; T.x = r.x; T.y = r.y; sx = r.x; sy = r.y; }
+          T.s.push({ t: r.ts, x: sx, y: sy });
+          while (T.s.length > 5 || T.s.length > 1 && r.ts - T.s[0].t > 3500) T.s.shift();
+          // (fitted only over samples at least 0.6 s apart: the radar's steps
+          // over a short gap would read as a huge speed)
+          if (T.s.length >= 2 && T.s[T.s.length - 1].t - T.s[0].t >= 600) {
+            var n = T.s.length, mt = 0, mx = 0, my = 0, k, stt = 0, stx = 0, sty = 0;
+            for (k = 0; k < n; k++) { mt += T.s[k].t; mx += T.s[k].x; my += T.s[k].y; }
+            mt /= n; mx /= n; my /= n;
+            for (k = 0; k < n; k++) { var a = (T.s[k].t - mt) / 1000; stt += a * a; stx += a * (T.s[k].x - mx); sty += a * (T.s[k].y - my); }
+            if (stt > 1e-4) {
+              var fvx = stx / stt, fvy = sty / stt, fs = Math.hypot(fvx, fvy);
+              if (fs > 60) { fvx *= 60 / fs; fvy *= 60 / fs; fs = 60; }
+              // its turn: how the fitted heading moved since the last fit
+              var os = Math.hypot(T.vx, T.vy);
+              if (fs > 5 && os > 5 && T.fitAt) {
+                var dh = Math.atan2(T.vx * fvy - T.vy * fvx, T.vx * fvx + T.vy * fvy), ft = Math.max(.3, (r.ts - T.fitAt) / 1000);
+                T.w = Math.max(-2, Math.min(2, T.w * .5 + dh / ft * .5));
+              } else T.w = 0;
+              T.vx = fvx; T.vy = fvy; T.fitAt = r.ts;
+            }
+          }
+        }
+        var last = T.s[T.s.length - 1];
+        if (!last) { T.x = r.x; T.y = r.y; return T; }
+        var ahead = Math.min(1.5, Math.max(0, (now - last.t) / 1000)), fade = ahead >= 1.5 ? 0 : 1;
+        // (the fit is the velocity at the samples' mean time and place: it is
+        // flown on from there, along its turn, to now)
+        var bx = 0, by = 0, bt = 0, nb = T.s.length;
+        for (var b = 0; b < nb; b++) { bx += T.s[b].x; by += T.s[b].y; bt += T.s[b].t; }
+        var tx = bx / nb, ty = by / nb, fromMid = Math.min(3, (now - bt / nb) / 1000), vx = T.vx, vy = T.vy, stp = 6, h = fromMid / stp;
+        for (var si = 0; si < stp; si++) {
+          var ca = Math.cos(T.w * h), sa = Math.sin(T.w * h), nvx = vx * ca - vy * sa, nvy = vx * sa + vy * ca;
+          tx += (vx + nvx) / 2 * h; ty += (vy + nvy) / 2 * h; vx = nvx; vy = nvy;
+        }
+        // carried on at its speed, the gap to the estimate closed over ~0.25 s
+        T.x += vx * dt * fade; T.y += vy * dt * fade;
+        var c = 1 - Math.exp(-dt / .25);
+        T.x += wrapD(tx - T.x) * c; T.y += wrapD(ty - T.y) * c;
+        return T;
+      }
+      // every ship to show: drawn ones exact, the rest from the radar, flown on between samples
+      function ships(myId, now, dt, drawn) {
         var out = [];
         for (var id in drawn) {
           var n = +id;
           if (n === myId) continue;
           var d = drawn[id];
-          disp[id] = { x: d.x, y: d.y, seen: now };
+          seenExact(id, d.x, d.y, now);
           out.push({ id: n, x: d.x, y: d.y, exact: true, m: d.m });
         }
         for (var rid in _aegisShips) {
@@ -2694,11 +2765,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           if (st && !st.alive && now - st.ts < 3000) continue;
           var r = _aegisShips[rid];
           if (now - r.ts > SHIP_TTL || r.zeroSince != null && now - r.zeroSince > BOT_ZERO_TTL) continue;
-          var D = disp[rid];
-          if (!D || now - D.seen > 1500) D = disp[rid] = { x: r.x, y: r.y, seen: now };
-          D.x += wrapD(r.x - D.x) * ease; D.y += wrapD(r.y - D.y) * ease; D.seen = now;
-          out.push({ id: rn, x: D.x, y: D.y, exact: false });
+          var T = farPos(rid, r, now, dt);
+          out.push({ id: rn, x: T.x, y: T.y, exact: false });
         }
+        for (var tid in TRK) if (now - TRK[tid].seen > 10000) delete TRK[tid];
         return out;
       }
       // (a point off screen is pulled back along the line to the edge, for its label)
@@ -2711,8 +2781,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         t = Math.max(0, t);
         return { x: a.x + dx * t, y: a.y + dy * t, off: true };
       }
-      function drawEsp(g, cam, myId, mx, my, ease) {
-        var now = Date.now(), D = drawnShips(), list = ships(myId, now, ease, D.list);
+      function drawEsp(g, cam, myId, mx, my, fdt) {
+        var now = Date.now(), D = drawnShips(), list = ships(myId, now, fdt, D.list);
         // (your ship as drawn, while it's where your status says, give or take the smoothing)
         if (D.me && Math.hypot(wrapD(D.me.x - mx), wrapD(D.me.y - my)) < 15) { mx = D.me.x; my = D.me.y; }
         var me = worldToScreenPx(cam, mx, my, g);
@@ -2763,7 +2833,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var g = getGS(), my = g && getMyStatus(g);
         if (!g || !my || !cam || my.alive === false || typeof my.x !== "number") return;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawEsp(g, cam, my.id, my.x, my.y, 1 - Math.exp(-fdt * 7));
+        drawEsp(g, cam, my.id, my.x, my.y, fdt);
       }
       function on() { return featOn("esp") && inGame(); }
       // with the game's frame: after its world render, with its camera
