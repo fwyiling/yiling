@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.5.1
+// @version      2.5.2
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -714,7 +714,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.1", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.2", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -3233,7 +3233,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       var A = {
         keyHeld: false, snap: false, forceLock: null, forced: false, sentWord: null, flags: null, userDeg: null, userFire: false, numeric: true, ws: null,
         lock: null, cand: null, candSince: 0, graceUntil: 0, shot: null, aim: null, fire: false, engaged: false,
-        sentDeg: null, sentFire: null, sentAt: 0, speed: 0, k: 1, kN: 0, tracks: {}, lastSolve: null,
+        sentDeg: null, sentFire: null, sentAt: 0, speed: 0, k: 1, kN: 0, c: 0, p: 0, fit: null, vh: [], tracks: {}, lastSolve: null,
         gun: { fwd: 0, n: 0 }, ship: { code: null, maxRec: 0, maxVol: 0, genMax: 0, regen: 0 },
         my: { gen: null, genTs: 0, turn: 0, hist: [] }, pulse: { on: false, start: 0, cool: 0, big0: 0 }, lastBigAt: 0, bigShots: 0
       };
@@ -3371,12 +3371,15 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // The shot from o (own fire spot) with own velocity v (per tick) at
       // target state q (at fire time, mutated). Returns { deg, t, x, y, hit }:
       // heading, flight time and meeting point, or the closest pass.
-      function solve(o, v, q, m, S, k) {
+      // (e: the bolt's extra speed along its own heading, per tick: see the fit
+      // in __synAimVolley)
+      function solve(o, v, q, m, S, k, e) {
         var life = laserLife(S), pg = null, prx = 0, pry = 0, best = null;
+        e = e || 0;
         for (var t = DT; t <= life + 1e-9; t += DT) {
           step(m, q, DT);
           var rx = wrap(q.x - o.x) - 60 * k * v.x * t, ry = wrap(q.y - o.y) - 60 * k * v.y * t;
-          var gap = Math.hypot(rx, ry) - S * (1 - Math.exp(-t / 2));
+          var gap = Math.hypot(rx, ry) - S * (1 - Math.exp(-t / 2)) - 60 * e * t;
           if (gap <= 0) {
             var f = pg != null && pg - gap > 0 ? pg / (pg - gap) : 1;
             var ax = prx + (rx - prx) * f, ay = pry + (ry - pry) * f;
@@ -3388,11 +3391,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         return best;
       }
       // Closest pass of a bolt fired at `deg` (to pick the whole degree).
-      function missAt(deg, o, v, q, m, S, k) {
+      function missAt(deg, o, v, q, m, S, k, e) {
         var life = laserLife(S), c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180), best = 1e9;
+        e = e || 0;
         for (var t = DT; t <= life + 1e-9; t += DT) {
           step(m, q, DT);
-          var D = S * (1 - Math.exp(-t / 2));
+          var D = S * (1 - Math.exp(-t / 2)) + 60 * e * t;
           var dx = wrap(q.x - o.x) - c * D - 60 * k * v.x * t, dy = wrap(q.y - o.y) - s * D - 60 * k * v.y * t;
           var d = Math.hypot(dx, dy);
           if (d < best) best = d;
@@ -3487,7 +3491,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // Own ship: energy (level, refill rate, full bar) and turn rate.
       function ownStat(s) {
         var sh = A.ship, my = A.my;
-        if (sh.code !== s.code) { sh.code = s.code; sh.maxRec = 0; sh.maxVol = 0; sh.genMax = 0; sh.regen = 0; A.gun.n = 0; A.gun.fwd = 0; my.turn = 0; A.smallS = 0; A.smallAt = 0; A.bigPer = 0; }
+        if (sh.code !== s.code) { sh.code = s.code; sh.maxRec = 0; sh.maxVol = 0; sh.genMax = 0; sh.regen = 0; A.gun.n = 0; A.gun.fwd = 0; my.turn = 0; A.smallS = 0; A.smallAt = 0; A.bigPer = 0; A.fit = null; A.kN = 0; A.k = 1; A.c = 0; A.p = 0; }
+        // (your velocity by game tick: a volley is matched to the state before it)
+        A.vh.push([s.tick, s.vx, s.vy]); if (A.vh.length > 40) A.vh.shift();
         if (typeof s.gen === "number") {
           // refill rate over a quarter second or more of steady rise (packets
           // arrive bunched; a shot or a full bar starts the window again)
@@ -3549,10 +3555,36 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (S > 10 && S < 2000) A.speed = S;
         var my = _synStat[me];
         if (!my || now - my.ts > 400) return;
-        var v2 = my.vx * my.vx + my.vy * my.vy;
-        if (v2 > .04) {
-          var kk = Math.max(0, Math.min(1.5, (dx * my.vx + dy * my.vy) / v2));
-          A.k = A.kN ? A.k * .7 + kk * .3 : kk; A.kN++;
+        // What a shot takes from the ship: d = k v + (c + p (v.u)) u, v your
+        // velocity BEFORE the shot (from the state of the tick before it: the
+        // latest one may already carry the shot's recoil), u the bolt's
+        // heading. c is a push along the shot (recoil the server applies
+        // before the bolt leaves: the X-3's big gun has 200), p a share of
+        // only the speed along it. Fitted over recent big shots (least
+        // squares, held near k 1, c 0, p 0 until the shots tell them apart:
+        // flying straight ahead k and p can't be told apart; gliding they can).
+        var vt = dv.getUint32(4, true), pre = null;
+        for (var hi = A.vh.length - 1; hi >= 0; hi--) if (A.vh[hi][0] < vt) { pre = A.vh[hi]; break; }
+        var pvx = pre ? pre[1] : my.vx, pvy = pre ? pre[2] : my.vy, la = dv.getFloat32(bestO + 26, true), ux = Math.cos(la), uy = Math.sin(la);
+        if (isFinite(la) && isFinite(dx) && isFinite(dy)) {
+          var F = A.fit || (A.fit = { m: [0, 0, 0, 0, 0, 0], b: [0, 0, 0], n: 0 }), vu = pvx * ux + pvy * uy;
+          // basis vectors: v, u, (v.u) u; their dot products, decayed per shot
+          var B = [[pvx, pvy], [ux, uy], [vu * ux, vu * uy]], M = F.m, R = F.b, dec = .95;
+          for (var z = 0; z < 6; z++) M[z] *= dec;
+          for (z = 0; z < 3; z++) R[z] *= dec;
+          var ij = [[0, 0], [0, 1], [0, 2], [1, 1], [1, 2], [2, 2]];
+          for (z = 0; z < 6; z++) M[z] += B[ij[z][0]][0] * B[ij[z][1]][0] + B[ij[z][0]][1] * B[ij[z][1]][1];
+          for (z = 0; z < 3; z++) R[z] += B[z][0] * dx + B[z][1] * dy;
+          F.n++;
+          var lam = .02, a11 = M[0] + lam, a12 = M[1], a13 = M[2], a22 = M[3] + lam, a23 = M[4], a33 = M[5] + lam;
+          var r1 = R[0] + lam, r2 = R[1], r3 = R[2];
+          var det = a11 * (a22 * a33 - a23 * a23) - a12 * (a12 * a33 - a23 * a13) + a13 * (a12 * a23 - a22 * a13);
+          if (Math.abs(det) > 1e-9) {
+            var kq = (r1 * (a22 * a33 - a23 * a23) - a12 * (r2 * a33 - a23 * r3) + a13 * (r2 * a23 - a22 * r3)) / det;
+            var cq = (a11 * (r2 * a33 - a23 * r3) - r1 * (a12 * a33 - a23 * a13) + a13 * (a12 * r3 - r2 * a13)) / det;
+            var pq = (a11 * (a22 * r3 - r2 * a23) - a12 * (a12 * r3 - r2 * a13) + r1 * (a12 * a23 - a22 * a13)) / det;
+            if (isFinite(kq) && isFinite(cq) && isFinite(pq)) { A.k = Math.max(0, Math.min(1.5, kq)); A.c = Math.max(-5, Math.min(5, cq)); A.p = Math.max(-1.5, Math.min(1.5, pq)); A.kN++; }
+          }
         }
         if (now - my.ts < 120) {
           var ds = (now - my.ts) / 1000, a = my.angle * Math.PI / 180;
@@ -3627,18 +3659,24 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (m !== 4) L = Math.min(L, 1);
         var q = m === 4 ? engState({ id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, m ? tr.w : 0, m ? tr.ac : 0);
         for (var i = 0, n = Math.max(1, Math.round(L / DT)); i < n; i++) step(m, q, L / n);
-        var q0 = copyQ(q), o = { x: me.x, y: me.y }, r = solve(o, me.v, copyQ(q0), m, S, k);
+        // (the push along the shot depends on its heading: solved for the
+        // heading to the target, then again for the heading found)
+        var cc = A.kN ? A.c || 0 : 0, pp = A.kN ? A.p || 0 : 0;
+        function push(deg) { var a = deg * Math.PI / 180; return cc + pp * (me.v.x * Math.cos(a) + me.v.y * Math.sin(a)); }
+        var q0 = copyQ(q), o = { x: me.x, y: me.y }, e = push(Math.atan2(wrap(q0.y - me.y), wrap(q0.x - me.x)) * 180 / Math.PI);
+        var r = solve(o, me.v, copyQ(q0), m, S, k, e);
         if (!r) return null;
+        if (cc || pp) { var e1 = push(r.deg); if (Math.abs(e1 - e) > 1e-4) { e = e1; r = solve(o, me.v, copyQ(q0), m, S, k, e) || r; } }
         var fw = A.gun.n >= 2 ? A.gun.fwd : 0;
         if (fw > .3) {
           o = { x: me.x + Math.cos(r.deg * Math.PI / 180) * fw, y: me.y + Math.sin(r.deg * Math.PI / 180) * fw };
-          r = solve(o, me.v, copyQ(q0), m, S, k) || r;
+          r = solve(o, me.v, copyQ(q0), m, S, k, e) || r;
         }
-        r.model = m; r.o = o; r.p = { x: q0.x, y: q0.y };
-        r.dist = S * (1 - Math.exp(-r.t / 2));
+        r.model = m; r.o = o; r.p = { x: q0.x, y: q0.y }; r.push = e;
+        r.dist = S * (1 - Math.exp(-r.t / 2)) + 60 * e * r.t;
         if (exact) {
           var lo = Math.floor(r.deg), hi = lo + 1;
-          r.ideg = (missAt(lo, o, me.v, copyQ(q0), m, S, k) <= missAt(hi, o, me.v, copyQ(q0), m, S, k) ? lo : hi) % 360;
+          r.ideg = (missAt(lo, o, me.v, copyQ(q0), m, S, k, e) <= missAt(hi, o, me.v, copyQ(q0), m, S, k, e) ? lo : hi) % 360;
         }
         return r;
       }
@@ -5514,18 +5552,21 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // shot) taking k of our speed; the first meeting, or the closest pass.
         function aim(me, q0, S, k, gunFwd) {
           var o = { x: me.x, y: me.y }, res = null, L = life(S);
-          for (var pass = 0; pass < 2; pass++) {
-            var q = copy(q0), best = null, pg = null, prx = 0, pry = 0; res = null;
+          // (the bolt's push along its own heading, as the aim assist fits it)
+          var cc = A.kN ? A.c || 0 : 0, pp = A.kN ? A.p || 0 : 0, eA = Math.atan2(q0.y - me.y, q0.x - me.x);
+          for (var pass = 0; pass < 3; pass++) {
+            var q = copy(q0), best = null, pg = null, prx = 0, pry = 0, ep = cc + pp * (me.vx * Math.cos(eA) + me.vy * Math.sin(eA)); res = null;
             for (var i = 1; i / 60 <= L; i++) {
               var t = i / 60; phys(q);
-              var rx = q.x - o.x - 60 * k * me.vx * t, ry = q.y - o.y - 60 * k * me.vy * t, gap = hy(rx, ry) - S * (1 - Math.exp(-t / 2));
+              var rx = q.x - o.x - 60 * k * me.vx * t, ry = q.y - o.y - 60 * k * me.vy * t, gap = hy(rx, ry) - S * (1 - Math.exp(-t / 2)) - 60 * ep * t;
               if (gap <= 0) { var fr = pg != null && pg - gap > 0 ? pg / (pg - gap) : 1, ax = prx + (rx - prx) * fr, ay = pry + (ry - pry) * fr; res = { deg: Math.atan2(ay, ax) / D2R, t: t, hit: true, x: q.x, y: q.y }; break; }
               if (!best || gap < best.gap) best = { gap: gap, deg: Math.atan2(ry, rx) / D2R, t: t, hit: false, x: q.x, y: q.y };
               pg = gap; prx = rx; pry = ry;
             }
             res = res || best;
-            if (!(gunFwd > .3)) break;
-            var a = res.deg * D2R; o = { x: me.x + Math.cos(a) * gunFwd, y: me.y + Math.sin(a) * gunFwd };
+            var a = res.deg * D2R;
+            if (!(gunFwd > .3) && !(pp && pass === 0)) break;
+            eA = a; if (gunFwd > .3) o = { x: me.x + Math.cos(a) * gunFwd, y: me.y + Math.sin(a) * gunFwd };
           }
           return res;
         }
@@ -5571,7 +5612,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       DU.debug = function() {
         var d0 = DU.ring.length ? DU.ring[0].t : 0;
         return JSON.stringify({ v: (typeof SYNDICATE_UPDATE_LOG !== "undefined" && SYNDICATE_UPDATE_LOG[0] && SYNDICATE_UPDATE_LOG[0].v) || "?", at: new Date().toISOString(), on: DU.on, why: DU.why, pick: DU.pick,
-          ship: DU.mine && { name: DU.mine.name, code: DU.mine.code, S: DU.mine.S, cost: DU.mine.cost }, theirs: DU.theirs && { name: DU.theirs.name, code: DU.theirs.code }, ping: ping(), laserS: A.speed, k: A.k,
+          ship: DU.mine && { name: DU.mine.name, code: DU.mine.code, S: DU.mine.S, cost: DU.mine.cost }, theirs: DU.theirs && { name: DU.theirs.name, code: DU.theirs.code }, ping: ping(), laserS: A.speed, k: A.k, c: A.c, p: A.p,
           keys: "t ms · st state · word sent · aim deg · up/fire/glide · me [x,y,nose,energy,gems,stun] · foe [id,x,y,energy,gems,stun] · shot [deg,hit,flight ms,p(hit)%] · dist",
           ticks: DU.ring.map(function(r) { var c = {}; for (var k in r) c[k] = r[k]; c.t = r.t - d0; return c; }) });
       };
