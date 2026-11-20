@@ -8812,6 +8812,25 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // (a microtask: before the next script, the game's), the new one runs in
   // its place with a fresh THREE, and is adapted
   var cur, swapped = false, swapping = false;
+  // Too late: the page's three.js has already run (a userscript manager can
+  // inject a document-start script after the page's first scripts). The
+  // game and the client are on it already: it stays, and says so.
+  var already = window.THREE;
+  if (already && already.REVISION) {
+    var msg = "three.js r159 didn't load: this script ran after the page's own three.js (r" + already.REVISION + "), so the game stays on it. Reload the page (F5) to try again.";
+    console.warn("[three r159] " + msg);
+    var show = function() {
+      try {
+        var d = document.createElement("div");
+        d.textContent = msg;
+        d.style.cssText = "position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;max-width:90vw;padding:8px 14px;font:13px/1.4 Play,Verdana,sans-serif;color:#fff;background:hsl(205,27%,18%);border:1px solid hsl(205,30%,45%);text-shadow:0 0 6px hsla(200,100%,70%,.55);pointer-events:none";
+        document.body.appendChild(d);
+        setTimeout(function() { d.remove(); }, 12000);
+      } catch (e) {}
+    };
+    if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
+    return;
+  }
   var before = Object.getOwnPropertyDescriptor(window, "THREE"), handOn = before && typeof before.set === "function" ? before.set : null;
   function swap() {
     if (swapped) return;
