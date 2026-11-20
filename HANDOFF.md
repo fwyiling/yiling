@@ -58,7 +58,7 @@ What the game needs from r124 (each checked in the mock against r85):
 - Polyhedra: r85 split faces into 2^detail rows, r124 into detail + 1 (planets and rocks were coarse); the game's detail is converted.
 - `.shading` (also in material options), `addAttribute`, `renderer.context`: mapped without r124's per-call warnings.
 
-The desktop app builds a second app with the client on r124: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
+The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build step was taken out). The r124 app: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
 
 ## Keys and settings
 

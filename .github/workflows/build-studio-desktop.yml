@@ -73,13 +73,9 @@ jobs:
             echo "::error::the starblast.io icon could not be fetched and none is in the repo yet"; exit 1
           fi
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: studio-desktop
-
-      # the r124 app: the client with the game on three.js r124 (installs beside the main one)
+      # (only the r124 app is built now: the client with the game on three.js
+      # r124; the r85 app stays at its last installer, 2.4.0. To build it
+      # again, add a tauri-action step with no args.)
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
