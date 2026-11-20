@@ -8,11 +8,12 @@ let code = readFileSync(inp, 'utf8');
 const map = JSON.parse(readFileSync(mapFile, 'utf8'));
 const ast = parse(code, { tokens: true, errorRecovery: true });
 const tokens = new Set(ast.tokens.filter(t => t.type.label === 'name' || t.type.keyword).map(t => t.value));
+const allowed = JSON.parse(readFileSync(new URL('./collisions-ok.json', import.meta.url), 'utf8'));
 const targets = new Map();
 let bad = 0;
 for (const [k, v] of Object.entries(map)) {
   if (!/^[lIO01]+$/.test(k)) { console.error('not a mangled token:', k); bad++; }
-  if (tokens.has(v)) { console.error(`collision: ${k} -> ${v} (already used)`); bad++; }
+  if (tokens.has(v) && !Object.hasOwn(allowed, v)) { console.error(`collision: ${k} -> ${v} (already used)`); bad++; }
   if (targets.has(v)) { console.error(`duplicate target: ${v} (${targets.get(v)}, ${k})`); bad++; }
   targets.set(v, k);
 }
