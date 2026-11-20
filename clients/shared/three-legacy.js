@@ -110,6 +110,25 @@ function sbThreeLegacy(T, makeGeometry) {
     get: function() { var g = this.__sbGeo; return drawing && g && g.isGeometry ? bufferOf(this, g) : g; },
     set: function(v) { this.__sbGeo = v; } };
   [T.Mesh, T.Line, T.Points].forEach(function(C) { if (C) Object.defineProperty(C.prototype, "geometry", geometryProp); });
+  // ---- textures whose picture changes size
+  // r124 uploaded a texture whole each time (texImage2D): any size. From
+  // r125 the GPU copy is made once at the picture's size (texStorage2D) and
+  // updated in place: a canvas the game makes bigger later (the radar, 512
+  // to 1024 when the mode zooms it out) went in cropped and blown up. Its
+  // GPU copy is now let go when the size changes, and made again; a canvas
+  // with no size (nothing to upload; r124 uploaded it empty) is left as it was.
+  var TP = T.Texture.prototype, nu = Object.getOwnPropertyDescriptor(TP, "needsUpdate");
+  if (nu && nu.set) Object.defineProperty(TP, "needsUpdate", { configurable: true, enumerable: nu.enumerable, get: nu.get,
+    set: function(v) {
+      var im = v === true && this.image;
+      if (im && typeof im.width === "number" && typeof im.height === "number" && !this.isRenderTargetTexture) {
+        if (!(im.width > 0 && im.height > 0)) return;
+        var sz = this.__sbSize;
+        if (sz && (sz[0] !== im.width || sz[1] !== im.height)) this.dispose();
+        this.__sbSize = [im.width, im.height];
+      }
+      nu.set.call(this, v);
+    } });
   // ---- each renderer: its draws, its look
   var R = T.WebGLRenderer;
   var Renderer = function() {

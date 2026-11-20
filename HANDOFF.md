@@ -68,6 +68,7 @@ The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build
 
 - Past r124 three.js removed `Geometry`/`Face3`, which the game builds every model with. `clients/shared/three-legacy.js` puts them back: three.js's own Geometry (r125 `examples/jsm/deprecated/Geometry.js`, from the `three-r125` npm alias, built in), Face3, and Box/Plane/Icosahedron... as Geometry made the way r124 made them (the BufferGeometry classes keep their r124 `XxxBufferGeometry` names).
 - Drawing: while a renderer draws, `mesh.geometry` (Mesh/Line/Points) reads as a BufferGeometry made from the Geometry, remade when the game sets `verticesNeedUpdate` etc. (as r124's renderer did); outside a draw the game and the client see the Geometry.
+- Textures: r125+ sizes a texture's GPU copy once (texStorage2D); when the picture changes size (a canvas made bigger) the copy is let go and made again, as r124 effectively did; a 0x0 canvas is not uploaded.
 - Look kept as r124: `ColorManagement.enabled = false`, `outputColorSpace` linear, `renderer._useLegacyLights = true`, point/spot light decay 1 by default; `THREE.Math`, `VertexColors`, `FlatShading`, `removeAttribute`, `fromGeometry` back.
 - Then `three-r124-compat.js` as for r124. The renderer wrappers (it, the legacy layer, perf-core's trap) make the renderer with `Reflect.construct`: from r125 WebGLRenderer is a class.
 - Checked in the mock: the game draws the same as r124 (planet, ships, lights, HUD, crosshair); corestate hooks, bench VERIFY mismatch 0, keytest, aimsplit, aim shot modes, tags and panel pass.
