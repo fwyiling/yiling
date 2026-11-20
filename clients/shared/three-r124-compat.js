@@ -67,11 +67,13 @@ function sbThreeCompat(T) {
   // inside out (front faces clockwise); r85 did not, and the game's HUD
   // (a flipped camera, panels mirrored back) is built on that
   var R = T.WebGLRenderer;
-  var Renderer = function(p) {
-    R.call(this, p);
-    Object.defineProperty(this, "context", { configurable: true, get: function() { return this.getContext(); } });
-    var st = this.state, setMaterial = st && st.setMaterial;
+  // (made with Reflect.construct: from r125 WebGLRenderer is a class)
+  var Renderer = function() {
+    var r = Reflect.construct(R, arguments, new.target || Renderer);
+    Object.defineProperty(r, "context", { configurable: true, get: function() { return this.getContext(); } });
+    var st = r.state, setMaterial = st && st.setMaterial;
     if (setMaterial) st.setMaterial = function(material) { return setMaterial.call(this, material, false); };
+    return r;
   };
   Renderer.prototype = R.prototype;
   for (var sk in R) if (Object.prototype.hasOwnProperty.call(R, sk)) Renderer[sk] = R[sk];

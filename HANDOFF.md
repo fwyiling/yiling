@@ -62,6 +62,17 @@ What the game needs from r124 (each checked in the mock against r85):
 
 The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build step was taken out). The r124 app: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
 
+## three.js r159 (test build, not in the app yet)
+
+`node tools/build-r159.js` writes `clients/starblast-r159.user.js` (the game alone) and `clients/studio-r159.user.js` (the client), on three.js r159: the last release with a single-file build and the legacy-lights switch. Shared swap code: `tools/three-build-lib.js` (build-r124.js uses it too).
+
+- Past r124 three.js removed `Geometry`/`Face3`, which the game builds every model with. `clients/shared/three-legacy.js` puts them back: three.js's own Geometry (r125 `examples/jsm/deprecated/Geometry.js`, from the `three-r125` npm alias, built in), Face3, and Box/Plane/Icosahedron... as Geometry made the way r124 made them (the BufferGeometry classes keep their r124 `XxxBufferGeometry` names).
+- Drawing: while a renderer draws, `mesh.geometry` (Mesh/Line/Points) reads as a BufferGeometry made from the Geometry, remade when the game sets `verticesNeedUpdate` etc. (as r124's renderer did); outside a draw the game and the client see the Geometry.
+- Look kept as r124: `ColorManagement.enabled = false`, `outputColorSpace` linear, `renderer._useLegacyLights = true`, point/spot light decay 1 by default; `THREE.Math`, `VertexColors`, `FlatShading`, `removeAttribute`, `fromGeometry` back.
+- Then `three-r124-compat.js` as for r124. The renderer wrappers (it, the legacy layer, perf-core's trap) make the renderer with `Reflect.construct`: from r125 WebGLRenderer is a class.
+- Checked in the mock: the game draws the same as r124 (planet, ships, lights, HUD, crosshair); corestate hooks, bench VERIFY mismatch 0, keytest, aimsplit, aim shot modes, tags and panel pass.
+- Further (r160+): no single-file build (bundle the module), legacy lights gone at r165 (light strengths by hand), WebGL1 gone at r163.
+
 ## Keys and settings
 
 - `\` settings panel in game (game switches + Studio switches + the ported ones), Esc closes. It's built from the game's own settings markup (`.modal`, `.option`, `.switch`), with a stand-in style if the game's stylesheet doesn't reach it

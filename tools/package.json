@@ -3,6 +3,8 @@
   "private": true,
   "description": "Build tools: tools/build-r124.js needs three.js r124",
   "devDependencies": {
-    "three": "0.124.0"
+    "three": "0.124.0",
+    "three-r125": "npm:three@^0.125.0",
+    "three-r159": "npm:three@^0.159.0"
   }
 }

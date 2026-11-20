@@ -598,7 +598,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     var val = obj[name]; if (val) val = wrap(val);
     try { Object.defineProperty(obj, name, { configurable: true, enumerable: true, get: function() { return val; }, set: function(v) { val = v && !v.__perfW ? wrap(v) : v; } }); } catch (e) {}
   }
-  function threeTraps(T) { trapProp(T, "WebGLRenderer", function(R0) { return wrapCtor(R0, function(O) { return function(p) { O.call(this, p); onRenderer(this); }; }); }); }
+  // (made with Reflect.construct: a three.js whose WebGLRenderer is a class,
+  // r125 on, can not be called as a function; older ones are made the same)
+  function threeTraps(T) { trapProp(T, "WebGLRenderer", function(R0) { return wrapCtor(R0, function(O) { return function() { var r = Reflect.construct(O, arguments, new.target || O); onRenderer(r); return r; }; }); }); }
   try {
     var t3v = window.THREE;
     if (t3v) threeTraps(t3v);
