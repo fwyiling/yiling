@@ -15,6 +15,9 @@ on:
       - 'studio-desktop/**'
       - 'clients/studio-client.user.js'
       - 'clients/starblast-r124.user.js'
+      - 'clients/studio-r124.user.js'
+      - 'clients/shared/three-r124-compat.js'
+      - 'tools/build-r124.js'
       - 'tools/make-icon.mjs'
       - '.github/workflows/build-studio-desktop.yml'
   workflow_dispatch: {}
@@ -46,6 +49,12 @@ jobs:
         working-directory: studio-desktop
         run: npm install --no-audit --no-fund
 
+      # the r124 scripts, made fresh from the client and the compat layer
+      - name: Build the three.js r124 scripts
+        shell: bash
+        run: |
+          cd tools && npm install --no-audit --no-fund && cd .. && node tools/build-r124.js
+
       - name: App icon (the starblast.io logo)
         shell: bash
         run: |
@@ -70,7 +79,7 @@ jobs:
         with:
           projectPath: studio-desktop
 
-      # the test app: the game alone on three.js r124 (installs beside the main one)
+      # the r124 app: the client with the game on three.js r124 (installs beside the main one)
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

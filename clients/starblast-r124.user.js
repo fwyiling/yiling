@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         starblast.io on three.js r124
 // @namespace    syndicate
-// @version      1.0.0
+// @version      1.1.0
 // @description  Starblast with three.js r124 (WebGL2) in place of r85, and the fixes the game needs for it. Nothing else.
 // @match        https://starblast.io/*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
-// Built by tools/build-r124.js from three@0.124.0 (MIT, threejs.org/license)
-// and clients/shared/three-r124-compat.js. Edit those, then rebuild.
+// Built by tools/build-r124.js from three@0.124.0 (MIT, threejs.org/license),
+// clients/shared/three-r124-compat.js and (the Studio one) the Studio client.
+// Edit those, then rebuild.
 (function() {
   "use strict";
   if (window.__sbR124) return;
@@ -27,9 +28,12 @@
     T.Material.prototype.onBeforeCompile = function(shader, renderer) {
       shader.vertexShader = fix(shader.vertexShader);
       shader.fragmentShader = fix(shader.fragmentShader);
-      // a sprite mirrored by a negative scale.x stays mirrored, as in r85
-      // (the game's HUD relies on it; r124 takes the scale's length)
-      if (this.isSpriteMaterial) shader.vertexShader = shader.vertexShader.replace("scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) );", "scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 );");
+      // a sprite mirrored by a negative scale stays mirrored, as in r85: the
+      // HUD's panels are mirrored in x, its crosshair in y (r124 takes the
+      // scale's length, which turned the crosshair face-down: culled)
+      if (this.isSpriteMaterial) shader.vertexShader = shader.vertexShader
+        .replace("scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) );", "scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 );")
+        .replace("scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );", "scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 );");
       // (a uniform of that name is the same value under the new one)
       var U = shader.uniforms;
       if (U && U.texture && !U.sbTexture) U.sbTexture = U.texture;
@@ -95,6 +99,9 @@
   // (a microtask: before the next script, the game's), r124 runs in its
   // place with a fresh THREE, and is adapted
   var cur, swapped = false, swapping = false;
+  // (a hook already on window.THREE, the Studio perf core's, gets r124 once
+  // it's adapted, never r85)
+  var before = Object.getOwnPropertyDescriptor(window, "THREE"), handOn = before && typeof before.set === "function" ? before.set : null;
   function swap() {
     if (swapped) return;
     swapped = true; swapping = true;
@@ -105,6 +112,7 @@
       s.remove();
     } finally { swapping = false; }
     sbThreeCompat(cur);
+    if (handOn) try { handOn.call(window, cur); } catch (e) { console.warn("[r124] hand-off failed", e); }
     if (!cur || cur.REVISION !== "124") console.warn("[r124] three.js swap did not take: THREE r" + (cur && cur.REVISION));
   }
   try {

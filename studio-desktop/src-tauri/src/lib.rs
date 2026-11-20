@@ -7,10 +7,10 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-client.user.js");
 #[cfg(not(feature = "r124"))]
 const TITLE: &str = "starblast.io";
-// The r124 test build (--features r124): the game alone on three.js r124
-// (clients/starblast-r124.user.js, built by tools/build-r124.js), no client.
+// The r124 build (--features r124): the client with the game on three.js r124
+// in place of r85 (clients/studio-r124.user.js, built by tools/build-r124.js).
 #[cfg(feature = "r124")]
-const PAGE_SCRIPT: &str = include_str!("../../../clients/starblast-r124.user.js");
+const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-r124.user.js");
 #[cfg(feature = "r124")]
 const TITLE: &str = "starblast.io r124";
 

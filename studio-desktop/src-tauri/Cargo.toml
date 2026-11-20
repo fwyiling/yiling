@@ -9,7 +9,7 @@ name = "studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-# the game alone on three.js r124, no client (a separate app: tauri.r124.conf.json)
+# the client with the game on three.js r124 (a separate app: tauri.r124.conf.json)
 r124 = []
 
 [build-dependencies]
