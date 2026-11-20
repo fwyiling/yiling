@@ -141,6 +141,21 @@ function sbThreeLegacy(T, makeGeometry, rendererName) {
   };
   Renderer.prototype = R.prototype;
   T[nm] = Renderer;
+  // r165 on: no legacy lights at all. Their maths, back in the light shader:
+  // light colours times PI, and r124's linear fade over a light's distance
+  var CH = T.ShaderChunk, lp = CH && CH.lights_pars_begin;
+  if (typeof lp === "string" && lp.indexOf("LEGACY_LIGHTS") < 0) {
+    var miss = [];
+    [["vec3 irradiance = ambientLightColor;", "vec3 irradiance = ambientLightColor * PI;"],
+     ["light.color = directionalLight.color;", "light.color = directionalLight.color * PI;"],
+     ["light.color = pointLight.color;", "light.color = pointLight.color * PI;"],
+     ["light.color = spotLight.color * spotAttenuation;", "light.color = spotLight.color * spotAttenuation * PI;"],
+     ["vec3 irradiance = mix( hemiLight.groundColor, hemiLight.skyColor, hemiDiffuseWeight );", "vec3 irradiance = mix( hemiLight.groundColor, hemiLight.skyColor, hemiDiffuseWeight ) * PI;"],
+     [/(float getDistanceAttenuation\([^)]*\)\s*\{)[\s\S]*?return distanceFalloff;\s*\}/, "$1 if ( cutoffDistance > 0.0 && decayExponent > 0.0 ) return pow( saturate( - lightDistance / cutoffDistance + 1.0 ), decayExponent ); return 1.0; }"]
+    ].forEach(function(r) { var n = lp.replace(r[0], r[1]); if (n === lp) miss.push(String(r[0]).slice(0, 40)); lp = n; });
+    CH.lights_pars_begin = lp;
+    if (miss.length) console.warn("[three] legacy lights: not found in the light shader:", miss);
+  }
   // point and spot lights fade over their distance as in r124 (r155 made
   // the default fall-off 2)
   [["PointLight", 3], ["SpotLight", 5]].forEach(function(p) {

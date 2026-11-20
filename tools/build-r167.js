@@ -21,18 +21,14 @@ async function go() {
     stdin: { contents: raw, loader: 'js' },
     bundle: false,
     format: 'iife',
-    globalName: 'THREE',
+    globalName: '__sbM',
     minify: true,
     write: false,
   });
-  let three = result.outputFiles[0].text;
-
-  // esbuild turns named exports into read-only getters (live-binding semantics).
-  // The legacy layer replaces e.g. T.BoxGeometry, so convert them to writable
-  // values right after the IIFE runs. Must use the local THREE var, not
-  // window.THREE: during early() the swap intercepts window.THREE and returns
-  // undefined while swapping===true.
-  three += '\n(function(T){if(!T)return;Object.getOwnPropertyNames(T).forEach(function(k){var d=Object.getOwnPropertyDescriptor(T,k);if(d&&d.get&&!d.set){try{var v=d.get();Object.defineProperty(T,k,{value:v,writable:true,configurable:true,enumerable:!!d.enumerable});}catch(e){}}});})(typeof THREE!=="undefined"?THREE:null);\n';
+  // esbuild's exports are non-configurable getters, which the legacy layer
+  // can't replace (T.BoxGeometry = ...): window.THREE gets a plain copy
+  const three = '(function(){' + result.outputFiles[0].text +
+    ';var o={};for(var k in __sbM)o[k]=__sbM[k];window.THREE=o;})();';
 
   // shared components (same as build-r159.js)
   const geoPath = path.join(__dirname, 'node_modules/three-r125/examples/jsm/deprecated/Geometry.js');
