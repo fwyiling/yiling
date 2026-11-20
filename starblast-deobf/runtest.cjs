@@ -6,8 +6,10 @@ const [,, gamePath, shot] = process.argv;
   const html = fs.readFileSync(process.env.ORIG_HTML || __dirname + '/work/index.html', 'utf8').replace(/ integrity="[^"]*"/g, '');
   const marker = '(function(s,t,a,r,b,l,i,o){';
   const start = html.indexOf(marker), end = html.indexOf('</script>', start);
-  const page_html = gamePath === 'original' ? html
-    : html.slice(0, start) + fs.readFileSync(gamePath, 'utf8').replace(/<\/script/gi, '<\\/script') + html.slice(end);
+  let game_src = gamePath === 'original' ? html.slice(start, end) : fs.readFileSync(gamePath, 'utf8');
+  if (process.env.HOOK) { const [a, b] = process.env.HOOK.split('|'); game_src = game_src.replace(a, a + b); }
+  const page_html = false ? html
+    : html.slice(0, start) + game_src.replace(/<\/script/gi, '<\\/script') + html.slice(end);
   const browser = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY }, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
@@ -26,7 +28,7 @@ const [,, gamePath, shot] = process.argv;
   await page.route('https://starblast.io/', r => r.fulfill({ status: 200, contentType: 'text/html', body: page_html }));
   await page.goto('https://starblast.io/', { waitUntil: 'load', timeout: 60000 });
   await page.waitForTimeout(12000);
-  const info = await page.evaluate(() => ({ canvases: document.querySelectorAll('canvas').length, title: document.title }));
+  const info = await page.evaluate((expr) => ({ canvases: document.querySelectorAll('canvas').length, title: document.title, probe: expr ? (() => { try { return eval(expr); } catch (e) { return 'ERR ' + e.message; } })() : undefined }), process.env.PROBE || '');
   await page.screenshot({ path: shot });
   console.log(JSON.stringify(info));
   console.log(errors.length ? errors.slice(0, 15).join('\n') : 'no errors');
