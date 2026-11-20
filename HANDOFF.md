@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.0 (the r124 app: 1.2.0).
+starblast.io logo. Current version: 2.5.1 (the r124 app: 1.2.1).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -39,7 +39,9 @@ app and the tests find the client by relative path.
    - ESP draws each ship in view at its model (`world.ships[i].model`, where the game draws it) straight after the game's world render (`__perfCore.afterRender`, the game's camera), boxed by the model's hull meshes; ships out of view come from the radar (about once a second, coarse steps), flown on between samples: a least-squares fit of the last few samples (at least 0.6 s apart) for velocity, a turn rate from how the fitted heading moves, the drawn spot following with a 0.25 s correction; a ship leaving the view carries on from where it was drawn. Simulated: mean error 2.6 units (the radar step is 4.7), ~1 unit of movement per frame.
    - Aim Assist physics per ship come from the game's own ShipInstance (top speed, inertia, turn, upgrades and mods included), else the mode's ship types with the upgrade levels in the status packets (`lv`, 4 bits per stat), else the level-1 table. It always leads for the biggest gun (its speed measured from your volleys, else your ship's own number); the muzzle is measured up to 30 forward (the Shadow X-3's is ~15).
    - ESP boxes (own switch) fit each drawn ship: its hull's farthest points in 16 directions (once per model), through its matrix each frame. A ship on screen gets only its distance (the game's tag has the name); off screen, name and distance at the edge.
-   - Ship tags: a strip under each other ship's tag (the game's tag class, found by its bars and its shield/crystals update) with its energy (status.generator / ShipInstance.generator_capacity) and lives left (status.lives - 1); tags scale with the FOV zoom (`AEGIS_tagzoomscale`).
+   - Ship tags: each other ship's energy (status.generator / ShipInstance.generator_capacity) as a third bar between the shield and gem bars, the three the same height in the game's space for its two (as Syndicate does it; drawn into the tag canvas by catching the game's own bar fillRects during its draw, so the badge stays on top and it moves with the tag), and lives left (status.lives - 1) as a heart and count left of "Lv"; tags scale with the FOV zoom (`AEGIS_tagzoomscale`).
+   - The `\` panel is drawn in the look of the game's own Settings window (header bar with x, square switches), with its own styles.
+   - Aim Assist shoots (`STUDIO_aim_cfg.autofire`): "big" (default) presses once the bar pays for the biggest gun's volley; "all" fires on target and never holds your own fire.
    - Survival timer: until joining closes (mode.max_enter_time from the welcome's servertime), then SURVIVAL.
    - Aim Assist has two triggers, each its own switch: holding its key (`STUDIO_aim`), firing (`STUDIO_aim_fire`, starts as `STUDIO_aim` was).
    - It wraps the WebSocket constructor to read the game's messages (ship status, radar, volleys, names) and caps control messages at 90 per second.

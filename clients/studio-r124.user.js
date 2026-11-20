@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124
 // @namespace    syndicate
-// @version      2.5.0
+// @version      2.5.1
 // @description  The Studio client with the game on three.js r124 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -715,7 +715,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.1", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -777,29 +777,38 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // belongs to the lobby, hidden in a match): the game's switches, set
   // through its settings as its menu does, then the Studio ones
   var PANEL = null;
-  // (built from the game's own settings markup, so the game's stylesheet
-  // draws it; where that doesn't reach, a stand-in in the same look)
-  var FB_CSS = ".studio-modal.studio-fb{background:hsla(200,45%,9%,.92);border:1px solid hsla(200,60%,70%,.35);border-radius:6px;box-shadow:0 0 24px hsla(200,80%,50%,.18),0 12px 40px rgba(0,0,0,.6);color:#fff;font-family:Play,sans-serif}" +
-    ".studio-modal.studio-fb .modaltitle{padding:12px 16px;font-size:20px;text-align:center;letter-spacing:.06em;border-bottom:1px solid hsla(200,60%,70%,.2);background:hsla(200,50%,15%,.6)}" +
-    ".studio-modal.studio-fb .modalbody{padding:6px 18px 14px}" +
-    ".studio-modal.studio-fb .option{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;font-size:15px;border-bottom:1px solid hsla(0,0%,100%,.06)}" +
-    ".studio-modal.studio-fb .switch{position:relative;display:inline-block;flex:none;width:44px;height:22px;cursor:pointer}" +
-    ".studio-modal.studio-fb .switch input{position:absolute;opacity:0;width:0;height:0}" +
-    ".studio-modal.studio-fb .slider{position:absolute;inset:0;border-radius:22px;background:hsla(200,20%,40%,.6);transition:.2s}" +
-    ".studio-modal.studio-fb .slider:before{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}" +
-    ".studio-modal.studio-fb input:checked+.slider{background:hsl(200,80%,50%)}" +
-    ".studio-modal.studio-fb input:checked+.slider:before{transform:translateX(22px)}" +
-    ".studio-modal.studio-fb button{font:inherit;color:#fff;background:hsla(200,60%,30%,.7);border:1px solid hsla(200,60%,70%,.4);border-radius:4px;padding:2px 10px;cursor:pointer}";
+  // (in the look of the game's own Settings window: a header bar with the
+  // title and a close cross over a light rule, a slate body, plain rows,
+  // and the game's square switches: grey with the knob left when off, dark
+  // with it right when on. Its own styles, so the game's don't reach it)
+  var SB_CSS = (function(P) { return [
+    P + "{background:linear-gradient(160deg,hsl(205,27%,18%),hsl(205,30%,12%));border-left:3px solid hsla(205,30%,45%,.55);border-right:3px solid hsla(205,30%,45%,.55);border-radius:0;box-shadow:0 0 30px rgba(0,0,0,.7);color:#fff;font-family:Play,Verdana,sans-serif;text-shadow:0 0 6px hsla(200,100%,70%,.55);scrollbar-width:thin;scrollbar-color:hsl(205,30%,45%) transparent}",
+    P + "::-webkit-scrollbar{width:6px}" + P + "::-webkit-scrollbar-thumb{background:hsl(205,30%,45%)}" + P + "::-webkit-scrollbar-track{background:transparent}",
+    P + " .modaltitle{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;margin:0;padding:10px 22px 10px 26px;font-size:24px;font-weight:normal;letter-spacing:.02em;text-align:left;background:hsl(205,25%,21%);border-bottom:5px solid hsl(205,30%,45%)}",
+    P + " .sbs-x{cursor:pointer;font-size:22px;line-height:1;padding:2px 4px;opacity:.9}" + P + " .sbs-x:hover{opacity:1;text-shadow:0 0 8px hsla(200,100%,80%,.9)}",
+    P + " .modalbody{padding:8px 26px 18px}",
+    P + " .sbs-hint{opacity:.5;font-size:12px;text-align:center;margin:2px 0 6px;text-shadow:none}",
+    P + " .studio-sec{margin:16px 0 4px;padding-bottom:3px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:hsl(205,35%,70%);border-bottom:1px solid hsla(205,30%,45%,.45);text-shadow:none}",
+    P + " .option{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;margin:0;padding:3px 0;font-size:16px;border:0;background:none}",
+    P + " .switch{position:relative;display:inline-block;flex:none;width:46px;height:26px;margin:0;cursor:pointer}",
+    P + " .switch input{position:absolute;opacity:0;width:0;height:0;margin:0}",
+    P + " .slider{position:absolute;left:0;top:0;right:0;bottom:0;border-radius:0;background:#d2d2d2;transition:background .15s;box-shadow:none}",
+    P + " .slider:before{content:'';position:absolute;left:4px;top:4px;width:18px;height:18px;border-radius:0;background:#fff;transition:transform .15s}",
+    P + " input:checked+.slider{background:hsl(205,45%,11%)}",
+    P + " input:checked+.slider:before{transform:translateX(20px)}",
+    P + " button{font:inherit;font-size:14px;color:#fff;text-shadow:inherit;background:hsl(205,25%,24%);border:1px solid hsla(205,30%,55%,.7);border-radius:0;padding:3px 12px;cursor:pointer}" + P + " button:hover{background:hsl(205,28%,30%)}",
+    P + " input[type=range]{accent-color:hsl(205,30%,55%)}"
+  ].join(""); })(".studio-modal.studio-sb");
   function panel() {
     if (PANEL) { PANEL.remove(); PANEL = null; return; }
     var st = CORE.settings();
-    if (!document.getElementById("studio-modal-fb")) { var css = document.createElement("style"); css.id = "studio-modal-fb"; css.textContent = FB_CSS; (document.head || document.documentElement).appendChild(css); }
+    if (!document.getElementById("studio-modal-sb")) { var css = document.createElement("style"); css.id = "studio-modal-sb"; css.textContent = SB_CSS; (document.head || document.documentElement).appendChild(css); }
     PANEL = document.createElement("div");
-    PANEL.className = "modal studio-modal";
-    PANEL.style.cssText = "position:fixed;left:50%;top:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);margin:0;z-index:2147483647;width:min(440px,92vw);max-height:84vh;overflow:auto;display:block;opacity:1;visibility:visible;box-sizing:border-box";
+    PANEL.className = "studio-modal studio-sb";
+    PANEL.style.cssText = "position:fixed;left:50%;top:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);margin:0;z-index:2147483647;width:min(520px,94vw);max-height:86vh;overflow:auto;padding:0;display:block;opacity:1;visibility:visible;box-sizing:border-box";
     function row(label, attr, on) { return '<div class="option">' + label + '<label class="switch"><input type="checkbox" ' + attr + (on ? ' checked="checked"' : "") + '><div class="slider"></div></label></div>'; }
-    function sec(title) { return '<div class="studio-sec" style="opacity:.55;font-size:.75em;letter-spacing:.14em;margin:14px 0 2px;text-transform:uppercase">' + title + "</div>"; }
-    var h = '<div class="modaltitle">Settings</div><div class="modalbody"><div style="opacity:.55;font-size:.75em;text-align:center;margin:2px 0 4px">\\ or Esc to close · ] all mods off/on</div>';
+    function sec(title) { return '<div class="studio-sec">' + title + "</div>"; }
+    var h = '<div class="modaltitle"><span>Settings</span><span class="sbs-x" title="Close (\\ or Esc)">&#x2715;</span></div><div class="modalbody"><div class="sbs-hint">\\ or Esc to close · ] all mods off/on</div>';
     if (st && st.parameters) {
       h += sec("Game");
       for (var k in st.parameters) { var P = st.parameters[k]; if (!P || typeof P.value !== "boolean" || P.type || (st.isHidden && st.isHidden(k))) continue; h += row(P.name || k, 'data-game="' + k + '"', P.value); }
@@ -815,10 +824,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     });
     PANEL.addEventListener("keydown", function(e) { e.stopPropagation(); });
     (document.body || document.documentElement).appendChild(PANEL);
-    try {
-      var sl = PANEL.querySelector(".slider"), scs = sl && getComputedStyle(sl), pcs = getComputedStyle(PANEL);
-      if (!scs || scs.position !== "absolute" || pcs.backgroundColor === "rgba(0, 0, 0, 0)") PANEL.classList.add("studio-fb");
-    } catch (x) { PANEL.classList.add("studio-fb"); }
+    PANEL.querySelector(".sbs-x").addEventListener("click", function() { panel(); });
     if (window.__studioExt) window.__studioExt.bind(PANEL);
   }
   // F9: a small readout (FPS, drops, quality step), for checking
@@ -3004,10 +3010,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         };
       }, 600000);
     })();
-    // Ship tags (the game's name tag under each ship): a strip under each
-    // other ship's tag with its energy bar and the lives it has left, in the
-    // tag's own look; and tags (strip with them) that grow as you zoom out,
-    // so they stay readable (Syndicate's "tags scale with zoom").
+    // Ship tags (the game's name tag under each ship): each other ship's
+    // energy, as a third bar between its shield and gem bars, all three the
+    // same size in the space the game gives its two (as Syndicate does it),
+    // and the lives it has left by its level; drawn into the tag itself, so
+    // they move and resize with it. And tags that grow as you zoom out, so
+    // they stay readable (Syndicate's "tags scale with zoom").
     (function shipTags() {
       var CORE = window.__perfCore, seen = new WeakSet();
       if (!CORE || !CORE.whenClass) return;
@@ -3027,77 +3035,94 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         });
         return draw && upd ? { draw: draw, upd: upd } : null;
       }
-      function strip(tag) {
-        var X = tag.__sbStrip, T = window.THREE;
-        if (X || !T || !tag.ll100) return X;
-        var cv = document.createElement("canvas");
-        cv.width = 256; cv.height = 24;
-        var tex = new T.Texture(cv);
-        tex.minFilter = T.LinearFilter;
-        var mat = new T.MeshBasicMaterial({ color: 0xffffff, map: tex, transparent: true, depthWrite: false, depthTest: false });
-        // (the tag's plane is 1 x 1 for its 256 x 64 canvas: this strip is 24 high, just under it)
-        var mesh = new T.Mesh(new T.PlaneGeometry(1, 24 / 64), mat);
-        mesh.position.set(0, -.5 - 12 / 64 - .02, 0);
-        mesh.renderOrder = tag.ll100.renderOrder;
-        tag.ll100.add(mesh);
-        return tag.__sbStrip = { cv: cv, tex: tex, mesh: mesh, key: null };
+      var ENERGY = "hsla(45,100%,70%,.85)", GAP = .015, BAR = (.35 - 2 * GAP) / 3;
+      // the game draws, at .65 and .85 of the tag's height, each bar's dark
+      // back then its fill (shield, then gems): these draw the three in their
+      // place, in the same order, so what the game draws on top (the ship's
+      // badge in the middle) stays on top
+      function bars(c, o, info) {
+        var fill = c.fillRect;
+        return function(x, y, w, h) {
+          var top = .65 * o, step = (BAR + GAP) * o, bh = BAR * o;
+          if (Math.abs(y - (top - 1)) < .01) return fill.call(c, x, top - 1, w, bh + 2);
+          if (Math.abs(y - (.85 * o - 1)) < .01) { fill.call(c, x, top + step - 1, w, bh + 2); return fill.call(c, x, top + 2 * step - 1, w, bh + 2); }
+          if (Math.abs(y - top) < .01) return fill.call(c, x, top, w, bh);
+          if (Math.abs(y - .85 * o) < .01) {
+            var gem = c.fillStyle, full = info.full;
+            c.fillStyle = ENERGY;
+            fill.call(c, x, top + step, full * Math.max(0, Math.min(1, info.e / 100)), bh);
+            c.fillStyle = gem;
+            return fill.call(c, x, top + 2 * step, w, bh);
+          }
+          return fill.apply(c, arguments);
+        };
       }
-      function drawStrip(X, hue, energy, lives) {
-        var c = X.cv.getContext("2d"), W = X.cv.width, H = X.cv.height, I = W / 32, right = lives != null ? W - 7 * I : W - 2 * I;
-        c.clearRect(0, 0, W, H);
-        if (energy != null) {
-          c.fillStyle = "rgba(0,0,0,.5)";
-          c.fillRect(2 * I - 1, 4, right - 2 * I + 2, H - 8);
-          c.fillStyle = "hsla(50,100%,70%,.85)";
-          c.fillRect(2 * I, 5, (right - 2 * I) * Math.max(0, Math.min(1, energy / 100)), H - 10);
-        }
-        if (lives != null) {
-          // a small heart, then the count, in the tag's colour
-          var hx = W - 5.6 * I, hy = H / 2, r = H * .2;
-          c.fillStyle = "hsl(" + hue + ",50%,80%)";
-          c.beginPath();
-          c.moveTo(hx, hy + r * 1.3);
-          c.bezierCurveTo(hx - r * 2.2, hy - r * .2, hx - r * .9, hy - r * 1.9, hx, hy - r * .6);
-          c.bezierCurveTo(hx + r * .9, hy - r * 1.9, hx + r * 2.2, hy - r * .2, hx, hy + r * 1.3);
-          c.fill();
-          c.font = Math.round(H * .62) + "pt Play";
-          c.textAlign = "left"; c.textBaseline = "middle";
-          c.fillText(String(lives), hx + r * 2, hy + 1);
-        }
-        X.tex.needsUpdate = true;
+      function heart(c, x, y, r) {
+        c.beginPath();
+        c.moveTo(x, y + r * 1.3);
+        c.bezierCurveTo(x - r * 2.2, y - r * .2, x - r * .9, y - r * 1.9, x, y - r * .6);
+        c.bezierCurveTo(x + r * .9, y - r * 1.9, x + r * 2.2, y - r * .2, x, y + r * 1.3);
+        c.fill();
       }
       CORE.whenClass(function(p) { return !!find(p); }, function(P) {
         seen = new WeakSet();
         var k = find(P);
         if (!k) return;
         var draw = P[k.draw], upd = P[k.upd];
-        // the game sets the tag's size when it draws it: kept as the base
         P[k.draw] = function() {
-          var r = draw.apply(this, arguments);
-          try { if (this.ll100) { this.__sbBase = [this.ll100.scale.x, this.ll100.scale.y]; } } catch (e) {}
+          var info = this.__sbE, cv = this.canvas, c = null, r;
+          if (info && !this.anonymous && cv) try {
+            c = cv.getContext("2d");
+            info.full = cv.width - 2 * cv.width / 32;
+            c.fillRect = bars(c, cv.height, info);
+          } catch (e) { c = null; }
+          try { r = draw.apply(this, arguments); }
+          finally { if (c) try { delete c.fillRect; } catch (e) {} }
+          try {
+            var m = this.ll100;
+            // the game sets the tag's size as it draws it: kept as the base
+            if (m) this.__sbBase = [m.scale.x, m.scale.y];
+            if (c && m && info.l != null) {
+              // lives: a heart and the count, left of "Lv", in the tag's own
+              // type and colour (and its stretch, as the game draws its text)
+              var O = cv.width, o = cv.height, I = O / 32;
+              c.save();
+              c.scale(10 / m.scale.x, 2.5 / m.scale.y);
+              c.font = Math.round(O / 512 * 32) + "pt Play";
+              c.textAlign = "right"; c.textBaseline = "middle";
+              c.fillStyle = "hsl(" + this.hue + ",50%,80%)";
+              var x = O - 2 * I - c.measureText("Lv" + this.level).width - 1.2 * I, num = String(info.l);
+              c.fillText(num, x, o / 6);
+              heart(c, x - c.measureText(num).width - .7 * I, o / 6, o * .07);
+              c.restore();
+              this.texture.needsUpdate = true;
+            }
+          } catch (e) {}
           return r;
         };
         P[k.upd] = function(g, name, st, ins) {
+          try {
+            var mine = st && (st.id === window.__synMyShipId || g && g.IOOII && g.IOOII.O1OI0 && g.IOOII.O1OI0.status === st), md = g && g.mode, info = null;
+            if (featOn("tagextra") && st && ins && !mine && !(md && md.anonymous_ships)) {
+              var energy = ins.generator_capacity > 0 && typeof st.generator === "number" ? Math.min(100, Math.round(100 * st.generator / ins.generator_capacity)) : null;
+              // lives left, as the game counts its own (lives - 1); none where
+              // a starting ship has unlimited lives, or the count isn't sent
+              var lives = typeof st.lives === "number" && st.lives > 0 ? st.lives - 1 : null;
+              if (lives != null && md && md.infinite_base_lives && md.options && Math.floor(st.type / 100) === Math.floor((md.options.starting_ship || 101) / 100)) lives = null;
+              if (energy != null) info = { e: energy, l: lives };
+            }
+            var key = info ? info.e + "|" + info.l : "";
+            // (a change the game wouldn't redraw for: it redraws on any
+            // value it keeps changing, so the shield is marked stale)
+            if (key !== (this.__sbKey || "")) { this.__sbKey = key; this.__sbE = info; this.shield = -1; }
+          } catch (e) {}
           var r = upd.apply(this, arguments);
           try {
             var m = this.ll100;
             if (m && this.__sbBase) {
               var mul = featOn("tagzoomscale") ? Math.max(1, window.__aegisFovFactor || 1) : 1;
-              if (m.scale.x !== this.__sbBase[0] * mul) m.scale.set(this.__sbBase[0] * mul, this.__sbBase[1] * mul, 1);
+              if (m.scale.x !== this.__sbBase[0] * mul || m.scale.y !== this.__sbBase[1] * mul) m.scale.set(this.__sbBase[0] * mul, this.__sbBase[1] * mul, 1);
             }
-            var mine = st && (st.id === window.__synMyShipId || g && g.IOOII && g.IOOII.O1OI0 && g.IOOII.O1OI0.status === st);
-            var on = featOn("tagextra") && st && !mine && !this.anonymous;
-            var X = on ? strip(this) : this.__sbStrip;
-            if (!X) return r;
-            X.mesh.visible = !!on;
-            if (!on) return r;
-            var energy = ins && ins.generator_capacity > 0 && typeof st.generator === "number" ? Math.round(100 * st.generator / ins.generator_capacity) : null;
-            // lives left, as the game counts its own (lives - 1); none where
-            // a starting ship has unlimited lives, or the count isn't sent
-            var lives = typeof st.lives === "number" && st.lives > 0 ? st.lives - 1 : null, md = g && g.mode;
-            if (lives != null && md && md.infinite_base_lives && md.options && Math.floor(st.type / 100) === Math.floor((md.options.starting_ship || 101) / 100)) lives = null;
-            var key = energy + "|" + lives + "|" + this.hue;
-            if (key !== X.key) { X.key = key; drawStrip(X, this.hue, energy, lives); }
           } catch (e) {}
           return r;
         };
@@ -3819,7 +3844,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var P = A.pulse;
         if (!A.engaged) { P.on = false; return false; }
         if (C.autofire === "off") return A.forced ? onTarget : A.userFire && (!C.gate || onTarget);
-        if (C.autofire === "all" || !need()) { P.on = false; return onTarget; }
+        // any shot: no holding back: on the target it fires, and your own
+        // fire is never held (the side guns go whenever there's energy)
+        if (C.autofire === "all") { P.on = false; return onTarget || A.userFire; }
+        if (!need()) { P.on = false; return onTarget; }
         // biggest shot: one short press once the bar pays for the volley; let go
         // the moment the nose leaves the target (a press held on would fire
         // the volley wherever the nose had swung to by the time it went)
@@ -6659,6 +6687,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // ---- the \ panel's rows for these ----
   var AIM_CFG = "STUDIO_aim_cfg";
   function aimCfg() { try { return JSON.parse(LS(AIM_CFG) || "{}") || {}; } catch (e) { return {}; } }
+  function aimShotsLabel() { return aimCfg().autofire === "all" ? "Any shot (no limit)" : "Biggest shot when ready"; }
   function aimKey() { return String(LS("STUDIO_aim_key") || "q").toUpperCase(); }
   window.__studioExt = {
     rows: function(row, sec) {
@@ -6691,6 +6720,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("aim", "Aim Assist while holding its key") +
         r("aimfire", "Aim Assist while firing") +
         '<div class="option">Aim Assist key<button type="button" data-ext-key>' + aimKey() + "</button></div>" +
+        '<div class="option">Aim Assist shoots<button type="button" data-ext-aimshots>' + aimShotsLabel() + "</button></div>" +
         r("dodge", "Dodge Assist (steers out of enemy shots)");
     },
     bind: function(P) {
@@ -6714,6 +6744,16 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       if (ed) ed.addEventListener("input", function() {
         try { localStorage.setItem("STUDIO_esp_dist", ed.value); } catch (x) {}
         if (edv) edv.textContent = ed.value;
+      });
+      // aim assist shooting: the biggest shot once it's ready (the bar pays
+      // for the whole volley), or any shot with no limit
+      var as = P.querySelector("[data-ext-aimshots]");
+      if (as) as.addEventListener("click", function(e) {
+        e.preventDefault();
+        var c = aimCfg(); c.autofire = c.autofire === "all" ? "big" : "all";
+        try { localStorage.setItem(AIM_CFG, JSON.stringify(c)); } catch (x) {}
+        try { window.dispatchEvent(new Event("syn-aim-cfg")); } catch (x) {}
+        as.textContent = aimShotsLabel();
       });
       var kb = P.querySelector("[data-ext-key]");
       if (!kb) return;
