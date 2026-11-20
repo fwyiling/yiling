@@ -21,23 +21,32 @@ function header(name, desc, version, threeVer) {
 // Edit those, then rebuild.
 `;
 }
+// The swap, as one object made at the top of the script (sbThree), with two
+// steps: late() right there, before the client, and early() at the end.
+//  - early(): the usual case. The page's three.js (r85) is still to come:
+//    window.THREE is taken over, and once r85 has run (a microtask: before
+//    the next script, the game's) the new one runs in its place, is adapted
+//    and handed to a hook already on window.THREE (the Studio perf core's).
+//  - late(): the page's three.js has already run (a userscript manager can
+//    inject a document-start script after the page's first scripts). If the
+//    game has not made its renderer yet (no canvas in #canvaswrapper: the
+//    game puts its renderer's there), the new one goes in now, before the
+//    client hooks window.THREE; if it has, three.js stays and it says so.
 function swapper(three, setup, rev) {
-  return `(function() {
+  return `var sbThree = (function() {
   "use strict";
-  if (window.__sbThreeSwap) return;
-  window.__sbThreeSwap = ${JSON.stringify(rev)};
   var NEW_THREE = ${JSON.stringify(three)};
 ${setup.replace(/^/gm, '  ')}
-  // the page's three.js (r85) sets window.THREE; once its script has run
-  // (a microtask: before the next script, the game's), the new one runs in
-  // its place with a fresh THREE, and is adapted
-  var cur, swapped = false, swapping = false;
-  // Too late: the page's three.js has already run (a userscript manager can
-  // inject a document-start script after the page's first scripts). The
-  // game and the client are on it already: it stays, and says so.
-  var already = window.THREE;
-  if (already && already.REVISION) {
-    var msg = "three.js r${rev} didn't load: this script ran after the page's own three.js (r" + already.REVISION + "), so the game stays on it. Reload the page (F5) to try again.";
+  var done = !!window.__sbThreeSwap, cur, swapped = false, swapping = false;
+  if (!done) window.__sbThreeSwap = ${JSON.stringify(rev)};
+  function inject() {
+    var s = document.createElement("script");
+    s.textContent = NEW_THREE;
+    (document.head || document.documentElement).appendChild(s);
+    s.remove();
+  }
+  function check(T) { if (!T || T.REVISION !== ${JSON.stringify(rev)}) console.warn("[three r${rev}] three.js swap did not take: THREE r" + (T && T.REVISION)); }
+  function notice(msg) {
     console.warn("[three r${rev}] " + msg);
     var show = function() {
       try {
@@ -49,28 +58,42 @@ ${setup.replace(/^/gm, '  ')}
       } catch (e) {}
     };
     if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
-    return;
   }
-  var before = Object.getOwnPropertyDescriptor(window, "THREE"), handOn = before && typeof before.set === "function" ? before.set : null;
-  function swap() {
-    if (swapped) return;
-    swapped = true; swapping = true;
+  function late() {
+    var old = window.THREE;
+    if (done || !old || !old.REVISION) return;
+    done = true;
+    if (document.querySelector("#canvaswrapper canvas")) {
+      notice("three.js r${rev} didn't load: the game had already started on the page's own three.js (r" + old.REVISION + "), so it stays on it. Reload the page (F5) to try again.");
+      return;
+    }
+    try { inject(); } catch (e) { console.warn("[three r${rev}] loading failed", e); }
+    var T = window.THREE;
+    if (!T || T === old || T.REVISION !== ${JSON.stringify(rev)}) { window.THREE = old; check(T); return; }
+    try { sbSetup(T); } catch (e) { console.warn("[three r${rev}] adapting failed", e); }
+    console.log("[three r${rev}] in place of r" + old.REVISION + " (this script ran after the page's three.js, before the game used it)");
+  }
+  function early() {
+    if (done) return;
+    done = true;
+    var before = Object.getOwnPropertyDescriptor(window, "THREE"), handOn = before && typeof before.set === "function" ? before.set : null;
+    function swap() {
+      if (swapped) return;
+      swapped = true; swapping = true;
+      try { inject(); } finally { swapping = false; }
+      try { sbSetup(cur); } catch (e) { console.warn("[three r${rev}] adapting failed", e); }
+      if (handOn) try { handOn.call(window, cur); } catch (e) { console.warn("[three r${rev}] hand-off failed", e); }
+      check(cur);
+    }
     try {
-      var s = document.createElement("script");
-      s.textContent = NEW_THREE;
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-    } finally { swapping = false; }
-    try { sbSetup(cur); } catch (e) { console.warn("[three r${rev}] adapting failed", e); }
-    if (handOn) try { handOn.call(window, cur); } catch (e) { console.warn("[three r${rev}] hand-off failed", e); }
-    if (!cur || cur.REVISION !== ${JSON.stringify(rev)}) console.warn("[three r${rev}] three.js swap did not take: THREE r" + (cur && cur.REVISION));
+      Object.defineProperty(window, "THREE", { configurable: true, enumerable: true,
+        get: function() { return swapping ? undefined : cur; },
+        set: function(v) { cur = v; if (!swapping && !swapped) Promise.resolve().then(swap); } });
+    } catch (e) { console.warn("[three r${rev}] could not take over window.THREE", e); }
   }
-  try {
-    Object.defineProperty(window, "THREE", { configurable: true, enumerable: true,
-      get: function() { return swapping ? undefined : cur; },
-      set: function(v) { cur = v; if (!swapping && !swapped) Promise.resolve().then(swap); } });
-  } catch (e) { console.warn("[three r${rev}] could not take over window.THREE", e); }
+  return { late: late, early: early };
 })();
+sbThree.late();
 `;
 }
 function write(rel, text, rev) {
@@ -90,12 +113,13 @@ function build(o) {
   three = three.replace(/^console\.warn\('Scripts "build\/three\.js" and "build\/three\.min\.js" are deprecated[^']*'\)/, 'void 0');
   const ver = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version;
   const sw = swapper(three, o.setup, rev);
-  write(o.game[0], header('starblast.io on three.js r' + rev, 'Starblast with three.js r' + rev + ' (WebGL2) in place of r85, and the fixes the game needs for it. Nothing else.', o.game[1], ver) + sw, rev);
-  // the Studio client on it: the client first (its perf core hooks
-  // window.THREE at once), then the swap, which hands it the new three.js
+  write(o.game[0], header('starblast.io on three.js r' + rev, 'Starblast with three.js r' + rev + ' (WebGL2) in place of r85, and the fixes the game needs for it. Nothing else.', o.game[1], ver) + sw + 'sbThree.early();\n', rev);
+  // the Studio client on it: sbThree first (late(): a three.js already on the
+  // page is replaced before the client hooks it), then the client (its perf
+  // core hooks window.THREE at once), then early(), which hands it the new one
   const client = fs.readFileSync(path.join(root, 'clients/studio-client.user.js'), 'utf8');
   const body = client.slice(client.indexOf('// ==/UserScript==') + '// ==/UserScript=='.length);
   const cver = (client.match(/@version\s+(\S+)/) || [])[1] || '0';
-  write(o.studio, header('Syndicate Studio on three.js r' + rev, 'The Studio client with the game on three.js r' + rev + ' (WebGL2) in place of r85.', cver, ver) + body.replace(/^\s*\n/, '') + '\n' + sw, rev);
+  write(o.studio, header('Syndicate Studio on three.js r' + rev, 'The Studio client with the game on three.js r' + rev + ' (WebGL2) in place of r85.', cver, ver) + sw + body.replace(/^\s*\n/, '') + '\nsbThree.early();\n', rev);
 }
 module.exports = { build, root };
