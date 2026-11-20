@@ -59,19 +59,44 @@ ${setup.replace(/^/gm, '  ')}
     };
     if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
   }
+  // the game's own script: the page's big inline one that uses three.js
+  function gameScript() {
+    var ss = document.scripts;
+    for (var i = 0; i < ss.length; i++) { var t = !ss[i].src && ss[i].text; if (t && t.length > 100000 && t.indexOf("THREE.") >= 0 && t.indexOf('addEventListener("DOMContentLoaded"') >= 0) return ss[i]; }
+    return null;
+  }
   function late() {
     var old = window.THREE;
     if (done || !old || !old.REVISION) return;
     done = true;
-    if (document.querySelector("#canvaswrapper canvas")) {
-      notice("three.js r${rev} didn't load: the game had already started on the page's own three.js (r" + old.REVISION + "), so it stays on it. Reload the page (F5) to try again.");
-      return;
+    var stay = "three.js r${rev} didn't load: the game had already started on the page's own three.js (r" + old.REVISION + "), so it stays on it. Reload the page (F5) to try again.";
+    if (document.querySelector("#canvaswrapper canvas")) return notice(stay);
+    // The game's script has run too: it made its classes and some models on
+    // the old three.js, and its game object waits for DOMContentLoaded to
+    // start. While that's still to come, that start is turned off and the
+    // script runs again on the new three.js (its game object starts instead).
+    var gs = gameScript(), mains = [];
+    if (gs) {
+      var nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+      if (!nav || nav.domContentLoadedEventStart > 0) return notice(stay);
+      Object.getOwnPropertyNames(window).forEach(function(k) {
+        var f; try { f = window[k]; } catch (e) { return; }
+        if (typeof f === "function" && f.prototype && typeof f.prototype.init === "function" && Function.prototype.toString.call(f).indexOf('addEventListener("DOMContentLoaded"') >= 0) mains.push(f);
+      });
+      if (mains.length !== 1) return notice(stay);
     }
     try { inject(); } catch (e) { console.warn("[three r${rev}] loading failed", e); }
     var T = window.THREE;
     if (!T || T === old || T.REVISION !== ${JSON.stringify(rev)}) { window.THREE = old; check(T); return; }
     try { sbSetup(T); } catch (e) { console.warn("[three r${rev}] adapting failed", e); }
-    console.log("[three r${rev}] in place of r" + old.REVISION + " (this script ran after the page's three.js, before the game used it)");
+    if (gs) {
+      mains[0].prototype.init = function() {};
+      var s = document.createElement("script");
+      s.textContent = gs.text;
+      (document.head || document.documentElement).appendChild(s);
+      s.remove();
+      console.log("[three r${rev}] in place of r" + old.REVISION + " (this script ran after the game's script: it ran again on r${rev})");
+    } else console.log("[three r${rev}] in place of r" + old.REVISION + " (this script ran after the page's three.js, before the game's script)");
   }
   function early() {
     if (done) return;
