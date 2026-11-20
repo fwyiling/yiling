@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.2.0.
+starblast.io logo. Current version: 2.3.0.
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -36,6 +36,8 @@ app and the tests find the client by relative path.
 8. **Ported from Syndicate** (the block after Studio's own, `window.__studioExt`): FOV zoom and its extended view (Syndicate's spectator engine, spectator mode itself unbound), full map radar with names, icons and tier tags, leaderboard ship icons in each player's hue, ESP (lines and boxes, everyone or within a distance), saturated ship colours, High Contrast, team highlight, no stars, fast respawn, team lock bypass, Aim Assist (lock 0 ms, 30° cone; Dodge Assist off by default).
    - Join custom game: a mode added after the game's own under PLAY (hooks on the home class found by `gameModesLoader`/`startGame`/`changeGameMode`). With it picked, a link box opens under the name box (inside `#player`, so it takes the game's styles); PLAY puts the link in the address and calls `gameModesLoader` again, as opening the link would.
    - Leave Game: `GameMenu.createMainMenu` gets a game `MenuButton` "LEAVE GAME" with the game's own `quit_to_menu` action (back to the start page).
+   - ESP draws each ship in view at its model (`world.ships[i].model`, where the game draws it) straight after the game's world render (`__perfCore.afterRender`, the game's camera), boxed by the model's hull meshes; ships out of view come from the radar, eased and dashed.
+   - Aim Assist physics per ship come from the game's own ShipInstance (top speed, inertia, turn, upgrades and mods included), else the mode's ship types with the upgrade levels in the status packets (`lv`, 4 bits per stat), else the level-1 table. It always leads for the biggest gun (its speed measured from your volleys, else your ship's own number); the muzzle is measured up to 30 forward (the Shadow X-3's is ~15).
    - It wraps the WebSocket constructor to read the game's messages (ship status, radar, volleys, names) and caps control messages at 90 per second.
    - Game hooks found at runtime: `TeamBoard` (team lock), `IOII0` (ship finishes: High Contrast, team highlight, saturated glow), the scoreboard's draw method (icons), and a copy of `IOII0`/`WeaponModel` `IOIll` with `this.hue,1,1` (saturation). Checked against index.js; `window.__studioPatches` lists what was patched.
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.2.0
+// @version      2.3.0
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.2.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.3.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -925,7 +925,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       crystals: dv.getUint16(46, true), score: b.length >= 52 ? dv.getUint32(48, true) : 0, ts: Date.now(),
       inv: (tf & 0x8000) !== 0, healing: (tf & 0x400) !== 0, gen: dv.getUint16(44, true), steer: dv.getUint16(12, true) % 360,
       glide: (tf & 0x4000) !== 0, side: b[2] & 32 ? 1 : b[2] & 64 ? -1 : 0, stun: b[40], spin: dv.getFloat32(36, true), tick: dv.getUint32(8, true),
-      stime: dv.getUint32(4, true)
+      stime: dv.getUint32(4, true), lv: b.length >= 56 ? dv.getUint32(52, true) : null
     };
     _synClock(_synStat[b[1]]);
     if (window.__synAimStat) try { window.__synAimStat(_synStat[b[1]]); } catch (e) {}
@@ -2605,14 +2605,17 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }, 400);
     })();
     // ESP: a line from your ship to every other ship, or only those within
-    // the near distance (exact while in view, the radar's spot beyond it,
-    // dashed), a light box round each one on screen, name and distance;
-    // team games colour allies green and enemies red, others in their hue.
+    // the near distance, a light box round each one on screen, name and
+    // distance; team games colour allies green and enemies red, others in
+    // their hue. Ships in view are drawn where the game draws them (their
+    // model, the same frame: drawn straight after the game's own render with
+    // its camera), so the boxes sit on the ships and move with them; ships
+    // beyond the view come from the radar (eased, dashed).
     (function esp() {
       var cv = document.createElement("canvas");
       cv.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:999987;display:none";
       document.body.appendChild(cv);
-      var ctx = cv.getContext("2d"), dpr = 1, disp = {}, lastT = 0;
+      var ctx = cv.getContext("2d"), dpr = 1, disp = {}, lastT = 0, drewAt = 0, CORE = window.__perfCore;
       function resize() { dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); }
       resize();
       addEventListener("resize", resize);
@@ -2626,21 +2629,69 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var h = _aegisHueOf[id];
         return typeof h === "number" ? "hsla(" + Math.round(h) + ",100%,65%," + a + ")" : "rgba(255,255,255," + a + ")";
       }
-      // where each ship is: the status packets while fresh, else the radar (eased)
-      function ships(myId, now, ease) {
+      // a ship entry's controller (status, type): found once per entry
+      var CTL = new WeakMap();
+      function ctlOf(e) {
+        var c = CTL.get(e);
+        if (c === undefined) {
+          c = null;
+          for (var k in e) { try { var v = e[k]; if (v && v.status && typeof v.status.x === "number" && v.status.id != null) { c = v; break; } } catch (x) {} }
+          CTL.set(e, c);
+        }
+        return c;
+      }
+      // how far a ship's model reaches from its middle (its visible meshes), once per model
+      var RADC = new WeakMap();
+      function modelRadius(m) {
+        var r = RADC.get(m);
+        if (r) return r;
+        var T = window.THREE;
+        r = 0;
+        try {
+          m.updateMatrixWorld(true);
+          var mp = new T.Vector3().setFromMatrixPosition(m.matrixWorld), v = new T.Vector3();
+          m.traverse(function(o) {
+            // (the hull only: not the name plate, flames, shield or outlines, which are see-through)
+            var mt = o.material;
+            if (!o.isMesh || !o.visible || o.__stOL || !o.geometry || !mt || mt.transparent || (T.AdditiveBlending && mt.blending === T.AdditiveBlending)) return;
+            var gm = o.geometry;
+            if (!gm.boundingBox) gm.computeBoundingBox();
+            var b = gm.boundingBox;
+            if (!b) return;
+            for (var i = 0; i < 8; i++) {
+              v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(o.matrixWorld);
+              r = Math.max(r, Math.hypot(v.x - mp.x, v.y - mp.y));
+            }
+          });
+        } catch (e) { r = 0; }
+        if (r > 0) RADC.set(m, r);
+        return r || 3;
+      }
+      // the ships the game is drawing this frame, by id
+      function drawnShips() {
+        var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110, out = {}, list = w && Array.isArray(w.ships) ? w.ships : [];
+        for (var i = 0; i < list.length; i++) {
+          var e = list[i], c = e && ctlOf(e), m = e && e.model;
+          if (!c || !m || !m.position || c.status.alive === false || m.visible === false) continue;
+          out[c.status.id] = { x: m.position.x, y: m.position.y, m: m };
+        }
+        return { list: out, me: sc && sc.ship && sc.ship.OOO1l && sc.ship.OOO1l.position };
+      }
+      // every ship to show: drawn ones exact, the rest from the radar (eased)
+      function ships(myId, now, ease, drawn) {
         var out = [];
-        for (var id in _synStat) {
-          var s = _synStat[id], n = +id;
-          if (n === myId || now - s.ts > 1500) continue;
-          if (!s.alive) { delete disp[id]; continue; }
-          var age = Math.min(.5, (now - s.ts) / 1000);
-          var x = s.x + s.vx * 60 * age, y = s.y + s.vy * 60 * age;
-          disp[id] = { x: x, y: y, seen: now };
-          out.push({ id: n, x: x, y: y, exact: true });
+        for (var id in drawn) {
+          var n = +id;
+          if (n === myId) continue;
+          var d = drawn[id];
+          disp[id] = { x: d.x, y: d.y, seen: now };
+          out.push({ id: n, x: d.x, y: d.y, exact: true, m: d.m });
         }
         for (var rid in _aegisShips) {
-          var rn = +rid, st = _synStat[rid];
-          if (rn === myId || st && now - st.ts <= 1500) continue;
+          var rn = +rid;
+          if (rn === myId || drawn[rid]) continue;
+          var st = _synStat[rid];
+          if (st && !st.alive && now - st.ts < 3000) continue;
           var r = _aegisShips[rid];
           if (now - r.ts > SHIP_TTL || r.zeroSince != null && now - r.zeroSince > BOT_ZERO_TTL) continue;
           var D = disp[rid];
@@ -2660,26 +2711,30 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         t = Math.max(0, t);
         return { x: a.x + dx * t, y: a.y + dy * t, off: true };
       }
-      function drawEsp(g, my, cam, me, ease) {
-        var now = Date.now(), list = ships(my.id, now, ease);
+      function drawEsp(g, cam, myId, mx, my, ease) {
+        var now = Date.now(), D = drawnShips(), list = ships(myId, now, ease, D.list);
+        // (your ship as drawn, while it's where your status says, give or take the smoothing)
+        if (D.me && Math.hypot(wrapD(D.me.x - mx), wrapD(D.me.y - my)) < 15) { mx = D.me.x; my = D.me.y; }
+        var me = worldToScreenPx(cam, mx, my, g);
+        if (!me) return;
+        var p1 = worldToScreenPx(cam, mx + 10, my, g), ppu = p1 ? Math.hypot(p1.x - me.x, p1.y - me.y) / 10 : 0;
+        var near = espNear(), maxD = espDist(), RAD = window.__synAim && window.__synAim.RAD || {};
         ctx.font = "600 11px Play, Arial, sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "bottom";
         ctx.lineJoin = "round";
-        var near = espNear(), maxD = espDist(), RAD = window.__synAim && window.__synAim.RAD || {};
-        var p0 = worldToScreenPx(cam, my.x, my.y, g), p1 = worldToScreenPx(cam, my.x + 10, my.y, g);
-        var ppu = p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10 : 0;
         for (var i = 0; i < list.length; i++) {
-          var t = list[i], dx = wrapD(t.x - my.x), dy = wrapD(t.y - my.y);
+          var t = list[i], dx = wrapD(t.x - mx), dy = wrapD(t.y - my);
           var dist = Math.round(Math.hypot(dx, dy));
           if (near && dist > maxD) continue;
-          var p = worldToScreenPx(cam, my.x + dx, my.y + dy, g);
+          var p = worldToScreenPx(cam, mx + dx, my + dy, g);
           if (!p) continue;
           var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id, label = nm + "  " + dist;
-          // the light box: the ship's hull size, a little room round it
-          var code = (_synStat[t.id] || {}).code || (_aegisShips[t.id] || {}).code, half = !e.off && ppu > 0 ? Math.max(6, (RAD[code] || 3) * .8 * ppu) : 0;
+          // the light box: the ship's model as drawn, a little room round it
+          var R = t.m ? modelRadius(t.m) : (RAD[(_aegisShips[t.id] || {}).code] || 3) * .8;
+          var half = !e.off && ppu > 0 ? Math.max(6, R * 1.08 * ppu) : 0;
           // (the line stops at the box)
-          var lx = me.x - p.x, ly = me.y - p.y, m = Math.max(Math.abs(lx), Math.abs(ly)), k = half && m > half ? half / m : 0;
-          if (!half || m > half) {
+          var lx = me.x - p.x, ly = me.y - p.y, mm = Math.max(Math.abs(lx), Math.abs(ly)), k = half && mm > half ? half / mm : 0;
+          if (!half || mm > half) {
             ctx.save();
             ctx.strokeStyle = col(t.id, t.exact ? .6 : .38);
             ctx.lineWidth = t.exact ? 1.5 : 1.2;
@@ -2701,21 +2756,32 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           if (!_aegisNames[t.id]) requestName(t.id);
         }
       }
-      (function loop() {
-        requestAnimationFrame(loop);
+      function frame(cam) {
         var now = Date.now(), fdt = lastT ? Math.min(.1, (now - lastT) / 1000) : .016; lastT = now;
-        if (!featOn("esp") || !inGame()) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
-        if (cv.style.display !== "block") cv.style.display = "block";
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, cv.width, cv.height);
+        var g = getGS(), my = g && getMyStatus(g);
+        if (!g || !my || !cam || my.alive === false || typeof my.x !== "number") return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawEsp(g, cam, my.id, my.x, my.y, 1 - Math.exp(-fdt * 7));
+      }
+      function on() { return featOn("esp") && inGame(); }
+      // with the game's frame: after its world render, with its camera
+      if (CORE && CORE.afterRender) CORE.afterRender(function(scene, cam, I) {
+        if (!I || !I.world || !cam || !cam.isPerspectiveCamera || !on()) return;
         try {
-          var g = getGS(), my = g && getMyStatus(g), cam = getActiveCamera();
-          if (!g || !my || !cam || my.alive === false || typeof my.x !== "number") return;
-          var me = worldToScreenPx(cam, my.x, my.y, g);
-          if (!me) return;
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          drawEsp(g, my, cam, me, 1 - Math.exp(-fdt * 7));
+          if (cv.style.display !== "block") cv.style.display = "block";
+          frame(cam);
+          drewAt = performance.now();
         } catch (e) {}
+      });
+      // (and on its own when the game's render isn't reaching the hook)
+      (function loop() {
+        requestAnimationFrame(loop);
+        if (!on()) { if (cv.style.display !== "none") cv.style.display = "none"; return; }
+        if (performance.now() - drewAt < 250) return;
+        if (cv.style.display !== "block") cv.style.display = "block";
+        try { frame(getActiveCamera()); } catch (e) {}
       })();
     })();
     // Join custom game: a mode after the game's own (after Create custom
@@ -2947,16 +3013,57 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // Hull radius per ship (ships.rs): what a bolt has to pass to miss.
       var RAD = {101: 1.856, 201: 3.33, 202: 2.804, 301: 2.851, 302: 2.343, 303: 2.823, 304: 3.834, 401: 4.646, 402: 3.514, 403: 4.352, 404: 3.427, 405: 3.553, 406: 4.922, 501: 4.83, 502: 5.299, 503: 5.051, 504: 3.38, 505: 3.78, 506: 3.96, 507: 5.01, 508: 4.187, 601: 6.064, 602: 5.858, 603: 3.573, 604: 3.586, 605: 3.621, 613: 3.621, 606: 4.524, 607: 4.676, 608: 5.888, 609: 4.449, 701: 9.054, 702: 6.807, 703: 10.53, 704: 8.225};
       A.RAD = RAD;
+      // A ship's real top speed, inertia and turn per tick, upgrades and mods
+      // included: from the game's own ship object (ShipInstance) while it is
+      // in view, else from its type and the upgrade levels in its status
+      // packets, else the level-1 table above.
+      var SPEC = { at: 0, map: {} };
+      function shipSpec(id) {
+        var now = Date.now();
+        if (now - SPEC.at > 300) {
+          SPEC.at = now; SPEC.map = {};
+          try {
+            var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110;
+            var add = function(c) { if (c && c.status && c.status.id != null) { var sp = duSpec(c, g); if (sp) SPEC.map[c.status.id] = sp; } };
+            if (w && Array.isArray(w.ships)) for (var i = 0; i < w.ships.length; i++) add(duCtl(w.ships[i]));
+            add(g && g.O1OI0); add(sc && sc.O1OI0);
+          } catch (e) {}
+        }
+        return id != null ? SPEC.map[id] || null : null;
+      }
+      // the mode's ship types (the game keeps them on its mode object)
+      var REG = { mode: null, reg: null };
+      function shipTypes() {
+        var g = getGS(), m = g && g.mode;
+        if (!m) return null;
+        if (REG.mode !== m) {
+          REG.mode = m; REG.reg = null;
+          for (var k in m) { try { var v = m[k]; if (v && typeof v === "object" && v.types_by_code && Array.isArray(v.types)) { REG.reg = v; break; } } catch (e) {} }
+        }
+        return REG.reg;
+      }
+      function physOf(id, code) {
+        var P = shipSpec(id), M = MODE();
+        if (P) return { top: P.top, inr: P.inr, turn: P.turn, exact: true };
+        var st = id != null ? _synStat[id] : null, reg = shipTypes(), T = reg && reg.types_by_code[code], sh = T && T.specs && T.specs.ship;
+        if (sh && st && st.lv != null && T.level > 0) {
+          var L = function(r, lv) { return typeof r === "number" ? r : r[0] + (r[1] - r[0]) * Math.min(lv, T.level) / T.level; }, sl = st.lv >>> 24 & 15, ag = st.lv >>> 28 & 15;
+          return { top: .004 * L(sh.speed, sl) * M.speed, inr: Math.exp(Math.log(.5) / (3000 / L(sh.acceleration, ag))), turn: .15 * L(sh.rotation, ag) / 100, exact: true };
+        }
+        var d = ENG[code] || [ 100, 50, 90 ];
+        return { top: .004 * d[0] * M.speed, inr: Math.exp(Math.log(.5) / (3000 / d[2])), turn: .15 * d[1] / 100, exact: false };
+      }
+      A.physOf = physOf;
       function engState(src, tr) {
-        var d = ENG[src.code] || [ 100, 50, 90 ], sp = Math.hypot(src.vx, src.vy), M = MODE();
+        var id = src.id != null ? src.id : tr && tr.id, ph = physOf(id, src.code), sp = Math.hypot(src.vx, src.vy), M = MODE();
         // top speed: the ship's own, upgrades included, as measured from how
         // it gathers speed under thrust (tr.topEst); before that is known,
         // never slower than it has been seen going. On RCS (glide) the game
         // keeps the speed exactly unless it is above the ship's top speed.
-        var est = tr && tr.topEst || 0, top = est ? Math.max(est, .004 * d[0] * M.speed) : Math.max(.004 * d[0] * M.speed, sp, tr && tr.vtop || 0);
+        var est = ph.exact ? 0 : tr && tr.topEst || 0, top = ph.exact ? ph.top : est ? Math.max(est, ph.top) : Math.max(ph.top, sp, tr && tr.vtop || 0);
         return { x: src.x, y: src.y, vx: src.vx, vy: src.vy, r: src.r, aim: src.aim, up: src.up,
           glide: !!src.glide || !!(tr && tr.gInf && !src.up), side: src.side || 0, stun: src.stun || 0, M: M,
-          top: top, gcap: est ? Math.max(top * 1.01, Math.min(sp, top * 1.01)) : Math.max(top, sp), inr: Math.exp(Math.log(.5) / (3000 / d[2])), turn: .15 * d[1] / 100,
+          top: top, gcap: ph.exact || est ? top * 1.01 : Math.max(top, sp), inr: ph.inr, turn: ph.turn,
           h: Math.atan2(src.vy, src.vx), sp: sp * 60, w: 0, ac: 0 };
       }
       function step(m, q, dt) {
@@ -3028,7 +3135,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       window.__synAimStat = function(s) {
         if (s.id === myId()) { ownStat(s); if (document.hidden && A.pump && C.dodge) try { A.pump(true); } catch (e) {} }
         var tr = A.tracks[s.id];
-        if (!tr || !s.alive) { A.tracks[s.id] = { x: s.x, y: s.y, vx: s.vx, vy: s.vy, ts: s.ts, w: 0, ac: 0, T: 0, hist: [], e: [0, 0, 0, 0, 0], n: 0, chk: -1, vtop: 0, r: null, up: false, glide: false, slide: 0 }; return; }
+        if (!tr || !s.alive) { A.tracks[s.id] = { id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, ts: s.ts, w: 0, ac: 0, T: 0, hist: [], e: [0, 0, 0, 0, 0], n: 0, chk: -1, vtop: 0, r: null, up: false, glide: false, slide: 0 }; return; }
         tr.vtop = Math.max((tr.vtop || 0) * .999, Math.hypot(s.vx, s.vy));
         // packets arrive bunched, so the time between them comes from how far
         // the ship went at its speed (the arrival times only when it sits still)
@@ -3047,8 +3154,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // (or coasting) can not explain is taken as one, as the bots do it
         var M = MODE(), slide = s.side || 0;
         if (!slide && M.strafe > 0 && tr.r != null && !(s.stun > 0)) {
-          var dg = ENG[s.code] || [ 100, 50, 90 ], inr = Math.exp(Math.log(.5) / (3000 / dg[2])), nT = Math.max(1, dt * 60);
-          var top = Math.max(.004 * dg[0] * M.speed, sp0), evx = tr.vx, evy = tr.vy;
+          var phS = physOf(s.id, s.code), inr = phS.inr, nT = Math.max(1, dt * 60);
+          var top = phS.exact ? phS.top : Math.max(phS.top, sp0), evx = tr.vx, evy = tr.vy;
           if (tr.up) { var ff = Math.pow(inr, nT), ttx = top * Math.cos(tr.r), tty = top * Math.sin(tr.r); evx = ttx + (evx - ttx) * ff; evy = tty + (evy - tty) * ff; }
           else if (!tr.glide) { var fc = Math.pow(inr, nT * M.fric); evx *= fc; evy *= fc; }
           var ax = (s.vx - evx) / nT, ay = (s.vy - evy) / nT, rr = s.angle * Math.PI / 180;
@@ -3059,7 +3166,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // toward top along the nose each tick, v1 = v0 f + top (1 - f), so two
         // packets give top (upgrades included); and RCS (glide) when the flag
         // is not sent: engine off, yet no slowing down as coasting would
-        var dgE = ENG[s.code] || [ 100, 50, 90 ], inrE = Math.exp(Math.log(.5) / (3000 / dgE[2])), nTE = Math.max(1, dt * 60);
+        var inrE = physOf(s.id, s.code).inr, nTE = Math.max(1, dt * 60);
         if (tr.code !== s.code) { tr.code = s.code; tr.topEst = 0; }
         if (tr.up && s.up && !(s.stun > 0) && tr.r != null && !slide) {
           var fE = Math.pow(inrE, nTE), rE = s.angle * Math.PI / 180, cE = Math.cos(rE), sE = Math.sin(rE);
@@ -3181,7 +3288,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           var ds = (now - my.ts) / 1000, a = my.angle * Math.PI / 180;
           var rx = wrap(dv.getFloat32(bestO, true) - my.x - my.vx * 60 * ds), ry = wrap(dv.getFloat32(bestO + 4, true) - my.y - my.vy * 60 * ds);
           var fw = rx * Math.cos(a) + ry * Math.sin(a), lat = -rx * Math.sin(a) + ry * Math.cos(a);
-          if (Math.abs(lat) < 2.5 && fw > -1 && fw < 8) { A.gun.fwd = A.gun.n ? A.gun.fwd * .8 + fw * .2 : fw; A.gun.n++; }
+          if (Math.abs(lat) < 3 && fw > -1 && fw < 30) { A.gun.fwd = A.gun.n ? A.gun.fwd * .8 + fw * .2 : fw; A.gun.n++; }
         }
       };
       // When a command sent now lands: the state's real age (its server time,
@@ -3201,7 +3308,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           // game's physics with the keys being sent now, so RCS off (glide),
           // strafing, braking and knock-back count, not a straight line
           var L = lead(s), w = A.sentWord != null ? A.sentWord : A.flags != null && A.userDeg != null ? A.flags + A.userDeg : null;
-          var q = engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
+          var q = engState({ id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
           if (w != null) { q.aim = (w % 4096 % 360) * Math.PI / 180; q.up = (w & 4096) !== 0; q.glide = (w & 16384) !== 0; q.side = w & 32768 ? 1 : w & 65536 ? -1 : 0; }
           for (var i = 0, n = Math.max(1, Math.round(L / DT)); i < n; i++) step(4, q, L / n);
           // (and how fast the nose is still turning then, per tick)
@@ -3214,7 +3321,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // (for checks: a ship's chosen model and where it puts the ship T s from its last packet)
       A.predict = function(id, T) {
         var s = _synStat[id], tr = A.tracks[id]; if (!s) return null;
-        var m = modelOf(tr), q = m === 4 ? engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, tr ? tr.w : 0, tr ? tr.ac : 0);
+        var m = modelOf(tr), q = m === 4 ? engState({ id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, tr ? tr.w : 0, tr ? tr.ac : 0);
         for (var i = 0, n = Math.max(1, Math.round(T / DT)); i < n; i++) step(m, q, T / n);
         return { m: m, e: tr && tr.e.map(function(x) { return +x.toFixed(3); }), x: q.x, y: q.y, vx: q.vx, vy: q.vy, sp: q.sp };
       };
@@ -3248,7 +3355,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var L = lead(s), tr = A.tracks[s.id], m = modelOf(tr);
         // (only the engine model knows the keys; the fitted ones drift off sooner)
         if (m !== 4) L = Math.min(L, 1);
-        var q = m === 4 ? engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, m ? tr.w : 0, m ? tr.ac : 0);
+        var q = m === 4 ? engState({ id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side || tr && tr.slide || 0, stun: s.stun }, tr) : stateOf(s.x, s.y, s.vx, s.vy, m ? tr.w : 0, m ? tr.ac : 0);
         for (var i = 0, n = Math.max(1, Math.round(L / DT)); i < n; i++) step(m, q, L / n);
         var q0 = copyQ(q), o = { x: me.x, y: me.y }, r = solve(o, me.v, copyQ(q0), m, S, k);
         if (!r) return null;
@@ -3271,16 +3378,15 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // The speed to lead for: the big gun's, unless the ship also has small
       // guns of another speed and the big gun will not go with the next shot
       // (still reloading, or the bar can not pay for it); then theirs.
-      function gunSpeed(now) {
-        var S = A.speed || 160;
-        if (!A.smallS || Math.abs(A.smallS - S) < 6 || now - A.smallAt > 4000) { A.gunKind = "big"; return S; }
-        var e = energyAt(), P = A.pulse;
-        var reloaded = !A.bigPer || now - A.lastBigAt >= A.bigPer - 60 - ping() * .5;
-        var paid = e == null || e >= A.ship.maxRec * .95;
-        var big = P.on || reloaded && paid;
-        A.gunKind = big ? "big" : "small";
-        return big ? S : A.smallS;
+      // The speed to lead for: always the biggest gun's (the side guns are
+      // left to fly where they will), measured from your own volleys, else
+      // your ship's own number with its upgrades (the game's ShipInstance).
+      function bigSpeed() {
+        if (A.speed > 10) return A.speed;
+        var P = shipSpec(myId());
+        return P && P.S > 10 ? P.S : 160;
       }
+      function gunSpeed(now) { A.gunKind = "big"; return bigSpeed(); }
       // Pick, confirm and keep the lock; choose who this shot goes to.
       // Q: lock at once on the enemy nearest the cursor (or, with none on
       // screen, nearest the ship)
@@ -3304,7 +3410,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // not, so the nose is already right when the first shot goes)
         function tlp() { try { if (me && forced == null) tlpAim(me, now); } catch (e) { A.tlpDeg = null; } }
         if (!me || A.userDeg == null && forced == null || (!act && now > A.graceUntil)) { A.lock = null; A.cand = null; A.engaged = false; tlp(); return; }
-        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(A.speed || 160), list = enemies(me), byId = {};
+        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(bigSpeed()), list = enemies(me), byId = {};
         list.forEach(function(e) { byId[e.s.id] = e; });
         var L = null;
         if (forced != null) {
@@ -3428,7 +3534,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var p0 = worldToScreenPx(cam, vs.x, vs.y, gs), p1 = worldToScreenPx(cam, vs.x + 10, vs.y, gs);
         if (!p0 || !p1) return;
         var ppu = Math.hypot(p1.x - p0.x, p1.y - p0.y) / 10; if (!(ppu > .01)) return;
-        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(A.speed || 160);
+        var S = gunSpeed(now), k = A.kN ? A.k : 1, R = reach(bigSpeed());
         var D = Math.max(12, Math.min(R * .95, Math.hypot(drag.real.x - p0.x, drag.real.y - p0.y) / ppu));
         var a = aDeg * Math.PI / 180, tx = vs.x + Math.cos(a) * D, ty = vs.y + Math.sin(a) * D, deg = aDeg;
         if (Math.hypot(wrap(me.x - vs.x), wrap(me.y - vs.y)) >= .15 || Math.hypot(me.v.x, me.v.y) >= .02) {
@@ -3581,7 +3687,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       function ownEng() {
         var me = myId(), s = me != null ? _synStat[me] : null;
         if (!s || !s.alive || Date.now() - s.ts > 600) return null;
-        var q = engState({ x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
+        var q = engState({ id: s.id, x: s.x, y: s.y, vx: s.vx, vy: s.vy, r: s.angle * Math.PI / 180, aim: (s.steer || 0) * Math.PI / 180, up: !!s.up, code: s.code, glide: s.glide, side: s.side, stun: s.stun }, A.tracks[me]);
         q.T = s.ts - ping() / 2; q.rad = RAD[s.code] || 3;
         return q;
       }
