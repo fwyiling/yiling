@@ -1,0 +1,17 @@
+{
+  "name": "starblast-deobf",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node runtest.cjs work/game.named.js work/screenshot.png"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "blockadblock": "3.2.1",
+    "three-r85": "npm:three@0.85.2",
+    "webcrack": "^2.15.0",
+    "webfontloader": "1.6.27"
+  }
+}
