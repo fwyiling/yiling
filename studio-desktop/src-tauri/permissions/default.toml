@@ -1,0 +1,6 @@
+[[permission]]
+identifier = "allow-studio-fullscreen"
+description = "Allows the studio_fullscreen command (F11: the window fills the screen with no frame, for recording)."
+commands.allow = [
+    "studio_fullscreen"
+]

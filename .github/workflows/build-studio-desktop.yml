@@ -1,0 +1,92 @@
+name: Build Syndicate Studio App
+
+# Builds Syndicate Studio (studio-desktop/): a Windows app on starblast.io
+# with the Studio client (clients/studio-client.user.js) built in. The app's
+# icon is the starblast.io logo, taken from the game's own page at build time
+# (tools/make-icon.mjs) and kept in src-tauri/icons/. A client change needs a
+# new build (a push that touches it rebuilds). Each run commits the installers
+# to dist-studio/.
+
+on:
+  push:
+    branches: [claude/laughing-noether-4c3asv]
+    paths:
+      - 'studio-desktop/**'
+      - 'clients/studio-client.user.js'
+      - 'tools/make-icon.mjs'
+      - '.github/workflows/build-studio-desktop.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-studio-desktop
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: studio-desktop/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        working-directory: studio-desktop
+        run: npm install --no-audit --no-fund
+
+      - name: App icon (the starblast.io logo)
+        shell: bash
+        run: |
+          if node tools/make-icon.mjs studio-desktop/app-icon.png; then
+            cd studio-desktop
+            npx tauri icon app-icon.png --fit contain
+            rm -rf app-icon.png src-tauri/icons/android src-tauri/icons/ios
+          elif [ -f studio-desktop/src-tauri/icons/icon.png ]; then
+            echo "::warning::starblast.io wasn't reachable; building with the icons already in the repo"
+          else
+            echo "::error::the starblast.io icon could not be fetched and none is in the repo yet"; exit 1
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: studio-desktop
+
+      - name: Check the app needs no Visual C++ runtime
+        shell: bash
+        run: |
+          for f in studio-desktop/src-tauri/target/release/*.exe; do
+            if grep -aqi 'vcruntime140' "$f"; then echo "::error::$f still needs the Visual C++ runtime"; exit 1; fi
+            echo "ok: $f"
+          done
+
+      - name: Commit installer and icons for delivery
+        shell: bash
+        run: |
+          mkdir -p dist-studio
+          find studio-desktop/src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' \) -exec cp {} dist-studio/ \;
+          ls -la dist-studio
+          test -n "$(ls dist-studio)" || { echo "::error::no installer was built"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist-studio studio-desktop/src-tauri/icons
+          if git diff --cached --quiet; then echo "no installer changes"; else
+            git commit -m "Add Syndicate Studio installer build for delivery [skip ci]"
+            ok=
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin ${{ github.ref_name }} && git push origin HEAD:${{ github.ref_name }} && { ok=1; break; }
+              sleep $((i * 5))
+            done
+            test -n "$ok"
+          fi

@@ -1,0 +1,4 @@
+# Link the Microsoft C runtime into the exe, so the app starts on PCs without
+# the Visual C++ Redistributable (otherwise: "VCRUNTIME140_1.dll was not found").
+[target.'cfg(windows)']
+rustflags = ["-C", "target-feature=+crt-static"]

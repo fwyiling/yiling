@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      1.9.0
+// @version      2.0.0
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -712,7 +712,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "1.9.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.0.0", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1142,16 +1142,22 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     } catch (e) {}
     return null;
   }
+  var _myKey = null;
   function getMyStatus(g) {
     if (!g) return null;
+    try { var c = _myKey && g[_myKey]; if (c && c.status && typeof c.status.x === "number") return c.status; } catch (e) {}
     var keys = Object.keys(g);
     for (var i = 0; i < keys.length; i++) {
-      try { var v = g[keys[i]]; if (v && v.status && typeof v.status.x === "number") return v.status; } catch (e) {}
+      try { var v = g[keys[i]]; if (v && v.status && typeof v.status.x === "number") { _myKey = keys[i]; return v.status; } } catch (e) {}
     }
     return null;
   }
+  var _camAt = 0, _cam = null;
   function getActiveCamera() {
     try {
+      var now = performance.now();
+      if (_cam && _cam.isPerspectiveCamera && now - _camAt < 1000) return _cam;
+      _camAt = now; _cam = null;
       var g = window.__SB_GAME__ || getGS();
       if (!g) return null;
       var keys = Object.keys(g);
@@ -1160,7 +1166,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (v && typeof v === "object" && !Array.isArray(v)) {
           var vk = Object.keys(v);
           for (var j = 0; j < vk.length; j++) {
-            try { var c = v[vk[j]]; if (c && c.isPerspectiveCamera) return c; } catch (e) {}
+            try { var c = v[vk[j]]; if (c && c.isPerspectiveCamera) return _cam = c; } catch (e) {}
           }
         }
       }
@@ -2330,15 +2336,34 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
       });
     })();
-    // Syndicate's patches to the game's source, made to the game's methods
-    // at runtime: a method holding one of these words gets copies with it
-    // changed, used while that switch is on. A copy that can't run outside
-    // the game's own scope falls back to the original for good.
-    //  - team lock bypass: "&& this.team.open" taken out
-    //  - saturated ship colours: "this.hue,.5,1" and "this.hue,.5,.5" made "this.hue,1,1"
+    // Team lock bypass: a team's board on the team page sets
+    // "enabled = start && team.open" each time it's drawn; with the switch
+    // on, a started team's board stays clickable when the team is closed
+    // (Syndicate takes "&& this.team.open" out of the game's source).
+    (function teamlockBypass() {
+      var CORE = window.__perfCore;
+      if (!CORE || !CORE.whenClass) return;
+      CORE.whenClass(function(p, key) { return key === "TeamBoard"; }, function(P) {
+        Object.getOwnPropertyNames(P).forEach(function(n) {
+          var fn = P[n], src;
+          if (n === "constructor" || typeof fn !== "function") return;
+          try { src = Function.prototype.toString.call(fn); } catch (e) { return; }
+          if (!/this\.enabled\s*=\s*this\.start\s*&&\s*this\.team\.open/.test(src)) return;
+          P[n] = function() {
+            var r = fn.apply(this, arguments);
+            if (this.start && this.team && !this.team.open && featOn("teamlock")) this.enabled = true;
+            return r;
+          };
+        });
+      }, 600000);
+    })();
+    // Saturated ship colours in the game's own drawing: a method holding
+    // "this.hue,.5,1" or "this.hue,.5,.5" gets a copy with "this.hue,1,1"
+    // (Syndicate's edit of the game's source), used while the switch is on.
+    // A copy that can't run outside the game's own scope falls back to the
+    // original for good. (The ship finishes are done in shipMaterials.)
     (function sourcePatches() {
       var RULES = [
-        { feat: "teamlock", word: "this.team.open", rx: /\s*&&\s*this\.team\.open/g, to: "" },
         { feat: "saturate", word: "this.hue,.5,", rx: /this\.hue,\.5,(?:1|\.5)(?!\d)/g, to: "this.hue,1,1" }
       ];
       var seen = new WeakSet(), found = [];
@@ -2390,7 +2415,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             var names;
             try { names = Object.getOwnPropertyNames(p); } catch (e) { names = []; }
             for (var i = 0; i < names.length; i++) {
-              if (names[i] === "constructor") continue;
+              if (names[i] === "constructor" || /^build\w*Material$/.test(names[i])) continue;
               var d = Object.getOwnPropertyDescriptor(p, names[i]);
               if (d && typeof d.value === "function") patch(p, names[i], key + ".prototype");
             }
@@ -2409,8 +2434,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     })();
     // High contrast: every ship built in the full colour finish; team
     // highlight: in team games, other ships built plain green (yours) or
-    // yellow (the other teams'). Ships take it when the game builds them
-    // (joining, respawning, upgrading).
+    // yellow (the other teams'); saturated colours: a finish's glow at full
+    // saturation (the game builds it at half). Ships take it when the game
+    // builds them (joining, respawning, upgrading).
     (function shipMaterials() {
       var CORE = window.__perfCore;
       if (!CORE || !CORE.whenClass) return;
@@ -2435,8 +2461,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             try {
               var hl = teamColor(this), T = window.THREE;
               if (hl != null && T && T.MeshPhongMaterial) { this.material = new T.MeshPhongMaterial({ color: hl, emissive: darken(hl), specular: 0x111111, shininess: 10 }); return; }
-              if (n !== "buildFullColorMaterial" && featOn("highcontrast")) return full.apply(this, arguments);
-              return orig.apply(this, arguments);
+              var r = n !== "buildFullColorMaterial" && featOn("highcontrast") ? full.apply(this, arguments) : orig.apply(this, arguments);
+              var m = this.material, H = window.OIl1O;
+              if (featOn("saturate") && m && m.emissive && m.emissive.setHex && typeof this.hue === "number" && H && typeof H.hsvToRgbHex === "function") m.emissive.setHex(H.hsvToRgbHex(this.hue, 1, 1));
+              return r;
             } finally { this.__stMat = 0; }
           };
         });
@@ -2648,7 +2676,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           if (!p) continue;
           var e = edge(me, p, 28), nm = _aegisNames[t.id] || "#" + t.id, label = nm + "  " + dist;
           // the light box: the ship's hull size, a little room round it
-          var code = (_synStat[t.id] || {}).code || (_aegisShips[t.id] || {}).code, half = !e.off && ppu > 0 ? Math.max(7, (RAD[code] || 3) * 1.45 * ppu) : 0;
+          var code = (_synStat[t.id] || {}).code || (_aegisShips[t.id] || {}).code, half = !e.off && ppu > 0 ? Math.max(6, (RAD[code] || 3) * .8 * ppu) : 0;
           // (the line stops at the box)
           var lx = me.x - p.x, ly = me.y - p.y, m = Math.max(Math.abs(lx), Math.abs(ly)), k = half && m > half ? half / m : 0;
           if (!half || m > half) {
