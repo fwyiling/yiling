@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.7 (the r124 app: 1.4.0; the r187 app: 1.0.2, no longer built).
+starblast.io logo. Current version: 2.5.8 (the r124 app: 1.4.1, also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the

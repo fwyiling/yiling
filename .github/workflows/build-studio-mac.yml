@@ -1,0 +1,73 @@
+name: Build starblast.io r124 for Mac
+
+# The r124 app (studio-desktop/, --features r124) for macOS: one universal
+# .dmg (Apple Silicon and Intel), committed to dist-studio/. Built on demand:
+# when this file changes, or run by hand (Actions > this workflow > Run).
+# The app isn't signed: macOS asks to confirm the first open (right-click >
+# Open, or System Settings > Privacy & Security > Open Anyway).
+
+on:
+  push:
+    branches: [claude/laughing-noether-4c3asv]
+    paths:
+      - '.github/workflows/build-studio-mac.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-studio-mac
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: studio-desktop/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        working-directory: studio-desktop
+        run: npm install --no-audit --no-fund
+
+      # the r124 scripts, made fresh from the client and the compat layer
+      - name: Build the three.js r124 scripts
+        run: |
+          cd tools && npm install --no-audit --no-fund && cd .. && node tools/build-r124.js
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: studio-desktop
+          args: --config src-tauri/tauri.r124.conf.json --features r124 --target universal-apple-darwin --bundles dmg
+
+      - name: Commit the .dmg for delivery
+        run: |
+          mkdir -p dist-studio
+          find studio-desktop/src-tauri/target -path '*bundle/dmg/*.dmg' -exec cp {} dist-studio/ \;
+          ls -la dist-studio | grep -i dmg || { echo "::error::no .dmg was built"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist-studio/*.dmg
+          if git diff --cached --quiet; then echo "no changes"; else
+            git commit -m "Add starblast.io r124 Mac build for delivery [skip ci]"
+            ok=
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin ${{ github.ref_name }} && git push origin HEAD:${{ github.ref_name }} && { ok=1; break; }
+              sleep $((i * 5))
+            done
+            test -n "$ok"
+          fi

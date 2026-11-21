@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124 (app)
 // @namespace    syndicate
-// @version      2.5.7
+// @version      2.5.8
 // @description  The Studio client with the game on three.js r124, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -838,7 +838,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.7", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.8", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1285,7 +1285,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     function kind() {
       var M = window.MediaRecorder;
       if (!M || !M.isTypeSupported) return null;
-      var c = [["video/webm;codecs=vp8,opus", "webm"], ["video/webm;codecs=vp9,opus", "webm"], ["video/webm", "webm"]];
+      // (MP4 last: the Mac app's engine, Safari's, may record only that)
+      var c = [["video/webm;codecs=vp8,opus", "webm"], ["video/webm;codecs=vp9,opus", "webm"], ["video/webm", "webm"], ["video/mp4", "mp4"]];
       var want = LS("STUDIO_rec_mime");
       if (want && M.isTypeSupported(want)) return [want, /mp4/.test(want) ? "mp4" : "webm"];
       for (var i = 0; i < c.length; i++) if (M.isTypeSupported(c[i][0])) return c[i];
