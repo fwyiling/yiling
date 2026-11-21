@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r187 (app)
 // @namespace    syndicate
-// @version      2.5.5
+// @version      2.5.6
 // @description  The Studio client with the game on three.js r187, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -7039,7 +7039,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.5", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.6", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -7203,7 +7203,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     survtimer:  { key: "STUDIO_survtimer", def: "1" },
     saturate:   { key: "STUDIO_saturate",  def: "1" },
     highcontrast:{ key: "AEGIS_highcontrast", def: "1" },
-    teamhl:     { key: "STUDIO_teamhl",    def: "1" }
+    teamhl:     { key: "STUDIO_teamhl",    def: "1" },
+    record:     { key: "STUDIO_record",    def: "1" }
   };
   function espNear() { var v = LS("STUDIO_esp_range"); return v === "near"; }
   function espDist() { var v = parseFloat(LS("STUDIO_esp_dist")); return v >= 10 ? v : 100; }
@@ -7450,6 +7451,90 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     } catch (e) {}
     return false;
   }
+  // ---- Match recording (the app only) ----
+  // From entering a match to leaving it or closing the app: the game's canvas
+  // (the HUD included; the client's overlays left out) and its sound, into
+  // Videos\Starblast. The app is handed each second as it's recorded and
+  // appends it to the file, so there's no export to wait for: leaving (the
+  // page reloads) or closing the app loses at most the last second. The
+  // switch is in the \ panel; ] (all mods off) doesn't stop it.
+  (function recorder() {
+    var R = { on: false, mr: null, path: null, err: null, audio: [] };
+    window.__studioRec = R;
+    function inv() { var T = window.__TAURI__; return T && T.core && T.core.invoke; }
+    function wanted() { return !!inv() && (LS(FEAT.record.key) || FEAT.record.def) === "1"; }
+    // the game's sound: whatever goes to the speakers also goes to a stream
+    // (only made in the app, with recording on)
+    try {
+      var AN = window.AudioNode && AudioNode.prototype, conn = AN && AN.connect, taps = new WeakMap();
+      if (conn) AN.connect = function(dst) {
+        var r = conn.apply(this, arguments);
+        try {
+          if (dst && window.AudioDestinationNode && dst instanceof AudioDestinationNode && wanted()) {
+            var md = taps.get(dst.context);
+            if (!md) { md = dst.context.createMediaStreamDestination(); taps.set(dst.context, md); R.audio.push(md); }
+            conn.call(this, md);
+          }
+        } catch (e) {}
+        return r;
+      };
+    } catch (e) {}
+    // WebM VP8: decodes cleanly from the second-by-second pieces and is the
+    // lightest to encode while playing (Chromium's MP4/H.264 recordings
+    // decoded with broken blocks in a test). STUDIO_rec_mime picks another.
+    function kind() {
+      var M = window.MediaRecorder;
+      if (!M || !M.isTypeSupported) return null;
+      var c = [["video/webm;codecs=vp8,opus", "webm"], ["video/webm;codecs=vp9,opus", "webm"], ["video/webm", "webm"]];
+      var want = LS("STUDIO_rec_mime");
+      if (want && M.isTypeSupported(want)) return [want, /mp4/.test(want) ? "mp4" : "webm"];
+      for (var i = 0; i < c.length; i++) if (M.isTypeSupported(c[i][0])) return c[i];
+      return null;
+    }
+    function stamp() { var d = new Date(), p = function(n) { return (n < 10 ? "0" : "") + n; }; return "starblast " + d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + "-" + p(d.getMinutes()) + "-" + p(d.getSeconds()); }
+    // the app's calls go one after another, in recording order
+    var queue = Promise.resolve();
+    function call(cmd, args) { queue = queue.then(function() { var a = typeof args === "function" ? args() : args; return Promise.resolve(a).then(function(v) { return inv()(cmd, v); }); }).catch(function(e) { R.err = cmd + ": " + (e && e.message || e); }); return queue; }
+    function start() {
+      var cv = document.querySelector("#canvaswrapper canvas"), k = kind();
+      if (!cv || !cv.captureStream || !k) { R.err = k ? "no game canvas" : "no recorder in this engine"; return false; }
+      var st = cv.captureStream(60), md = R.audio[0], a = md && md.stream.getAudioTracks()[0], mr;
+      if (a) st.addTrack(a);
+      try { mr = new MediaRecorder(st, { mimeType: k[0], videoBitsPerSecond: 8e6, audioBitsPerSecond: 128e3 }); } catch (e) { R.err = String(e); return false; }
+      R.on = true; R.mr = mr; R.err = null; R.path = null;
+      call("rec_open", { name: stamp(), ext: k[1] }).then(function(p) { if (typeof p === "string") { R.path = p; try { localStorage.setItem("STUDIO_rec_last", p); localStorage.setItem("STUDIO_rec_told", "0"); } catch (e) {} } });
+      // each second's piece, appended by the app as raw bytes
+      mr.ondataavailable = function(e) { if (e.data && e.data.size) call("rec_chunk", function() { return e.data.arrayBuffer(); }); };
+      mr.onstop = function() { call("rec_close"); };
+      mr.start(1000);
+      return true;
+    }
+    function stop(e) {
+      var mr = R.mr;
+      R.on = false; R.mr = null;
+      if (mr && mr.state !== "inactive") try { mr.stop(); } catch (x) {}
+      // (still on the page: say so once the file is closed)
+      if (mr && !(e && e.type === "pagehide")) queue.then(function() { setTimeout(told, 0); });
+    }
+    setInterval(function() {
+      var ws = window.__synGameWS, inMatch = typeof window.__synMyShipId === "number" && ws && ws.readyState === 1;
+      if (R.on && (!inMatch || !wanted())) stop();
+      else if (!R.on && inMatch && wanted()) start();
+    }, 500);
+    addEventListener("pagehide", stop);
+    // where the last match went (Leave Game reloads the page: told on the next one)
+    function told() {
+      var p = LS("STUDIO_rec_last");
+      if (!p || LS("STUDIO_rec_told") !== "0" || !document.body) return;
+      try { localStorage.setItem("STUDIO_rec_told", "1"); } catch (e) {}
+      var d = document.createElement("div");
+      d.textContent = "Match recorded: " + p;
+      d.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;max-width:90vw;padding:8px 14px;font:13px/1.4 Play,Verdana,sans-serif;color:#fff;background:hsl(205,27%,18%);border:1px solid hsl(205,30%,45%);text-shadow:0 0 6px hsla(200,100%,70%,.55);pointer-events:none";
+      document.body.appendChild(d);
+      setTimeout(function() { d.remove(); }, 8000);
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function() { if (!R.on) told(); }); else told();
+  })();
   window.__SB_GAME__ = null;
   setInterval(function() {
     try {
@@ -13104,6 +13189,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         sec("Gameplay") +
         r("fastrespawn", "Fast respawn") +
         r("teamlock", "Team lock bypass (join closed teams)") +
+        (window.__TAURI__ ? r("record", "Record matches (to Videos\\Starblast)") : "") +
         sec("Radar") +
         r("radarzoom", "Full map radar") +
         r("radarnames", "Player names (with full map radar)") +

@@ -4,3 +4,12 @@ description = "Allows the studio_fullscreen command (F11: the window fills the s
 commands.allow = [
     "studio_fullscreen"
 ]
+
+[[permission]]
+identifier = "allow-studio-record"
+description = "Allows the match recorder: a file in Videos\\Starblast opened, appended to and closed (rec_open, rec_chunk, rec_close)."
+commands.allow = [
+    "rec_open",
+    "rec_chunk",
+    "rec_close"
+]

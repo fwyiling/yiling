@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window loads starblast.io (a remote page), so IPC needs an explicit remote.urls grant. Only the fullscreen toggle (F11).",
+  "description": "The main window loads starblast.io (a remote page), so IPC needs an explicit remote.urls grant. The fullscreen toggle (F11) and the match recorder (a file in Videos\\Starblast).",
   "windows": ["main"],
   "remote": {
     "urls": ["https://starblast.io", "https://starblast.io/*", "https://*.starblast.io/*"]
   },
   "permissions": [
     "core:default",
-    "allow-studio-fullscreen"
+    "allow-studio-fullscreen",
+    "allow-studio-record"
   ]
 }

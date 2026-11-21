@@ -1,4 +1,6 @@
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use std::io::Write;
+use std::sync::Mutex;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 // The Studio client (clients/studio-client.user.js), built into the app: it
 // runs at the start of every starblast.io page load (the main frame only,
@@ -56,10 +58,63 @@ fn studio_fullscreen(window: tauri::WebviewWindow) -> Result<bool, String> {
     Ok(on)
 }
 
+// Match recording (the client's recorder): a file in Videos\Starblast,
+// opened when a match starts, each second appended as it's recorded, closed
+// when the match ends; one left open (the app closed mid-match) is closed as
+// the app exits.
+struct Rec(Mutex<Option<(std::fs::File, std::path::PathBuf)>>);
+
+#[tauri::command]
+fn rec_open(app: tauri::AppHandle, rec: tauri::State<Rec>, name: String, ext: String) -> Result<String, String> {
+    if ext != "mp4" && ext != "webm" {
+        return Err("unknown format".into());
+    }
+    let mut stem: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || " -_".contains(*c)).take(80).collect();
+    if stem.trim().is_empty() {
+        stem = "starblast".into();
+    }
+    let dir = app.path().video_dir().map_err(|e| e.to_string())?.join("Starblast");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut path = dir.join(format!("{stem}.{ext}"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}).{ext}"));
+        n += 1;
+    }
+    let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    *rec.0.lock().map_err(|e| e.to_string())? = Some((file, path.clone()));
+    Ok(path.to_string_lossy().into_owned())
+}
+
+// (the bytes come raw: the page sends an ArrayBuffer)
+#[tauri::command]
+fn rec_chunk(rec: tauri::State<Rec>, request: tauri::ipc::Request) -> Result<(), String> {
+    let mut guard = rec.0.lock().map_err(|e| e.to_string())?;
+    let Some((file, _)) = guard.as_mut() else { return Ok(()) };
+    match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => file.write_all(bytes),
+        tauri::ipc::InvokeBody::Json(v) => {
+            let bytes: Vec<u8> = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
+            file.write_all(&bytes)
+        }
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rec_close(rec: tauri::State<Rec>) -> Result<Option<String>, String> {
+    let taken = rec.0.lock().map_err(|e| e.to_string())?.take();
+    Ok(taken.map(|(file, path)| {
+        let _ = file.sync_all();
+        path.to_string_lossy().into_owned()
+    }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![studio_fullscreen])
+        .manage(Rec(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![studio_fullscreen, rec_open, rec_chunk, rec_close])
         .setup(|app| {
             WebviewWindowBuilder::new(
                 app,

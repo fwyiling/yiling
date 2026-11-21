@@ -17,8 +17,6 @@ on:
       - 'clients/starblast-r124.user.js'
       - 'clients/studio-r124.user.js'
       - 'clients/studio-r124-app.user.js'
-      - 'clients/studio-r187-app.user.js'
-      - 'tools/build-modern.js'
       - 'clients/shared/three-legacy.js'
       - 'clients/shared/perf-core.js'
       - 'tools/three-build-lib.js'
@@ -55,11 +53,11 @@ jobs:
         working-directory: studio-desktop
         run: npm install --no-audit --no-fund
 
-      # the r124 and r187 scripts, made fresh from the client and the compat layers
-      - name: Build the three.js r124 and r187 scripts
+      # the r124 scripts, made fresh from the client and the compat layer
+      - name: Build the three.js r124 scripts
         shell: bash
         run: |
-          cd tools && npm install --no-audit --no-fund && cd .. && node tools/build-r124.js && node tools/build-modern.js 187 --studio
+          cd tools && npm install --no-audit --no-fund && cd .. && node tools/build-r124.js
 
       - name: App icon (the starblast.io logo)
         shell: bash
@@ -79,9 +77,11 @@ jobs:
             echo "::error::the starblast.io icon could not be fetched and none is in the repo yet"; exit 1
           fi
 
-      # (the r124 and r187 apps are built: the client with the game on
-      # three.js r124 / r187; the r85 app stays at its last installer, 2.4.0.
-      # To build it again, add a tauri-action step with no args.)
+      # (only the r124 app is built: the client with the game on three.js r124.
+      # The r85 app stays at its last installer, 2.4.0, the r187 app at 1.0.2;
+      # to build one again, add a tauri-action step (no args / --config
+      # src-tauri/tauri.r187.conf.json --features r187, and build-modern.js
+      # 187 --studio in the scripts step).)
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,13 +89,6 @@ jobs:
           projectPath: studio-desktop
           args: --config src-tauri/tauri.r124.conf.json --features r124
 
-      # the same client on three.js r187: its own app, beside the r124 one
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: studio-desktop
-          args: --config src-tauri/tauri.r187.conf.json --features r187
 
       - name: Check the app needs no Visual C++ runtime
         shell: bash
