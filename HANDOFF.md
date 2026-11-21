@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.3 (the r124 app: 1.2.4, the r187 app: 1.0.0).
+starblast.io logo. Current version: 2.5.4 (the r124 app: 1.2.5, the r187 app: 1.0.1).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -47,6 +47,7 @@ app and the tests find the client by relative path.
    - Aim Assist has two triggers, each its own switch: holding its key (`STUDIO_aim`), firing (`STUDIO_aim_fire`, starts as `STUDIO_aim` was).
    - It wraps the WebSocket constructor to read the game's messages (ship status, radar, volleys, names) and caps control messages at 90 per second.
    - Game hooks found at runtime: `TeamBoard` (team lock), `IOII0` (ship finishes: High Contrast, team highlight, saturated glow), the scoreboard's draw method (icons), and a copy of `IOII0`/`WeaponModel` `IOIll` with `this.hue,1,1` (saturation). Checked against index.js; `window.__studioPatches` lists what was patched.
+   - Upgrade animation fix (2.5.4, always on, source-patch rules with `feat: null`): the game's ShipModel/WeaponModel bump scales a new ship by `1.5 - cos(2π√i)` over 30 ticks, which ends at 0.5× and then snaps to 1× (the shield bump ends at 1.1 and snaps to 1.2); `+.5*i` / `+.1*i` make each end where it lands. Mock (scratchpad `bumptest.js`): before `… 0.52 0.50 → 1.00`, after `… 1.03 0.99 1.00`. The upgrade-panel ship previews were checked too: pixel-identical on r85, r124 and r187.
 
 Sections 1–4 change no pixel. Verify mode checks every skipped call against the real GPU state and every skipped upload against the canvas pixels.
 
@@ -61,7 +62,7 @@ What the game needs from r124 (each checked in the mock against r85):
 - Polyhedra: r85 split faces into 2^detail rows, r124 into detail + 1 (planets and rocks were coarse); the game's detail is converted.
 - `.shading` (also in material options), `addAttribute`, `renderer.context`: mapped without r124's per-call warnings.
 
-The workflow builds only the r124 app now (the r85 app stays at 2.4.0; its build step was taken out). The r124 app: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
+The workflow builds the r124 and r187 apps (the r85 app stays at 2.4.0; its build step was taken out). The r124 app: `--features r124 --config src-tauri/tauri.r124.conf.json` ("starblast.io r124", its own identifier, installs beside the main app); the workflow rebuilds the r124 scripts first. Checked in the mock: the perf core hooks the same (renderers, effects, governor; verify mode 0 mismatches on WebGL2, its WebGL1 vertex-array layer steps aside for r124's own), and the client's features (ESP, aim physics, radar, leaderboard icons, patches, join, Leave Game, the \\ panel) work as on r85.
 
 The app (1.2.2 on) uses `clients/studio-r124-app.user.js` instead (`build()`'s `app` output): the app runs it before any page script, so r124 runs right there as code (not held as a string and injected), `sbSetup` adapts it, and the page's own r85 `<script>` is never run (a MutationObserver sets its type to `javascript/blocked` as the parser adds it; r85 does `THREE = THREE || {}` and would fill r124's object). Then the client, which finds `window.THREE` already r124. At load it logs `[three r124] loaded as the page's three.js` or warns if r85 ran anyway. Measured in Chromium: three.js start-up ~45 ms (r85 run + r124 string inject) down to ~22 ms; in-game cost unchanged. Mock: corestate same as studio-r124, bench VERIFY 0 mismatches, keytest passes. The Tampermonkey scripts keep the swap (they can be injected late).
 

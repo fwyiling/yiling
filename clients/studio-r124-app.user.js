@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124 (app)
 // @namespace    syndicate
-// @version      2.5.3
+// @version      2.5.4
 // @description  The Studio client with the game on three.js r124, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -838,7 +838,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.3", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.4", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -2504,7 +2504,14 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     // original for good. (The ship finishes are done in shipMaterials.)
     (function sourcePatches() {
       var RULES = [
-        { feat: "saturate", word: "this.hue,.5,", rx: /this\.hue,\.5,(?:1|\.5)(?!\d)/g, to: "this.hue,1,1" }
+        { feat: "saturate", word: "this.hue,.5,", rx: /this\.hue,\.5,(?:1|\.5)(?!\d)/g, to: "this.hue,1,1" },
+        // (always on: the game's own mistakes) The upgrade animation
+        // (ShipModel.bump): a new ship is scaled by 1.5 - cos(2pi sqrt(i)) over
+        // 30 ticks, which ends at half size, then snaps to full size; the
+        // shield's bump ends at 1.1 and snaps to 1.2. Each now ramps to where
+        // it ends (start and peak as the game has them).
+        { feat: null, word: "=1.5-Math.cos(Math.pow(", rx: /(\w+)=1\.5-Math\.cos\(Math\.pow\((\w+),\.5\)\*([^;,]*?)\*2\)/g, to: "$1=1.5-Math.cos(Math.pow($2,.5)*$3*2)+.5*$2" },
+        { feat: null, word: "=1.2-.1*Math.cos(Math.pow(", rx: /(\w+)=1\.2-\.1\*Math\.cos\(Math\.pow\((\w+),\.5\)\*([^;,]*?)\*2\)/g, to: "$1=1.2-.1*Math.cos(Math.pow($2,.5)*$3*2)+.1*$2" }
       ];
       var seen = new WeakSet(), found = [];
       window.__studioPatches = found;
@@ -2518,7 +2525,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (src.indexOf("[native code]") >= 0) return;
         var hits = RULES.filter(function(r) { return src.indexOf(r.word) >= 0 && src.replace(r.rx, r.to) !== src; });
         if (!hits.length) return;
-        var variants = {}, broken = false, label = where + "." + name + " (" + hits.map(function(r) { return r.feat; }).join(", ") + ")";
+        var variants = {}, broken = false, label = where + "." + name + " (" + hits.map(function(r) { return r.feat || "fix"; }).join(", ") + ")";
         function build(mask) {
           if (variants[mask] !== undefined) return variants[mask];
           var ns = src;
@@ -2531,7 +2538,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (!build((1 << hits.length) - 1)) { found.push(label + " can't copy"); return; }
         var wrapped = function() {
           var mask = 0;
-          if (!broken) for (var b = 0; b < hits.length; b++) if (featOn(hits[b].feat)) mask |= 1 << b;
+          if (!broken) for (var b = 0; b < hits.length; b++) if (hits[b].feat == null || featOn(hits[b].feat)) mask |= 1 << b;
           var f = mask ? build(mask) : null;
           if (!f) return fn.apply(this, arguments);
           try { return f.apply(this, arguments); }
