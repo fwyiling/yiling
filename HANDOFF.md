@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.4 (the r124 app: 1.2.5, the r187 app: 1.0.1).
+starblast.io logo. Current version: 2.5.5 (the r124 app: 1.2.6, the r187 app: 1.0.2).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -48,6 +48,7 @@ app and the tests find the client by relative path.
    - It wraps the WebSocket constructor to read the game's messages (ship status, radar, volleys, names) and caps control messages at 90 per second.
    - Game hooks found at runtime: `TeamBoard` (team lock), `IOII0` (ship finishes: High Contrast, team highlight, saturated glow), the scoreboard's draw method (icons), and a copy of `IOII0`/`WeaponModel` `IOIll` with `this.hue,1,1` (saturation). Checked against index.js; `window.__studioPatches` lists what was patched.
    - Upgrade animation fix (2.5.4, always on, source-patch rules with `feat: null`): the game's ShipModel/WeaponModel bump scales a new ship by `1.5 - cos(2π√i)` over 30 ticks, which ends at 0.5× and then snaps to 1× (the shield bump ends at 1.1 and snaps to 1.2); `+.5*i` / `+.1*i` make each end where it lands. Mock (scratchpad `bumptest.js`): before `… 0.52 0.50 → 1.00`, after `… 1.03 0.99 1.00`. The upgrade-panel ship previews were checked too: pixel-identical on r85, r124 and r187.
+   - Gravity field NaN guard (2.5.5, `fieldGuard`): survival/battle royale pass `sqrt((tick - start) / duration)` to `updateRepulsor`; before the start (survival's countdown) that's NaN (`Math.max(1e-5, NaN)` keeps it) and the field meshes got a NaN scale (garbage rings round the sun). Every class's `updateRepulsor` now takes NaN as 1e-5. A source-patch rule can't do it: `modeStep` reads the game's private config (`lO00I`), so its copy throws and falls back. Mock: in the countdown scale NaN → 0, after the start unchanged. A scan of the game for the bump's kind of mistake (an animation curve that doesn't end where it then snaps) found only the bumps.
 
 Sections 1–4 change no pixel. Verify mode checks every skipped call against the real GPU state and every skipped upload against the canvas pixels.
 
@@ -89,7 +90,7 @@ The app (1.2.2 on) uses `clients/studio-r124-app.user.js` instead (`build()`'s `
 - Same legacy + compat layers as r159 otherwise. `sbThreeLegacy` takes an optional third argument, the renderer name to wrap (default `WebGLRenderer`).
 - WebGPU was tried and dropped: the WebGPU build has a top-level await, and the game's 10 GLSL ShaderMaterials would need porting.
 - r187 checked in the mock, game and client, injected before and after the game's script: no three.js errors; corestate same as r124, bench VERIFY 0 mismatches, keytest, aimsplit/aimshots/aim, glidefit, ESP and tags as r124.
-- The gravity-field rings (`Repulsor`) showing in some mock runs and not others is the mock's survival clock, not three.js: their scale is `sqrt((tick - survival_start) / duration)`, NaN before the start (the earlier note blaming r124/r159 was wrong).
+- The gravity-field rings (`Repulsor`) showing in some mock runs and not others is the mock's survival clock, not three.js: their scale is `sqrt((tick - survival_start) / duration)`, NaN before the start (the earlier note blaming r124/r159 was wrong; the client now guards it, see the NaN guard above).
 
 ## Keys and settings
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r187
 // @namespace    syndicate
-// @version      2.5.4
+// @version      2.5.5
 // @description  The Studio client with the game on three.js r187 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -2876,7 +2876,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.4", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.5", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -4540,6 +4540,27 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     // (Syndicate's edit of the game's source), used while the switch is on.
     // A copy that can't run outside the game's own scope falls back to the
     // original for good. (The ship finishes are done in shipMaterials.)
+    // The gravity field's size (survival, battle royale): the mode passes
+    // sqrt((tick - start) / duration), which before the start (survival's
+    // countdown) is the root of a negative, NaN; Math.max(1e-5, NaN) keeps
+    // it, and the field's meshes got a NaN scale and drew garbage (rings
+    // round the sun). Every updateRepulsor now takes NaN as the tiny size
+    // the game means before the start. (Its push on ships was already off:
+    // "distance < NaN" is false.) The mode's own method can't be patched in
+    // its source: it reads the game's private config.
+    (function fieldGuard() {
+      var done = new WeakSet(), n = 0, iv = setInterval(function() {
+        for (var key in window) {
+          var cls; try { cls = window[key]; } catch (e) { continue; }
+          var p = typeof cls === "function" && cls.prototype, f;
+          try { f = p && Object.prototype.hasOwnProperty.call(p, "updateRepulsor") && p.updateRepulsor; } catch (e) { continue; }
+          if (typeof f !== "function" || done.has(p)) continue;
+          done.add(p);
+          p.updateRepulsor = (function(orig) { return function(v) { if (typeof v === "number" && v !== v) arguments[0] = 1e-5; return orig.apply(this, arguments); }; })(f);
+        }
+        if (++n >= 30) clearInterval(iv);
+      }, 2000);
+    })();
     (function sourcePatches() {
       var RULES = [
         { feat: "saturate", word: "this.hue,.5,", rx: /this\.hue,\.5,(?:1|\.5)(?!\d)/g, to: "this.hue,1,1" },
