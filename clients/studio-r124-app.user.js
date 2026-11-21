@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124 (app)
 // @namespace    syndicate
-// @version      2.5.8
+// @version      2.5.9
 // @description  The Studio client with the game on three.js r124, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -838,7 +838,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.8", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.9", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1259,7 +1259,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // page reloads) or closing the app loses at most the last second. The
   // switch is in the \ panel; ] (all mods off) doesn't stop it.
   (function recorder() {
-    var R = { on: false, mr: null, path: null, err: null, audio: [] };
+    var R = { on: false, mr: null, rc: null, path: null, err: null, audio: [] };
     window.__studioRec = R;
     function inv() { var T = window.__TAURI__; return T && T.core && T.core.invoke; }
     function wanted() { return !!inv() && (LS(FEAT.record.key) || FEAT.record.def) === "1"; }
@@ -1298,11 +1298,36 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     function call(cmd, args) { queue = queue.then(function() { var a = typeof args === "function" ? args() : args; return Promise.resolve(a).then(function(v) { return inv()(cmd, v); }); }).catch(function(e) { R.err = cmd + ": " + (e && e.message || e); }); return queue; }
     function start() {
       var cv = document.querySelector("#canvaswrapper canvas"), k = kind();
-      if (!cv || !cv.captureStream || !k) { R.err = k ? "no game canvas" : "no recorder in this engine"; return false; }
-      var st = cv.captureStream(60), md = R.audio[0], a = md && md.stream.getAudioTracks()[0], mr;
+      if (!cv || !k) { R.err = k ? "no game canvas" : "no recorder in this engine"; return false; }
+      // The video is one size from start to end: the game canvas renders
+      // fewer pixels while zoomed out (FOV) or when the quality steps down,
+      // and a recording that changed size there played wrong (stuck at the
+      // first size in many players). Each frame is copied, scaled, onto a
+      // canvas of the screen's full size (at most 1080 high), which is what's
+      // recorded.
+      var dpr = devicePixelRatio || 1, vw = Math.max(2, cv.clientWidth * dpr), vh = Math.max(2, cv.clientHeight * dpr), f = Math.min(1, 1080 / vh, 1920 / vw);
+      var rc = document.createElement("canvas"); rc.width = Math.round(vw * f / 2) * 2; rc.height = Math.round(vh * f / 2) * 2;
+      var rx = rc.getContext("2d", { alpha: false }), vt = null;
+      if (!rx || !rc.captureStream) { R.err = "no recorder in this engine"; return false; }
+      rx.imageSmoothingQuality = "high";
+      function copy() {
+        if (R.rc !== rc) return;
+        requestAnimationFrame(copy);
+        var g = document.querySelector("#canvaswrapper canvas") || cv, gw = g.clientWidth, gh = g.clientHeight;
+        if (!(g.width > 0 && gw > 0 && gh > 0)) return;
+        // (the window's shape changed mid-match: fitted, black round it)
+        var s = Math.min(rc.width / gw, rc.height / gh), dw = gw * s, dh = gh * s;
+        if (Math.abs(dw - rc.width) > 1 || Math.abs(dh - rc.height) > 1) { rx.fillStyle = "#000"; rx.fillRect(0, 0, rc.width, rc.height); }
+        try { rx.drawImage(g, (rc.width - dw) / 2, (rc.height - dh) / 2, dw, dh); } catch (e) {}
+        // (a canvas off the page sends a frame only when told)
+        if (vt && vt.requestFrame) vt.requestFrame();
+      }
+      var st = rc.captureStream(0), md = R.audio[0], a = md && md.stream.getAudioTracks()[0], mr;
       if (a) st.addTrack(a);
       try { mr = new MediaRecorder(st, { mimeType: k[0], videoBitsPerSecond: 8e6, audioBitsPerSecond: 128e3 }); } catch (e) { R.err = String(e); return false; }
-      R.on = true; R.mr = mr; R.err = null; R.path = null;
+      vt = st.getVideoTracks()[0];
+      R.on = true; R.mr = mr; R.err = null; R.path = null; R.rc = rc; R.size = rc.width + "x" + rc.height;
+      copy();
       call("rec_open", { name: stamp(), ext: k[1] }).then(function(p) { if (typeof p === "string") { R.path = p; try { localStorage.setItem("STUDIO_rec_last", p); localStorage.setItem("STUDIO_rec_told", "0"); } catch (e) {} } });
       // each second's piece, appended by the app as raw bytes
       mr.ondataavailable = function(e) { if (e.data && e.data.size) call("rec_chunk", function() { return e.data.arrayBuffer(); }); };
@@ -1312,7 +1337,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     }
     function stop(e) {
       var mr = R.mr;
-      R.on = false; R.mr = null;
+      R.on = false; R.mr = null; R.rc = null;
       if (mr && mr.state !== "inactive") try { mr.stop(); } catch (x) {}
       // (still on the page: say so once the file is closed)
       if (mr && !(e && e.type === "pagehide")) queue.then(function() { setTimeout(told, 0); });
