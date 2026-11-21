@@ -3,9 +3,9 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 // The Studio client (clients/studio-client.user.js), built into the app: it
 // runs at the start of every starblast.io page load (the main frame only,
 // not the page's iframes), before the game makes its WebGL context.
-#[cfg(not(feature = "r124"))]
+#[cfg(not(any(feature = "r124", feature = "r187")))]
 const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-client.user.js");
-#[cfg(not(feature = "r124"))]
+#[cfg(not(any(feature = "r124", feature = "r187")))]
 const TITLE: &str = "starblast.io";
 // The r124 build (--features r124): the client with the game on three.js r124
 // in place of r85 (clients/studio-r124-app.user.js, built by tools/build-r124.js).
@@ -13,6 +13,12 @@ const TITLE: &str = "starblast.io";
 const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-r124-app.user.js");
 #[cfg(feature = "r124")]
 const TITLE: &str = "starblast.io r124";
+// The r187 build (--features r187): the same on three.js r187
+// (clients/studio-r187-app.user.js, built by tools/build-modern.js 187 --studio).
+#[cfg(all(feature = "r187", not(feature = "r124")))]
+const PAGE_SCRIPT: &str = include_str!("../../../clients/studio-r187-app.user.js");
+#[cfg(all(feature = "r187", not(feature = "r124")))]
+const TITLE: &str = "starblast.io r187";
 
 // WebView2 (the Edge engine the app runs the game in) flags. Setting these
 // replaces the app's defaults, so the features Tauri itself turns off

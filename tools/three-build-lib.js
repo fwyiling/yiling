@@ -179,4 +179,4 @@ function build(o) {
   if (o.app) write(o.app, header('Syndicate Studio on three.js r' + rev + ' (app)', 'The Studio client with the game on three.js r' + rev + ', for the app (runs before the page; the page\'s own three.js is not run).', cver, ver) +
     three.replace(/\s*$/, '\n;\n') + appLoader(o.setup, rev) + body.replace(/^\s*\n/, ''), rev);
 }
-module.exports = { build, root, swapper };
+module.exports = { build, root, swapper, appLoader };

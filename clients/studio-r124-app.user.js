@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124 (app)
 // @namespace    syndicate
-// @version      2.5.2
+// @version      2.5.3
 // @description  The Studio client with the game on three.js r124, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -33,7 +33,9 @@ var sbThree = (function() {
       // scale's length, which turned the crosshair face-down: culled)
       if (this.isSpriteMaterial) shader.vertexShader = shader.vertexShader
         .replace("scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) );", "scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 );")
-        .replace("scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );", "scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 );");
+        .replace("scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );", "scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 );")
+        // (r168 on: both in one line)
+        .replace("vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), length( modelMatrix[ 1 ].xyz ) );", "vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 ), length( modelMatrix[ 1 ].xyz ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 ) );");
       // (a uniform of that name is the same value under the new one)
       var U = shader.uniforms;
       if (U && U.texture && !U.sbTexture) U.sbTexture = U.texture;
@@ -346,11 +348,13 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       patch(P, "deleteRenderbuffer", function(f) { return function(b) { var s = S(this); if (s.rb === b) s.rb = null; return f.call(this, b); }; });
 
       // ---- 2. uploads of canvases whose drawing hasn't changed ----
-      patch(P, "texImage2D", function(f) {
-        return function() {
-          var a = arguments, s = S(this), src = a.length === 6 ? a[5] : null, k = s.unit + ":" + a[0], tex = s.unit !== undefined ? s.tex[k] : undefined;
+      // (r125 on, three.js gives a texture its size once (texStorage2D) and
+      // sends each new drawing with texSubImage2D: the whole canvas at 0,0 is
+      // the same upload)
+      function canvasUpload(f, gl, a, src, keyHead) {
+          var s = S(gl), k = s.unit + ":" + a[0], tex = s.unit !== undefined ? s.tex[k] : undefined;
           if (tex && src && src.__is2d && src instanceof HTMLCanvasElement) {
-            var key = [a[0], a[1], a[2], a[3], a[4], s.ps[GL.UNPACK_FLIP_Y_WEBGL], s.ps[GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL], s.ps[GL.UNPACK_COLORSPACE_CONVERSION_WEBGL], s.ps[GL.UNPACK_ALIGNMENT], src.width, src.height].join(",");
+            var key = keyHead.concat([s.ps[GL.UNPACK_FLIP_Y_WEBGL], s.ps[GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL], s.ps[GL.UNPACK_COLORSPACE_CONVERSION_WEBGL], s.ps[GL.UNPACK_ALIGNMENT], src.width, src.height]).join(",");
             var d = src.__cd;
             var unchanged = d && tex.__stUp && tex.__stUp === d.up && d.key === key && s.ps[GL.UNPACK_FLIP_Y_WEBGL] !== undefined && s.ps[GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL] !== undefined &&
               (d.n === 0 || d.ok && d.cur === d.last && fontEp === d.fe);
@@ -359,7 +363,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
               d.cur = ""; d.n = 0; d.ok = false; d.started = false; d.bp = false;
               ST.uploadsSkipped++; return;
             }
-            var r = f.apply(this, a);
+            var r = f.apply(gl, a);
             var up = ++UPID; tex.__stUp = up;
             src.__cd = { up: up, key: key, last: d && d.ok ? d.cur : null, cur: "", n: 0, ok: false, started: false, bp: false, fe: fontEp };
             // (read twice: the first read of a GPU canvas comes back with a few
@@ -367,11 +371,21 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             if (VERIFY) try { var vg = src.getContext("2d"); vg.getImageData(0, 0, src.width, src.height); src.__cd.px = vg.getImageData(0, 0, src.width, src.height).data.slice(); } catch (e) {}
             ST.uploadsSent++; return r;
           }
-          if (tex) tex.__stUp = 0;
+          if (tex) tex.__stUp = 0; else if (keyHead[0] === "sub" && s.unit === undefined) BUMP++;
+          return f.apply(gl, a);
+      }
+      patch(P, "texImage2D", function(f) {
+        return function() { var a = arguments; return canvasUpload(f, this, a, a.length === 6 ? a[5] : null, [a[0], a[1], a[2], a[3], a[4]]); };
+      });
+      patch(P, "texSubImage2D", function(f) {
+        return function() {
+          var a = arguments;
+          if (a.length === 7 && a[2] === 0 && a[3] === 0) return canvasUpload(f, this, a, a[6], ["sub", a[0], a[1], a[4], a[5]]);
+          var s = S(this), x = s.unit !== undefined ? s.tex[s.unit + ":" + a[0]] : undefined; if (x) x.__stUp = 0; else if (s.unit === undefined) BUMP++;
           return f.apply(this, a);
         };
       });
-      ["texSubImage2D", "copyTexImage2D", "copyTexSubImage2D", "compressedTexImage2D", "compressedTexSubImage2D", "texStorage2D"].forEach(function(n) {
+      ["copyTexImage2D", "copyTexSubImage2D", "compressedTexImage2D", "compressedTexSubImage2D", "texStorage2D"].forEach(function(n) {
         patch(P, n, function(f) { return function(t) { var s = S(this), x = s.unit !== undefined ? s.tex[s.unit + ":" + t] : undefined; if (x) x.__stUp = 0; else if (s.unit === undefined) BUMP++; return f.apply(this, arguments); }; });
       });
 
@@ -824,7 +838,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.2", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.3", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and

@@ -11,6 +11,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 # the client with the game on three.js r124 (a separate app: tauri.r124.conf.json)
 r124 = []
+# the same on three.js r187 (a separate app: tauri.r187.conf.json)
+r187 = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

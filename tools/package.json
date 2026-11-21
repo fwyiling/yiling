@@ -1,12 +1,13 @@
 {
   "name": "starblast-tools",
   "private": true,
-  "description": "Build tools: tools/build-r124.js needs three.js r124",
+  "description": "Build tools: three.js builds for tools/build-r124.js, build-r159.js, build-modern.js",
   "devDependencies": {
     "esbuild": "^0.28.2",
     "three": "0.124.0",
     "three-r125": "npm:three@^0.125.0",
     "three-r159": "npm:three@^0.159.0",
-    "three-r167": "npm:three@^0.167.0"
+    "three-r167": "npm:three@^0.167.0",
+    "three-r187": "npm:three@^0.187.0"
   }
 }

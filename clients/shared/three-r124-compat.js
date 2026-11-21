@@ -16,7 +16,9 @@ function sbThreeCompat(T) {
     // scale's length, which turned the crosshair face-down: culled)
     if (this.isSpriteMaterial) shader.vertexShader = shader.vertexShader
       .replace("scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) );", "scale.x = length( vec3( modelMatrix[ 0 ].x, modelMatrix[ 0 ].y, modelMatrix[ 0 ].z ) ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 );")
-      .replace("scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );", "scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 );");
+      .replace("scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) );", "scale.y = length( vec3( modelMatrix[ 1 ].x, modelMatrix[ 1 ].y, modelMatrix[ 1 ].z ) ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 );")
+      // (r168 on: both in one line)
+      .replace("vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), length( modelMatrix[ 1 ].xyz ) );", "vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ) * ( modelMatrix[ 0 ].x < 0.0 ? -1.0 : 1.0 ), length( modelMatrix[ 1 ].xyz ) * ( modelMatrix[ 1 ].y < 0.0 ? -1.0 : 1.0 ) );");
     // (a uniform of that name is the same value under the new one)
     var U = shader.uniforms;
     if (U && U.texture && !U.sbTexture) U.sbTexture = U.texture;

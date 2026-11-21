@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.2 (the r124 app: 1.2.3).
+starblast.io logo. Current version: 2.5.3 (the r124 app: 1.2.4, the r187 app: 1.0.0).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -77,16 +77,18 @@ The app (1.2.2 on) uses `clients/studio-r124-app.user.js` instead (`build()`'s `
 - Checked in the mock: the game draws the same as r124 (planet, ships, lights, HUD, crosshair); corestate hooks, bench VERIFY mismatch 0, keytest, aimsplit, aim shot modes, tags and panel pass.
 - Further (r160+): no single-file build (bundle the module), legacy lights gone at r165 (light strengths by hand), WebGL1 gone at r163.
 
-## three.js r167 (game only, test build)
+## three.js r167 and r187 (`tools/build-modern.js`)
 
-`node tools/build-r167.js` writes `clients/starblast-r167.user.js` (the game alone, no client). The user tested it on starblast.io and it works.
+`node tools/build-modern.js <rev> [--studio]` builds any three.js from r160 on (the npm alias `three-r<rev>` in `tools/`): `clients/starblast-r<rev>.user.js` (game only) and with `--studio` `clients/studio-r<rev>.user.js` (Tampermonkey) and `clients/studio-r<rev>-app.user.js` (the app). Built so far: r167 (game only; the user tested it on starblast.io) and r187 (all three; the **r187 app**, `--features r187`, `tauri.r187.conf.json`, "starblast.io r187", own identifier, installs beside the r124 app; CI builds both apps).
 
-- r167 has no `build/three.min.js`: esbuild (in `tools/`) turns `build/three.module.min.js` into an IIFE. esbuild's exports are non-configurable getters, so `window.THREE` is set to a plain copy of them; otherwise the legacy layer can't replace `THREE.BoxGeometry` etc.
+- No single-file build after r159 (r187: not even `three.module.min.js`; `three.module.js` imports `three.core.js`): esbuild bundles `build/three.module.js` into an IIFE. esbuild's exports are non-configurable getters, so `window.THREE` is set to a plain copy of them; otherwise the legacy layer can't replace `THREE.BoxGeometry` etc.
 - Legacy lights are gone at r165: when `ShaderChunk.lights_pars_begin` has no `LEGACY_LIGHTS`, `three-legacy.js` patches it (light colours × PI, r124's linear distance fade), as legacy mode did. r124/r159 are not affected.
+- r168 on: the sprite shader computes both scales in one line (`vec2 scale = vec2( length( modelMatrix[ 0 ].xyz ), ... )`); `three-r124-compat.js` keeps the sign for that form too (without it the HUD's mirrored sprites, scoreboard, panels, survivor count, were culled).
+- perf-core's canvas upload skip also covers a whole-canvas `texSubImage2D` (r125+ sizes a texture once with texStorage2D and sends new drawings that way): on r159/r187 it skipped 0, now ~50 a match like r124; verify mode 0 mismatches.
 - Same legacy + compat layers as r159 otherwise. `sbThreeLegacy` takes an optional third argument, the renderer name to wrap (default `WebGLRenderer`).
 - WebGPU was tried and dropped: the WebGPU build has a top-level await, and the game's 10 GLSL ShaderMaterials would need porting.
-- Checked in the mock with the script injected both before and after the game's script: no three.js errors, renders like r159.
-- Found while comparing: the sun's gravity-field rings (`Repulsor`, setting `gravity_field`) draw on r85 and r167 but not on r124/r159. Not fixed; the user didn't ask.
+- r187 checked in the mock, game and client, injected before and after the game's script: no three.js errors; corestate same as r124, bench VERIFY 0 mismatches, keytest, aimsplit/aimshots/aim, glidefit, ESP and tags as r124.
+- The gravity-field rings (`Repulsor`) showing in some mock runs and not others is the mock's survival clock, not three.js: their scale is `sqrt((tick - survival_start) / duration)`, NaN before the start (the earlier note blaming r124/r159 was wrong).
 
 ## Keys and settings
 
