@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.5.9
+// @version      2.5.10
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -726,7 +726,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.9", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.10", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1198,9 +1198,15 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       var rx = rc.getContext("2d", { alpha: false }), vt = null;
       if (!rx || !rc.captureStream) { R.err = "no recorder in this engine"; return false; }
       rx.imageSmoothingQuality = "high";
-      function copy() {
+      // (a steady 60 frames a second at most: the screen refreshes at 144 Hz
+      // and more, and an uneven, faster stream played sped up in some players)
+      var next = 0;
+      function copy(now) {
         if (R.rc !== rc) return;
         requestAnimationFrame(copy);
+        now = now || performance.now();
+        if (now < next) return;
+        next = Math.max(next + 1000 / 60, now - 1000 / 60);
         var g = document.querySelector("#canvaswrapper canvas") || cv, gw = g.clientWidth, gh = g.clientHeight;
         if (!(g.width > 0 && gw > 0 && gh > 0)) return;
         // (the window's shape changed mid-match: fitted, black round it)
