@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio
 // @namespace    syndicate
-// @version      2.5.6
+// @version      2.5.7
 // @description  Starblast for recording: the game exactly as it looks, with less work for the GPU. Optional (in the \ panel): FOV zoom and extended view, full map radar with names, leaderboard ship icons, ESP, ship colour highlights, no stars, fast respawn, team lock bypass, Aim Assist, join a custom game by its link, Leave Game in the menu.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -726,7 +726,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.6", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.7", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -891,7 +891,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     saturate:   { key: "STUDIO_saturate",  def: "1" },
     highcontrast:{ key: "AEGIS_highcontrast", def: "1" },
     teamhl:     { key: "STUDIO_teamhl",    def: "1" },
-    record:     { key: "STUDIO_record",    def: "1" }
+    record:     { key: "STUDIO_record",    def: "1" },
+    bigradar:   { key: "STUDIO_bigradar",  def: "1" }
   };
   function espNear() { var v = LS("STUDIO_esp_range"); return v === "near"; }
   function espDist() { var v = parseFloat(LS("STUDIO_esp_dist")); return v >= 10 ? v : 100; }
@@ -1221,6 +1222,132 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       setTimeout(function() { d.remove(); }, 8000);
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function() { if (!R.on) told(); }); else told();
+  })();
+  // ---- Big radar (E) ----
+  // The whole map over the middle of the screen, centred on you: every player
+  // a dot in their colour with name and tier. Ships near you at their exact
+  // place (their own status, carried on by their speed), the rest at their
+  // radar place, gliding to each update. On its own see-through layer: the
+  // game's view, camera and clicks are left alone. E (STUDIO_bigradar_key)
+  // shows and hides it; the switch is in the panel.
+  (function bigRadar() {
+    var TIER = ["", "#c9d1d9", "#7ee787", "#56d4f5", "#7aa2ff", "#c08bff", "#ffa94d", "#ff5d73"];
+    var cv = null, ctx = null, shown = false, drawn = false, disp = {}, last = 0;
+    function key() { return String(LS("STUDIO_bigradar_key") || "e").toLowerCase(); }
+    function wrapD(d, h) { var s = 2 * h; return ((d + h) % s + s) % s - h; }
+    function ensure() {
+      if (cv && cv.isConnected) return true;
+      if (!document.body) return false;
+      cv = document.createElement("canvas");
+      cv.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147482000;display:none";
+      document.body.appendChild(cv);
+      ctx = cv.getContext("2d");
+      return true;
+    }
+    document.addEventListener("keydown", function(e) {
+      if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || !e.key || e.key.toLowerCase() !== key()) return;
+      var t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!featOn("bigradar") || !inGame()) return;
+      shown = !shown;
+    }, true);
+    function hide() { if (drawn) { cv.style.display = "none"; drawn = false; } }
+    function frame() {
+      requestAnimationFrame(frame);
+      var now = Date.now(), dt = last ? Math.min(.1, (now - last) / 1000) : .016; last = now;
+      if (!shown || !featOn("bigradar") || !inGame() || !ensure()) { if (cv) hide(); if (!inGame()) shown = false; return; }
+      var me = window.__synMyShipId, my = me != null && _synStat[me], half = _aegisMapHalf > 0 ? _aegisMapHalf : 400;
+      var mx, my2, mang = null;
+      if (my && my.alive) { var ma = (now - my.ts) * .06; mx = my.x + my.vx * ma; my2 = my.y + my.vy * ma; mang = my.angle; }
+      else if (me != null && _aegisShips[me]) { mx = _aegisShips[me].x; my2 = _aegisShips[me].y; }
+      else { hide(); return; }
+      var W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1);
+      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      if (!drawn) { cv.style.display = "block"; drawn = true; }
+      var c = ctx, R = .46 * Math.min(W, H), cx = W / 2, cy = H / 2, k = R / half, ch = .14 * R;
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.clearRect(0, 0, W, H);
+      // the frame: the map's square, corners cut
+      function oct() { c.beginPath(); c.moveTo(cx - R + ch, cy - R); c.lineTo(cx + R - ch, cy - R); c.lineTo(cx + R, cy - R + ch); c.lineTo(cx + R, cy + R - ch); c.lineTo(cx + R - ch, cy + R); c.lineTo(cx - R + ch, cy + R); c.lineTo(cx - R, cy + R - ch); c.lineTo(cx - R, cy - R + ch); c.closePath(); }
+      c.save();
+      oct(); c.fillStyle = "rgba(8,16,30,.16)"; c.fill(); c.clip();
+      // the grid moves with you (world lines, an eighth of the map apart)
+      var step = half / 4, ox = wrapD(-mx, step) * k, oy = wrapD(my2, step) * k;
+      c.strokeStyle = "rgba(140,190,255,.07)"; c.lineWidth = 1; c.beginPath();
+      for (var gx = cx - R + ((ox % (step * k)) + step * k) % (step * k); gx < cx + R; gx += step * k) { c.moveTo(gx, cy - R); c.lineTo(gx, cy + R); }
+      for (var gy = cy - R + ((oy % (step * k)) + step * k) % (step * k); gy < cy + R; gy += step * k) { c.moveTo(cx - R, gy); c.lineTo(cx + R, gy); }
+      c.stroke();
+      // the ships
+      var ease = 1 - Math.exp(-dt * 10), ids = {}, id, boxes = [], items = [];
+      // (a name over another, or over a dot, moves up or down to a free spot,
+      // a line back to its dot)
+      function spot(x, y, w) {
+        var tries = [0, 13, -13, 26, -26, 39, -39, 52, -52];
+        for (var i = 0; i < tries.length; i++) {
+          var b = { x0: x, x1: x + w, y0: y + tries[i] - 7, y1: y + tries[i] + 7 }, ok = true;
+          for (var j = 0; j < boxes.length && ok; j++) { var o = boxes[j]; if (b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0) ok = false; }
+          if (ok) { boxes.push(b); return { dy: tries[i] }; }
+        }
+        return null;
+      }
+      for (id in _aegisShips) ids[id] = 1;
+      for (id in _synStat) ids[id] = 1;
+      c.font = "600 12px Play, Verdana, sans-serif"; c.textBaseline = "middle"; c.lineJoin = "round";
+      for (id in ids) {
+        if (String(id) === String(me)) continue;
+        var s = _synStat[id], r = _aegisShips[id], x, y, code;
+        if (s && s.alive && now - s.ts < 600) { var a = (now - s.ts) * .06; x = s.x + s.vx * a; y = s.y + s.vy * a; code = s.code; }
+        else if (r && now - r.ts < SHIP_TTL && !(r.zeroSince != null && now - r.zeroSince > BOT_ZERO_TTL)) { x = r.x; y = r.y; code = r.code; }
+        else { delete disp[id]; continue; }
+        var D = disp[id];
+        if (!D || now - D.seen > 1500) D = disp[id] = { x: x, y: y, seen: now };
+        // (exact places follow at once; radar ones glide)
+        var e2 = s && s.alive && now - s.ts < 600 ? 1 : ease;
+        D.x += wrapD(x - D.x, half) * e2; D.y += wrapD(y - D.y, half) * e2; D.seen = now;
+        var px = cx + wrapD(D.x - mx, half) * k, py = cy - wrapD(D.y - my2, half) * k;
+        var hue = _aegisHueOf[id];
+        items.push({ id: id, px: px, py: py, code: code, col: typeof hue === "number" ? "hsl(" + Math.round(hue) + ",100%,65%)" : "#e8eef5" });
+      }
+      // the dots, then the names round them (the dots count as taken space)
+      items.forEach(function(it) {
+        c.shadowColor = it.col; c.shadowBlur = 8; c.fillStyle = it.col;
+        c.beginPath(); c.arc(it.px, it.py, 3.6, 0, 6.2832); c.fill();
+        boxes.push({ x0: it.px - 5, x1: it.px + 5, y0: it.py - 5, y1: it.py + 5 });
+      });
+      c.shadowBlur = 0;
+      boxes.push({ x0: cx - 8, x1: cx + 8, y0: cy - 9, y1: cy + 8 });
+      items.forEach(function(it) {
+        var nm = _aegisNames[it.id];
+        if (nm == null) { requestName(it.id); return; }
+        var tr = it.code ? Math.floor(it.code / 100) : 0, hasT = tr >= 1 && tr <= 7, nw = c.measureText(nm).width, w = nw + (hasT ? 24 : 4);
+        var p = spot(it.px + 7, it.py, w), left = false;
+        if (!p) { p = spot(it.px - 7 - w, it.py, w); left = !!p; }
+        if (!p) return;
+        var x0 = left ? it.px - 7 - w : it.px + 7, ly = it.py + p.dy;
+        if (p.dy) { c.strokeStyle = it.col; c.globalAlpha = .45; c.lineWidth = 1; c.beginPath(); c.moveTo(it.px, it.py); c.lineTo(left ? x0 + w : x0, ly); c.stroke(); c.globalAlpha = 1; }
+        c.strokeStyle = "rgba(0,0,0,.85)"; c.lineWidth = 3; c.fillStyle = it.col;
+        c.strokeText(nm, x0 + 1, ly); c.fillText(nm, x0 + 1, ly);
+        if (hasT) {
+          var tx = x0 + 5 + nw;
+          c.font = "600 9px Play, Verdana, sans-serif";
+          c.strokeStyle = TIER[tr]; c.lineWidth = 1; c.fillStyle = "rgba(0,0,0,.55)";
+          c.fillRect(tx, ly - 6, 17, 12); c.strokeRect(tx + .5, ly - 5.5, 16, 11);
+          c.fillStyle = TIER[tr]; c.fillText("T" + tr, tx + 3, ly + .5);
+          c.font = "600 12px Play, Verdana, sans-serif";
+        }
+      });
+      // you, at the centre, pointing where your nose points
+      c.save(); c.translate(cx, cy); c.rotate(mang == null ? 0 : -(mang - 90) * Math.PI / 180);
+      c.shadowColor = "#fff"; c.shadowBlur = 10; c.fillStyle = "#fff";
+      c.beginPath(); c.moveTo(0, -8); c.lineTo(5.5, 6); c.lineTo(0, 3); c.lineTo(-5.5, 6); c.closePath(); c.fill();
+      c.restore();
+      c.restore();
+      // the edge, lit
+      oct(); c.strokeStyle = "hsla(200,70%,72%,.6)"; c.lineWidth = 1.5; c.shadowColor = "hsla(200,100%,70%,.6)"; c.shadowBlur = 10; c.stroke(); c.shadowBlur = 0;
+      c.fillStyle = "hsla(200,70%,80%,.7)"; c.font = "600 11px Play, Verdana, sans-serif"; c.textAlign = "center";
+      c.fillText("RADAR · " + key().toUpperCase() + " to close", cx, cy - R - 10); c.textAlign = "start";
+    }
+    requestAnimationFrame(frame);
   })();
   window.__SB_GAME__ = null;
   setInterval(function() {
@@ -6882,6 +7009,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("radarnames", "Player names (with full map radar)") +
         r("radaricons", "Ship icons in place of dots") +
         r("radartier", "Tier tags on names") +
+        r("bigradar", "Big radar over the screen (E shows / hides)") +
         sec("Combat") +
         r("aim", "Aim Assist while holding its key") +
         r("aimfire", "Aim Assist while firing") +
