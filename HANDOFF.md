@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.11 (the r124 app: 1.4.4 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
+starblast.io logo. Current version: 2.5.12 (the r124 app: 1.4.5 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -139,6 +139,8 @@ There is also a sisyphus-desktop/ in the repo: a copy of studio-desktop that has
 ## Where the time goes (2.5.11, mock, r124 app, scratchpad `profmap.js`)
 
 Per frame at ~55 fps in the mock (SwiftShader, so "browser" includes the emulated GPU): browser/native 16.1 ms; three.js scene updates (updateMatrixWorld, updateMatrix, setFromEuler) ~0.3 ms; three.js rendering/other ~0.35 ms; the game's own code 0.44 ms; the whole client ~0.45 ms (GPU state cache 0.09, aim assist 0.04, the rest under 0.03 each). GPU: ~30 draw calls/frame (the plain game 695 GL calls → 154 with the client), the game's 10 custom shaders under 0.5% of draw time (HUD sprites the largest share): merging meshes or rewriting shaders wouldn't show. Network: game messages came as Blobs read back twice (game + client), ~0.3 ms/frame and an async hop per message; since 2.5.11 the game's sockets use `binaryType = "arraybuffer"` and the game's `onmessage` gets `{ data: { arrayBuffer() } }` (the shape the spectator's injected messages use) in the same task: Blob/arrayBuffer time 174 ms/8 s → 0. The game's renderer setSize resizes come from the quality governor stepping `resolution_div` (0.2%).
+
+- Low input lag (2.5.12, perf-core getContext, `STUDIO_lowlatency` "1", OFF by default, panel "Low input lag, experimental"): `desynchronized: true` on the game's own WebGL canvases (alpha not true; the previews keep theirs). In the mock the browser honoured it but the canvas kept each old frame under the new one (HUD smeared, sun white, recordings with half-drawn frames): the game needs a fresh buffer each frame. A real GPU's swap chain may behave; the user is to try it. Logs `[Studio] low input lag (desynchronized canvas): on / not supported here`; `__perfCore.lowLatency`.
 
 ## Decisions already made
 

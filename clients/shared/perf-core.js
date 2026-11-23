@@ -86,7 +86,19 @@
       var a = {}; if (attrs) for (var k in attrs) a[k] = attrs[k];
       if (a.powerPreference == null) a.powerPreference = "high-performance";
       if (a.failIfMajorPerformanceCaveat == null) a.failIfMajorPerformanceCaveat = false;
+      // Low input lag (STUDIO_lowlatency "1", off by default: experimental):
+      // the game's own canvas (the one with no see-through background; the
+      // ship previews ask for alpha) is desynchronized: its frames go to the
+      // screen without waiting for the page to be composited, about a frame
+      // sooner. In the mock (SwiftShader) the canvas then kept its old frame
+      // under each new one (the HUD smeared, the sun white): the game counts
+      // on a fresh buffer each frame, which a real GPU's swap chain may or may
+      // not give. Set when the context is made: applies on the next load.
+      var low = false;
+      try { low = a.alpha !== true && a.desynchronized == null && localStorage.getItem("STUDIO_lowlatency") === "1"; } catch (e) {}
+      if (low) a.desynchronized = true;
       var c = getCtx.call(this, type, a);
+      if (low && c && !this.__stLow) { this.__stLow = 1; try { CORE.lowLatency = !!(c.getContextAttributes() || {}).desynchronized; console.log("[Studio] low input lag (desynchronized canvas): " + (CORE.lowLatency ? "on" : "not supported here")); } catch (e) {} }
       if (c && !this.__stLost) { this.__stLost = 1; this.addEventListener("webglcontextlost", function() { if (c) c.__st = null; }); this.addEventListener("webglcontextrestored", function() { if (c) c.__st = null; }); }
       return c;
     }
