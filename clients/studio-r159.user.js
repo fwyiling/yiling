@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r159
 // @namespace    syndicate
-// @version      2.5.10
+// @version      2.5.11
 // @description  The Studio client with the game on three.js r159 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -2877,7 +2877,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.10", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.11", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -3262,6 +3262,22 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         else if (d instanceof ArrayBuffer) { try { onBinary(new Uint8Array(d)); } catch (e) {} }
         else onText(d, ws, u);
       });
+      // Game messages as bytes, not Blobs: a Blob is read back (async, a
+      // copy) by each reader, the game and this client, before anything
+      // happens. The game's handler gets the bytes the way it takes them
+      // ({ arrayBuffer() }, as the spectator's injected messages do), in the
+      // same task the message came in.
+      try {
+        var gameOn = null;
+        ws.binaryType = "arraybuffer";
+        Object.defineProperty(ws, "onmessage", { configurable: true, enumerable: true, get: function() { return gameOn; }, set: function(f) { gameOn = typeof f === "function" ? f : null; } });
+        ws.addEventListener("message", function(evt) {
+          if (!gameOn) return;
+          var d = evt.data;
+          if (d instanceof ArrayBuffer) gameOn.call(ws, { data: { arrayBuffer: function() { return Promise.resolve(d); }, byteLength: d.byteLength }, target: ws, currentTarget: ws, type: "message", origin: evt.origin });
+          else gameOn.call(ws, evt);
+        });
+      } catch (e) {}
       ws.addEventListener("close", function() { if (_aegisWS === ws) _aegisWS = null; });
       return ws;
     }

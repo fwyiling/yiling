@@ -5,7 +5,7 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.10 (the r124 app: 1.4.3 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
+starblast.io logo. Current version: 2.5.11 (the r124 app: 1.4.4 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
@@ -135,6 +135,10 @@ WebView2 flags are in lib.rs. GPU: discrete GPU, GPU blocklist ignored, GPU rast
 The icon: studio-desktop/app-icon.svg is the starblast.io logo redrawn as vectors (the site only serves a 64 px icon, which looked pixelated), rendered to app-icon.png at 1024 (any SVG renderer, e.g. resvg). The workflow runs `tauri icon` on it into src-tauri/icons/ and commits the icons with the installers. Without app-icon.png it falls back to tools/make-icon.mjs (the logo from the game's own page).
 
 There is also a sisyphus-desktop/ in the repo: a copy of studio-desktop that hasn't been rebranded yet. The client reads `window.__studioBrand` for its section titles.
+
+## Where the time goes (2.5.11, mock, r124 app, scratchpad `profmap.js`)
+
+Per frame at ~55 fps in the mock (SwiftShader, so "browser" includes the emulated GPU): browser/native 16.1 ms; three.js scene updates (updateMatrixWorld, updateMatrix, setFromEuler) ~0.3 ms; three.js rendering/other ~0.35 ms; the game's own code 0.44 ms; the whole client ~0.45 ms (GPU state cache 0.09, aim assist 0.04, the rest under 0.03 each). GPU: ~30 draw calls/frame (the plain game 695 GL calls → 154 with the client), the game's 10 custom shaders under 0.5% of draw time (HUD sprites the largest share): merging meshes or rewriting shaders wouldn't show. Network: game messages came as Blobs read back twice (game + client), ~0.3 ms/frame and an async hop per message; since 2.5.11 the game's sockets use `binaryType = "arraybuffer"` and the game's `onmessage` gets `{ data: { arrayBuffer() } }` (the shape the spectator's injected messages use) in the same task: Blob/arrayBuffer time 174 ms/8 s → 0. The game's renderer setSize resizes come from the quality governor stepping `resolution_div` (0.2%).
 
 ## Decisions already made
 
