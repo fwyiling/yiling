@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124
 // @namespace    syndicate
-// @version      2.5.12
+// @version      2.5.13
 // @description  The Studio client with the game on three.js r124 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -912,7 +912,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.12", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.13", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1079,7 +1079,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     teamhl:     { key: "STUDIO_teamhl",    def: "1" },
     record:     { key: "STUDIO_record",    def: "1" },
     bigradar:   { key: "STUDIO_bigradar",  def: "1" },
-    lowlatency: { key: "STUDIO_lowlatency", def: "0" }
+    lowlatency: { key: "STUDIO_lowlatency", def: "0" },
+    fastctl:    { key: "STUDIO_fastctl",   def: "0" }
   };
   function espNear() { var v = LS("STUDIO_esp_range"); return v === "near"; }
   function espDist() { var v = parseFloat(LS("STUDIO_esp_dist")); return v >= 10 ? v : 100; }
@@ -1457,6 +1458,36 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       setTimeout(function() { d.remove(); }, 8000);
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function() { if (!R.on) told(); }); else told();
+  })();
+  // ---- Faster controls (STUDIO_fastctl, off by default) ----
+  // The game sends your keys and heading on its 60 Hz tick, but while they
+  // keep changing (turning, aiming) it stretches the gap between sends one
+  // tick at a time up to 6 (100 ms), shrinking it only once they stop: about
+  // 10 updates a second while you steer (a press of fire goes at once). With
+  // the switch on the gap is held at STUDIO_fastctl_cap ticks (2: up to 30 a
+  // second). The method and its counter are found by their code (the names
+  // change with the game's builds).
+  (function fastControls() {
+    var CORE = window.__perfCore;
+    if (!CORE || !CORE.whenClass) return;
+    function cap() { var c = parseInt(LS("STUDIO_fastctl_cap"), 10); return c >= 1 && c <= 6 ? c : 2; }
+    CORE.whenClass(function(p) {
+      return Object.getOwnPropertyNames(p).some(function(n) { var f; try { f = p[n]; } catch (e) { return false; } return typeof f === "function" && /previous_shoot/.test(String(f)) && /=Math\.min\(6,this\.[\w$]+\+1\)/.test(String(f)); });
+    }, function(P) {
+      Object.getOwnPropertyNames(P).forEach(function(n) {
+        var f = P[n], src = typeof f === "function" ? String(f) : "", m = /previous_shoot/.test(src) && /this\.([\w$]+)=Math\.min\(6,this\.\1\+1\)/.exec(src);
+        if (!m) return;
+        var k = m[1];
+        P[n] = function() {
+          var on = featOn("fastctl"), c = on ? cap() : 0;
+          if (on && this[k] > c) this[k] = c;
+          var r = f.apply(this, arguments);
+          if (on && this[k] > c) this[k] = c;
+          return r;
+        };
+        window.__studioFastCtl = { method: n, counter: k };
+      });
+    }, 600000);
   })();
   // ---- Big radar (E) ----
   // The whole map over the middle of the screen, centred on you: every player
@@ -7238,6 +7269,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         sec("Gameplay") +
         r("fastrespawn", "Fast respawn") +
         r("lowlatency", "Low input lag, experimental (next game load; off if the HUD smears)") +
+        r("fastctl", "Faster controls: steering sent up to 30×/s, not 10 (experimental)") +
         r("teamlock", "Team lock bypass (join closed teams)") +
         (window.__TAURI__ ? r("record", "Record matches (to Videos\\Starblast)") : "") +
         sec("Radar") +
