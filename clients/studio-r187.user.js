@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r187
 // @namespace    syndicate
-// @version      2.5.14
+// @version      2.5.15
 // @description  The Studio client with the game on three.js r187 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -2888,7 +2888,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.14", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.15", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -3606,12 +3606,14 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   // code); the Supabase address and publishable key are public by design.
   (function crossover() {
     var DEF_URL = "https://hszkhwvvdghgowjrgxyv.supabase.co", DEF_SKEY = "sb_publishable_CF_8a3kjvG3F73ADbhCOeQ_qWx5hAzX", NAME = "studio";
+    // (the crossover key, built in at the user's ask: only they use this client)
+    var DEF_XKEY = "8db7db49effdc5a2d6ea5f047523911de99026c0e79228d9";
     var PKEY = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now().toString(36);
     var X = { status: "off", match: null, channel: null, err: null };
     var ws = null, ref = 0, joinRef = null, topic = null, joined = false, hbPending = null, hbTimer = null;
     var backoff = 2000, retryAt = 0, joinRetryAt = 0, wantMatch = null, wantTopic = null, hashing = null;
     var pres = {}, genesis = {}, announced = null;
-    function cfg() { return { url: LS("STUDIO_crossover_url") || DEF_URL, skey: LS("STUDIO_crossover_supakey") || DEF_SKEY, xkey: String(LS("STUDIO_crossover_key") || "").trim() }; }
+    function cfg() { return { url: LS("STUDIO_crossover_url") || DEF_URL, skey: LS("STUDIO_crossover_supakey") || DEF_SKEY, xkey: String(LS("STUDIO_crossover_key") || DEF_XKEY).trim() }; }
     function wanted() { return featOn("crossover") && cfg().xkey.length > 0; }
     function nref() { return String(++ref); }
     function out(o) { if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(o)); } catch (e) {} }
@@ -3620,6 +3622,20 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     }
     function hostOf(u) { return String(u || "").replace(/^wss?:\/\//, "").replace(/[/?#].*$/, ""); }
     function nickOf(id) { var n = _aegisNames[id]; return typeof n === "string" ? n.slice(0, 40) : null; }
+    // (your own name: the server's for your ship, else the one you typed in)
+    function myNick(me) { var n = nickOf(me); if (n) return n; try { var g = getGS(); if (g && typeof g.player_name === "string" && g.player_name.trim()) return g.player_name.trim().slice(0, 40); } catch (e) {} return null; }
+    // a word on screen when the link changes (so it shows without the console)
+    var toldStatus = null, toldIds = {};
+    function toast(msg) {
+      console.log("[Studio] " + msg);
+      if (!document.body) return;
+      var d = document.createElement("div");
+      d.textContent = msg;
+      d.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;max-width:90vw;padding:7px 14px;font:13px/1.4 Play,Verdana,sans-serif;color:hsl(48,100%,80%);background:hsl(205,27%,14%);border:1px solid hsl(48,90%,55%);text-shadow:0 0 6px hsla(48,100%,60%,.6);pointer-events:none";
+      document.body.appendChild(d);
+      setTimeout(function() { d.remove(); }, 5000);
+    }
+    function say(status, msg) { if (toldStatus === status) return; toldStatus = status; toast(msg); }
     function same(a, b) { return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase(); }
     // the GENESIS players: per presence key, its latest announcement
     function rebuild() {
@@ -3647,7 +3663,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     }
     function announce() {
       if (!joined) return;
-      var me = window.__synMyShipId, n = me != null ? nickOf(me) : null;
+      var me = window.__synMyShipId, n = me != null ? myNick(me) : null;
       if (typeof me !== "number" || me < 0 || me > 65535 || !n) return;
       var key = me + "|" + n;
       if (announced === key) return;
@@ -3660,8 +3676,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       if (m.topic === "phoenix" && m.event === "phx_reply") { if (m.ref === hbPending) hbPending = null; return; }
       if (m.topic !== topic) return;
       if (m.event === "phx_reply" && m.ref === joinRef) {
-        if (m.payload && m.payload.status === "ok") { joined = true; backoff = 2000; X.status = "joined"; X.err = null; announce(); }
-        else { X.status = "join refused"; X.err = JSON.stringify(m.payload && m.payload.response || m.payload).slice(0, 200); topic = null; joinRetryAt = Date.now() + 5000; }
+        if (m.payload && m.payload.status === "ok") { joined = true; backoff = 2000; X.status = "joined"; X.err = null; announce(); say("joined", "GENESIS crossover: connected to this match's channel"); }
+        else { X.status = "join refused"; X.err = JSON.stringify(m.payload && m.payload.response || m.payload).slice(0, 200); topic = null; joinRetryAt = Date.now() + 5000; say("refused", "GENESIS crossover: the server refused the channel (" + X.err + ")"); }
       } else if (m.event === "presence_state") {
         pres = {};
         var st = m.payload || {};
@@ -3690,7 +3706,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       ws.onerror = function() {};
       ws.onclose = function() {
         clearInterval(hbTimer); hbTimer = null; ws = null; joined = false; topic = null; joinRef = null; announced = null; clearPeople();
-        if (wantMatch) { X.status = "reconnecting"; retryAt = Date.now() + backoff; backoff = Math.min(60000, backoff * 2); }
+        if (wantMatch) { X.status = "reconnecting"; retryAt = Date.now() + backoff; backoff = Math.min(60000, backoff * 2); say("lost", "GENESIS crossover: connection lost, retrying in " + Math.round(backoff / 2000) + " s"); }
         else X.status = "off";
       };
       clearInterval(hbTimer);
@@ -3718,7 +3734,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           if (hashing !== match) return;
           hashing = null;
           if (topic) leave();
-          wantMatch = match; wantTopic = "realtime:crossover-" + h.slice(0, 40);
+          wantMatch = match; wantTopic = "realtime:crossover-" + h.slice(0, 40); toldIds = {}; toldStatus = null;
           X.match = match; X.channel = "crossover-" + h.slice(0, 40);
           if (ws && ws.readyState === 1) join();
         }, function(e) { hashing = null; X.err = "sha256: " + e; });
@@ -3728,6 +3744,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       if (!ws) { if (Date.now() >= retryAt) connect(); return; }
       if (ws.readyState === 1 && !topic && Date.now() >= joinRetryAt) join();
       announce();
+      if (joined) verified().forEach(function(s) { if (!toldIds[s]) { toldIds[s] = 1; toast("GENESIS player here: " + (nickOf(s) || "#" + s)); } });
     }, 500);
     // their mark: a small star over each GENESIS ship on screen
     var cv = null, cx = null, drawn = false;
@@ -3781,12 +3798,23 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           var a = (now - st.ts) * .06; x = st.x + st.vx * a; y = st.y + st.vy * a;
         }
         // (the copy of the ship nearest you, across the map's wrap)
-        var p = worldToScreenPx(cam, my.x + wrapD(x - my.x), my.y + wrapD(y - my.y), g);
-        if (!p || p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) return;
-        var sy = p.y - 34;
-        cx.shadowColor = "hsl(48,100%,60%)"; cx.shadowBlur = 10;
+        var wx = my.x + wrapD(x - my.x), wy = my.y + wrapD(y - my.y), p = worldToScreenPx(cam, wx, wy, g);
+        if (!p || p.x < -80 || p.y < -80 || p.x > W + 80 || p.y > H + 80) return;
+        // (the ring fits the ship: its radius by type, in pixels at this zoom)
+        var p1 = worldToScreenPx(cam, wx + 10, wy, g), ppu = p1 ? Math.hypot(p1.x - p.x, p1.y - p.y) / 10 : 3;
+        var RAD = window.__synAim && window.__synAim.RAD || {}, st2 = _synStat[s], rad = (st2 && RAD[st2.code]) || 3;
+        var R = Math.max(16, Math.min(140, rad * ppu * 1.7)), pulse = .75 + .25 * Math.sin(now / 260);
+        cx.shadowColor = "hsl(48,100%,60%)"; cx.shadowBlur = 14;
+        cx.strokeStyle = "hsla(48,100%,62%," + (.85 * pulse).toFixed(2) + ")"; cx.lineWidth = 2.5;
+        cx.beginPath(); cx.arc(p.x, p.y, R, 0, 6.2832); cx.stroke();
+        cx.lineWidth = 1; cx.strokeStyle = "hsla(48,100%,75%,.35)";
+        cx.beginPath(); cx.arc(p.x, p.y, R + 5, 0, 6.2832); cx.stroke();
+        var sy = p.y - R - 12;
         star(cx, p.x, sy, 7); cx.fillStyle = "hsl(48,100%,62%)"; cx.fill();
         cx.shadowBlur = 0; cx.lineWidth = 1.2; cx.strokeStyle = "rgba(0,0,0,.7)"; cx.stroke();
+        cx.font = "600 11px Play, Verdana, sans-serif"; cx.textAlign = "center"; cx.textBaseline = "middle";
+        cx.lineWidth = 3; cx.strokeStyle = "rgba(0,0,0,.85)"; cx.strokeText("GENESIS", p.x, sy - 13);
+        cx.fillStyle = "hsl(48,100%,70%)"; cx.fillText("GENESIS", p.x, sy - 13); cx.textAlign = "start";
       });
     }
     // with the game's frame: after its world render, with its camera
@@ -3803,6 +3831,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     })();
     window.__studioCrossover = {
       isGenesis: function(id) { return joined && genesis[id] != null && same(nickOf(+id), genesis[id]); },
+      any: function() { return joined && verified().length > 0; },
       stats: function() { return { status: X.status, match: X.match, channel: X.channel, joined: joined, announced: announced, genesis: JSON.parse(JSON.stringify(genesis)), verified: verified(), key: PKEY, error: X.err }; }
     };
   })();
@@ -5294,19 +5323,33 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (!name || proto[name].__stLB) return false;
         var orig = proto[name];
         proto[name] = function(ctx) {
-          if (!ctx || typeof ctx.fillText !== "function" || !featOn("lbicons")) return orig.apply(this, arguments);
+          var icons = featOn("lbicons"), XO = window.__studioCrossover, gen = !!(XO && XO.any && XO.any());
+          if (!ctx || typeof ctx.fillText !== "function" || !icons && !gen) return orig.apply(this, arguments);
           refreshNames();
           var own = Object.prototype.hasOwnProperty.call(ctx, "fillText"), oFT = ctx.fillText;
+          // (a GENESIS player's row: a gold tag after the name)
+          function genTag(text, shown, x, y) {
+            if (!gen || typeof text !== "string") return;
+            var m = /^(\s*\d{1,3}[.)]\s*)?([\s\S]+)$/.exec(text), id = m ? idFor(m[2]) : null;
+            if (id == null || !XO.isGenesis(id)) return;
+            var w = ctx.measureText(shown).width, al = ctx.textAlign, left = al === "right" || al === "end" ? x - w : al === "center" ? x - w / 2 : x;
+            var fs0 = ctx.fillStyle, ta = ctx.textAlign, f0 = ctx.font, px = /(\d+(?:\.\d+)?)px/.exec(f0);
+            ctx.textAlign = "left"; ctx.fillStyle = "hsl(48,100%,62%)";
+            ctx.font = f0.replace(/(\d+(?:\.\d+)?)px/, Math.max(8, Math.round((px ? +px[1] : 14) * .7)) + "px");
+            oFT.call(ctx, " \u2726 GENESIS", left + w + 2, y);
+            ctx.font = f0; ctx.fillStyle = fs0; ctx.textAlign = ta;
+          }
           ctx.fillText = function(text, x, y) {
             var r = null;
-            try { r = rowIcon(ctx, text, x); } catch (e) {}
-            if (!r) return oFT.apply(ctx, arguments);
+            if (icons) try { r = rowIcon(ctx, text, x); } catch (e) {}
+            if (!r) { var o = oFT.apply(ctx, arguments); try { genTag(text, text, x, y); } catch (e) {} return o; }
             try { return oFT.call(ctx, r.text, x, y); }
             finally {
               try {
                 var b = ctx.textBaseline, ty = b === "middle" ? y - r.sz / 2 : b === "top" || b === "hanging" ? y : y - r.sz * .82;
                 ctx.drawImage(r.img, r.ix, ty, r.sz, r.sz);
               } catch (e) {}
+              try { genTag(text, r.text, x, y); } catch (e) {}
             }
           };
           try { return orig.apply(this, arguments); }
@@ -9465,7 +9508,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         (window.__TAURI__ ? r("record", "Record matches (to Videos\\Starblast)") : "") +
         sec("GENESIS crossover") +
         r("crossover", "See GENESIS players (gold star), they see you (blue stars)") +
-        '<div class="option">Crossover key<input type="password" autocomplete="off" spellcheck="false" placeholder="from Adonys" value="' + (LS("STUDIO_crossover_key") ? "••••••••" : "") + '" data-ext-xkey style="flex:0 0 46%"></div>' +
+        '<div class="option">Crossover key<input type="password" autocomplete="off" spellcheck="false" placeholder="built in" value="' + (LS("STUDIO_crossover_key") ? "••••••••" : "") + '" data-ext-xkey style="flex:0 0 46%"></div>' +
         sec("Radar") +
         r("radarzoom", "Full map radar") +
         r("radarnames", "Player names (with full map radar)") +
