@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r187
 // @namespace    syndicate
-// @version      2.5.16
+// @version      2.5.17
 // @description  The Studio client with the game on three.js r187 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -2888,7 +2888,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.16", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.17", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -3560,7 +3560,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         c.shadowColor = it.col; c.shadowBlur = 8; c.fillStyle = it.col;
         c.beginPath(); c.arc(it.px, it.py, 3.6, 0, 6.2832); c.fill();
         // (a GENESIS player: a gold ring round the dot)
-        if (window.__studioCrossover && window.__studioCrossover.isGenesis(it.id)) { c.shadowBlur = 0; c.strokeStyle = "hsl(48,100%,62%)"; c.lineWidth = 1.5; c.beginPath(); c.arc(it.px, it.py, 6.5, 0, 6.2832); c.stroke(); }
+        it.gen = !!(window.__studioCrossover && window.__studioCrossover.isGenesis(it.id));
+        if (it.gen) { c.shadowBlur = 0; c.strokeStyle = "hsl(48,100%,62%)"; c.lineWidth = 1.5; c.beginPath(); c.arc(it.px, it.py, 6.5, 0, 6.2832); c.stroke(); }
         boxes.push({ x0: it.px - 5, x1: it.px + 5, y0: it.py - 5, y1: it.py + 5 });
       });
       c.shadowBlur = 0;
@@ -3574,7 +3575,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (!p) return;
         var x0 = left ? it.px - 7 - w : it.px + 7, ly = it.py + p.dy;
         if (p.dy) { c.strokeStyle = it.col; c.globalAlpha = .45; c.lineWidth = 1; c.beginPath(); c.moveTo(it.px, it.py); c.lineTo(left ? x0 + w : x0, ly); c.stroke(); c.globalAlpha = 1; }
-        c.strokeStyle = "rgba(0,0,0,.85)"; c.lineWidth = 3; c.fillStyle = it.col;
+        c.strokeStyle = "rgba(0,0,0,.85)"; c.lineWidth = 3; c.fillStyle = it.gen ? "hsl(46,100%,66%)" : it.col;
         c.strokeText(nm, x0 + 1, ly); c.fillText(nm, x0 + 1, ly);
         if (hasT) {
           var tx = x0 + 5 + nw;
@@ -3750,89 +3751,14 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       announce();
       if (joined) verified().forEach(function(s) { if (!toldIds[s]) { toldIds[s] = 1; toast("GENESIS player here: " + (nickOf(s) || "#" + s)); } });
     }, 500);
-    // their mark: a small star over each GENESIS ship on screen
-    var cv = null, cx = null, drawn = false;
-    function ensure() {
-      if (cv && cv.isConnected) return true;
-      if (!document.body) return false;
-      cv = document.createElement("canvas");
-      cv.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147481000;display:none";
-      document.body.appendChild(cv); cx = cv.getContext("2d");
-      return true;
-    }
-    function star(c, x, y, r) {
-      c.beginPath();
-      for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-      c.closePath();
-    }
+    // their mark: no overlay of its own. Their ship tag is drawn gold with a
+    // star (the tag hook), and their name shows gold on the game's radar
+    // and the big radar (and the leaderboard)
     function verified() {
       var out2 = [];
       for (var s in genesis) { var n = nickOf(+s); if (n != null && same(n, genesis[s])) out2.push(+s); }
       return out2;
     }
-    // (where the game draws each ship this frame, by id; as the ESP finds them)
-    var CTL = new WeakMap();
-    function drawnAt(g, id) {
-      var sc = g && g.IOOII, w = sc && sc.Ol110, list = w && Array.isArray(w.ships) ? w.ships : [];
-      for (var i = 0; i < list.length; i++) {
-        var e = list[i], c = CTL.get(e);
-        if (c === undefined) { c = null; for (var k in e) { try { var v = e[k]; if (v && v.status && typeof v.status.x === "number" && v.status.id != null) { c = v; break; } } catch (x) {} } CTL.set(e, c); }
-        if (c && c.status.id === id && e.model && e.model.position && e.model.visible !== false) return e.model.position;
-      }
-      return null;
-    }
-    function wrapD(d) { var size = _aegisMapHalf * 2; if (!(size > 0)) return d; d = (d % size + size) % size; return d > size / 2 ? d - size : d; }
-    var drewAt = 0;
-    function draw(cam) {
-      var list = joined ? verified() : [];
-      if (!list.length || !cam) { if (drawn) { cv.style.display = "none"; drawn = false; } return; }
-      if (!ensure()) return;
-      var g = getGS(), my = g && getMyStatus(g);
-      if (!g || !my || typeof my.x !== "number") return;
-      var W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1), now = Date.now();
-      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
-      if (!drawn) { cv.style.display = "block"; drawn = true; }
-      cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
-      list.forEach(function(s) {
-        var p0 = drawnAt(g, s), x, y;
-        if (p0) { x = p0.x; y = p0.y; }
-        else {
-          var st = _synStat[s];
-          if (!st || !st.alive || now - st.ts > 1500) return;
-          var a = (now - st.ts) * .06; x = st.x + st.vx * a; y = st.y + st.vy * a;
-        }
-        // (the copy of the ship nearest you, across the map's wrap)
-        var wx = my.x + wrapD(x - my.x), wy = my.y + wrapD(y - my.y), p = worldToScreenPx(cam, wx, wy, g);
-        if (!p || p.x < -80 || p.y < -80 || p.x > W + 80 || p.y > H + 80) return;
-        // (the ring fits the ship: its radius by type, in pixels at this zoom)
-        var p1 = worldToScreenPx(cam, wx + 10, wy, g), ppu = p1 ? Math.hypot(p1.x - p.x, p1.y - p.y) / 10 : 3;
-        var RAD = window.__synAim && window.__synAim.RAD || {}, st2 = _synStat[s], rad = (st2 && RAD[st2.code]) || 3;
-        var R = Math.max(16, Math.min(140, rad * ppu * 1.7)), pulse = .75 + .25 * Math.sin(now / 260);
-        cx.shadowColor = "hsl(48,100%,60%)"; cx.shadowBlur = 14;
-        cx.strokeStyle = "hsla(48,100%,62%," + (.85 * pulse).toFixed(2) + ")"; cx.lineWidth = 2.5;
-        cx.beginPath(); cx.arc(p.x, p.y, R, 0, 6.2832); cx.stroke();
-        cx.lineWidth = 1; cx.strokeStyle = "hsla(48,100%,75%,.35)";
-        cx.beginPath(); cx.arc(p.x, p.y, R + 5, 0, 6.2832); cx.stroke();
-        var sy = p.y - R - 12;
-        star(cx, p.x, sy, 7); cx.fillStyle = "hsl(48,100%,62%)"; cx.fill();
-        cx.shadowBlur = 0; cx.lineWidth = 1.2; cx.strokeStyle = "rgba(0,0,0,.7)"; cx.stroke();
-        cx.font = "600 11px Play, Verdana, sans-serif"; cx.textAlign = "center"; cx.textBaseline = "middle";
-        cx.lineWidth = 3; cx.strokeStyle = "rgba(0,0,0,.85)"; cx.strokeText("GENESIS", p.x, sy - 13);
-        cx.fillStyle = "hsl(48,100%,70%)"; cx.fillText("GENESIS", p.x, sy - 13); cx.textAlign = "start";
-      });
-    }
-    // with the game's frame: after its world render, with its camera
-    var CORE2 = window.__perfCore;
-    if (CORE2 && CORE2.afterRender) CORE2.afterRender(function(scene, cam, I) {
-      if (!I || !I.world || !cam || !cam.isPerspectiveCamera) return;
-      try { draw(cam); drewAt = performance.now(); } catch (e) {}
-    });
-    // (and on its own when the game's render isn't reaching the hook)
-    (function loop() {
-      requestAnimationFrame(loop);
-      if (performance.now() - drewAt < 250) return;
-      try { draw(getActiveCamera()); } catch (e) {}
-    })();
     window.__studioCrossover = {
       isGenesis: function(id) { return joined && genesis[id] != null && same(nickOf(+id), genesis[id]); },
       any: function() { return joined && verified().length > 0; },
@@ -5817,6 +5743,21 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           return fill.apply(c, arguments);
         };
       }
+      // a GENESIS player's tag: the name in gold, a gold star after it
+      function genName(c, name, o) {
+        var ft = CanvasRenderingContext2D.prototype.fillText;
+        return function(text, x, y) {
+          if (text !== name) return ft.apply(c, arguments);
+          var fs = c.fillStyle;
+          c.fillStyle = "hsl(46,100%,66%)";
+          ft.call(c, text, x, y);
+          var r = o * .085, sx = x + c.measureText(text).width + r * 1.6;
+          c.beginPath();
+          for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; c.lineTo(sx + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+          c.closePath(); c.fill();
+          c.fillStyle = fs;
+        };
+      }
       function heart(c, x, y, r) {
         c.beginPath();
         c.moveTo(x, y + r * 1.3);
@@ -5830,14 +5771,14 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (!k) return;
         var draw = P[k.draw], upd = P[k.upd];
         P[k.draw] = function() {
-          var info = this.__sbE, cv = this.canvas, c = null, r;
-          if (info && !this.anonymous && cv) try {
+          var info = this.__sbE, gen = this.__sbGen, cv = this.canvas, c = null, r;
+          if ((info || gen) && !this.anonymous && cv) try {
             c = cv.getContext("2d");
-            info.full = cv.width - 2 * cv.width / 32;
-            c.fillRect = bars(c, cv.height, info);
+            if (info) { info.full = cv.width - 2 * cv.width / 32; c.fillRect = bars(c, cv.height, info); }
+            if (gen) c.fillText = genName(c, this.name, cv.height);
           } catch (e) { c = null; }
           try { r = draw.apply(this, arguments); }
-          finally { if (c) try { delete c.fillRect; } catch (e) {} }
+          finally { if (c) try { delete c.fillRect; delete c.fillText; } catch (e) {} }
           try {
             var m = this.ll100;
             // the game sets the tag's size as it draws it: kept as the base
@@ -5875,6 +5816,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             // (a change the game wouldn't redraw for: it redraws on any
             // value it keeps changing, so the shield is marked stale)
             if (key !== (this.__sbKey || "")) { this.__sbKey = key; this.__sbE = info; this.shield = -1; }
+            // (a GENESIS player, by the crossover: redrawn when that changes)
+            var XO = window.__studioCrossover, gen = !!(st && XO && !(md && md.anonymous_ships) && XO.isGenesis(st.id));
+            if (gen !== !!this.__sbGen) { this.__sbGen = gen; this.shield = -1; }
           } catch (e) {}
           var r = upd.apply(this, arguments);
           try {
@@ -9366,7 +9310,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         } catch (e) {}
         return "#fff";
       }
-      function placeName(container, id, sx, sy, col, code, tiers) {
+      function placeName(container, id, sx, sy, col, code, tiers, gen) {
         var el = pool[id];
         if (!el) {
           el = document.createElement("div");
@@ -9381,7 +9325,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         if (el.style.display !== "block") el.style.display = "block";
         el.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px) translate(-50%,-100%)";
-        var nm = _aegisNames[id] || "#" + id;
+        // (a GENESIS player: a gold star before the name, the name gold)
+        var nm = (gen ? "\u2605 " : "") + (_aegisNames[id] || "#" + id);
+        if (gen) col = "hsl(46,100%,66%)";
         if (el._aegisNm !== nm) { el._aegisNm = nm; el._n.textContent = nm; }
         // the tier is the hundreds of the ship's code (101 is T1, 704 is T7), each its own colour
         var tr = tiers && code ? Math.floor(code / 100) : 0, tt = tr >= 1 && tr <= 7 ? "T" + tr : "";
@@ -9391,7 +9337,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       function frame() {
         requestAnimationFrame(frame);
         var now = Date.now(), fdt = lastFrame ? Math.min(.1, (now - lastFrame) / 1000) : .016; lastFrame = now;
-        var on = featOn("radarzoom") && featOn("radarnames") && inGame();
+        // (GENESIS players' names show even with the names off: only theirs)
+        var XO = window.__studioCrossover, all = featOn("radarzoom") && featOn("radarnames"), genOnly = !all && !!(XO && XO.any());
+        var on = (all || genOnly) && inGame();
         if (!on) { if (wrap) hideAll(); C.ok = false; return; }
         try {
           // the slow lookups, a few times a second
@@ -9419,20 +9367,24 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           var myS = getMyStatus(C.g);
           if (!myS) return;
           var mapHalf = C.mapHalf, eff = C.eff, xf = C.xf, S = C.S, container = ensureWrap(), seen = {}, ease = 1 - Math.exp(-fdt * 7);
-          var icons = featOn("radaricons"), tiers = featOn("radartier");
+          var icons = !genOnly && featOn("radaricons"), tiers = featOn("radartier");
           var dots = icons ? null : dotContacts(C.g, C.panel, eff);
           if (dots) {
             for (var di = 0; di < dots.length; di++) {
               var dc = dots[di], did = dc.id;
               if (String(did) === String(myS.id)) continue;
+              var dgen = !!(XO && XO.isGenesis(did));
+              if (genOnly && !dgen) continue;
               seen[did] = true;
               requestName(did);
               var dsx = xf.left + (C.cx + dc.x * (S / 2)) * xf.sx, dsy = xf.top + (C.cy - dc.y * (S / 2)) * xf.sy;
               var dship = _aegisShips[did];
-              placeName(container, did, dsx, dsy - Math.max(3, dc.size * xf.sy / 2 + 1), sideCol(did), dship && dship.code, tiers);
+              placeName(container, did, dsx, dsy - Math.max(3, dc.size * xf.sy / 2 + 1), sideCol(did), dship && dship.code, tiers, dgen);
             }
           } else for (var id in _aegisShips) {
             if (String(id) === String(myS.id)) continue;
+            var gen = !!(XO && XO.isGenesis(id));
+            if (genOnly && !gen) continue;
             var s = _aegisShips[id];
             if (now - s.ts > SHIP_TTL) continue;
             if (s.zeroSince != null && now - s.zeroSince > BOT_ZERO_TTL) continue;
@@ -9468,7 +9420,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
               ic.style.transform = "translate(" + sx.toFixed(1) + "px," + sy.toFixed(1) + "px) rotate(" + (D.ang || 0).toFixed(1) + "deg)";
               if (ic._col !== col) { ic._col = col; ic._in.style.background = col; }
             } else if (ic && ic.style.display !== "none") ic.style.display = "none";
-            placeName(container, id, sx, sy - (url ? 9 : 3), col, s.code, tiers);
+            placeName(container, id, sx, sy - (url ? 9 : 3), col, s.code, tiers, gen);
           }
           for (var pid in pool) if (!seen[pid] && pool[pid].style.display !== "none") pool[pid].style.display = "none";
           for (var iid in ipool) if (!seen[iid] && ipool[iid].style.display !== "none") ipool[iid].style.display = "none";
