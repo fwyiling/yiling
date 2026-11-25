@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124
 // @namespace    syndicate
-// @version      2.5.13
+// @version      2.5.14
 // @description  The Studio client with the game on three.js r124 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -912,7 +912,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.13", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.14", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -1080,7 +1080,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     record:     { key: "STUDIO_record",    def: "1" },
     bigradar:   { key: "STUDIO_bigradar",  def: "1" },
     lowlatency: { key: "STUDIO_lowlatency", def: "0" },
-    fastctl:    { key: "STUDIO_fastctl",   def: "0" }
+    fastctl:    { key: "STUDIO_fastctl",   def: "0" },
+    crossover:  { key: "STUDIO_crossover", def: "1" }
   };
   function espNear() { var v = LS("STUDIO_esp_range"); return v === "near"; }
   function espDist() { var v = parseFloat(LS("STUDIO_esp_dist")); return v >= 10 ? v : 100; }
@@ -1578,6 +1579,8 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       items.forEach(function(it) {
         c.shadowColor = it.col; c.shadowBlur = 8; c.fillStyle = it.col;
         c.beginPath(); c.arc(it.px, it.py, 3.6, 0, 6.2832); c.fill();
+        // (a GENESIS player: a gold ring round the dot)
+        if (window.__studioCrossover && window.__studioCrossover.isGenesis(it.id)) { c.shadowBlur = 0; c.strokeStyle = "hsl(48,100%,62%)"; c.lineWidth = 1.5; c.beginPath(); c.arc(it.px, it.py, 6.5, 0, 6.2832); c.stroke(); }
         boxes.push({ x0: it.px - 5, x1: it.px + 5, y0: it.py - 5, y1: it.py + 5 });
       });
       c.shadowBlur = 0;
@@ -1614,6 +1617,218 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       c.fillText("RADAR · " + key().toUpperCase() + " to close", cx, cy - R - 10); c.textAlign = "start";
     }
     requestAnimationFrame(frame);
+  })();
+  // ---- GENESIS crossover (STUDIO_crossover, key in the panel) ----
+  // GENESIS (Adonys's client) and this one share a Supabase Realtime channel
+  // per match, as his CROSSOVER spec lays out: presence only (no broadcast,
+  // no database). We announce { s: ship id, n: nickname, c: "studio", v: 1 };
+  // GENESIS players see us with blue stars, and their ships get a mark here
+  // (only where the game's own nickname for that ship matches). Channel:
+  // "crossover-" + sha256(CROSSOVER_KEY + "|" + systemid@host)[0..40]. Raw
+  // Phoenix on one websocket per tab: heartbeat 25 s, reconnect 2 s .. 60 s.
+  // The crossover key is entered in the panel (kept on this PC, not in the
+  // code); the Supabase address and publishable key are public by design.
+  (function crossover() {
+    var DEF_URL = "https://hszkhwvvdghgowjrgxyv.supabase.co", DEF_SKEY = "sb_publishable_CF_8a3kjvG3F73ADbhCOeQ_qWx5hAzX", NAME = "studio";
+    var PKEY = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now().toString(36);
+    var X = { status: "off", match: null, channel: null, err: null };
+    var ws = null, ref = 0, joinRef = null, topic = null, joined = false, hbPending = null, hbTimer = null;
+    var backoff = 2000, retryAt = 0, joinRetryAt = 0, wantMatch = null, wantTopic = null, hashing = null;
+    var pres = {}, genesis = {}, announced = null;
+    function cfg() { return { url: LS("STUDIO_crossover_url") || DEF_URL, skey: LS("STUDIO_crossover_supakey") || DEF_SKEY, xkey: String(LS("STUDIO_crossover_key") || "").trim() }; }
+    function wanted() { return featOn("crossover") && cfg().xkey.length > 0; }
+    function nref() { return String(++ref); }
+    function out(o) { if (ws && ws.readyState === 1) try { ws.send(JSON.stringify(o)); } catch (e) {} }
+    function sha256hex(txt) {
+      return crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt)).then(function(b) { return Array.from(new Uint8Array(b), function(x) { return (x < 16 ? "0" : "") + x.toString(16); }).join(""); });
+    }
+    function hostOf(u) { return String(u || "").replace(/^wss?:\/\//, "").replace(/[/?#].*$/, ""); }
+    function nickOf(id) { var n = _aegisNames[id]; return typeof n === "string" ? n.slice(0, 40) : null; }
+    function same(a, b) { return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase(); }
+    // the GENESIS players: per presence key, its latest announcement
+    function rebuild() {
+      var g = {};
+      for (var k in pres) {
+        if (k === PKEY) continue;
+        var ms = pres[k]; if (!ms || !ms.length) continue;
+        var m = ms[ms.length - 1];
+        if (m && m.c === "genesis" && typeof m.s === "number" && m.s % 1 === 0 && m.s >= 0 && m.s <= 65535) g[m.s] = String(m.n || "").slice(0, 40);
+      }
+      genesis = g;
+    }
+    function clearPeople() { pres = {}; genesis = {}; }
+    function join() {
+      if (!ws || ws.readyState !== 1 || !wantTopic) return;
+      var c = cfg(), payload = { config: { broadcast: { self: false, ack: false }, presence: { key: PKEY, enabled: true }, postgres_changes: [], "private": false } };
+      // (a legacy anon key, three parts with dots, goes along as the token)
+      if (c.skey.split(".").length === 3) payload.access_token = c.skey;
+      topic = wantTopic; joinRef = nref(); joined = false; announced = null; X.status = "joining";
+      out({ topic: topic, event: "phx_join", ref: joinRef, join_ref: joinRef, payload: payload });
+    }
+    function leave() {
+      if (topic && joinRef) out({ topic: topic, event: "phx_leave", payload: {}, ref: nref(), join_ref: joinRef });
+      topic = null; joinRef = null; joined = false; announced = null; clearPeople();
+    }
+    function announce() {
+      if (!joined) return;
+      var me = window.__synMyShipId, n = me != null ? nickOf(me) : null;
+      if (typeof me !== "number" || me < 0 || me > 65535 || !n) return;
+      var key = me + "|" + n;
+      if (announced === key) return;
+      announced = key;
+      out({ topic: topic, event: "presence", ref: nref(), join_ref: joinRef, payload: { type: "presence", event: "track", payload: { s: me, n: n, c: NAME, v: 1 } } });
+    }
+    function onMsg(e) {
+      var m; try { m = JSON.parse(e.data); } catch (x) { return; }
+      if (!m) return;
+      if (m.topic === "phoenix" && m.event === "phx_reply") { if (m.ref === hbPending) hbPending = null; return; }
+      if (m.topic !== topic) return;
+      if (m.event === "phx_reply" && m.ref === joinRef) {
+        if (m.payload && m.payload.status === "ok") { joined = true; backoff = 2000; X.status = "joined"; X.err = null; announce(); }
+        else { X.status = "join refused"; X.err = JSON.stringify(m.payload && m.payload.response || m.payload).slice(0, 200); topic = null; joinRetryAt = Date.now() + 5000; }
+      } else if (m.event === "presence_state") {
+        pres = {};
+        var st = m.payload || {};
+        for (var k in st) if (st[k] && st[k].metas) pres[k] = st[k].metas.slice();
+        rebuild();
+      } else if (m.event === "presence_diff") {
+        var d = m.payload || {}, lv = d.leaves || {}, jn = d.joins || {};
+        for (var k2 in lv) {
+          if (!pres[k2]) continue;
+          var gone = {}; (lv[k2].metas || []).forEach(function(x) { gone[x.phx_ref] = 1; });
+          pres[k2] = pres[k2].filter(function(x) { return !gone[x.phx_ref]; });
+          if (!pres[k2].length) delete pres[k2];
+        }
+        for (var k3 in jn) pres[k3] = (pres[k3] || []).concat(jn[k3].metas || []);
+        rebuild();
+      } else if (m.event === "phx_error" || m.event === "phx_close") {
+        joined = false; topic = null; clearPeople(); X.status = "channel closed"; joinRetryAt = Date.now() + 5000;
+      }
+    }
+    function connect() {
+      var c = cfg(), base = c.url.replace(/^http/, "ws").replace(/\/+$/, "");
+      try { ws = new WebSocket(base + "/realtime/v1/websocket?apikey=" + encodeURIComponent(c.skey) + "&vsn=1.0.0"); } catch (e) { X.err = String(e); retryAt = Date.now() + backoff; backoff = Math.min(60000, backoff * 2); return; }
+      X.status = "connecting";
+      ws.onopen = function() { hbPending = null; join(); };
+      ws.onmessage = onMsg;
+      ws.onerror = function() {};
+      ws.onclose = function() {
+        clearInterval(hbTimer); hbTimer = null; ws = null; joined = false; topic = null; joinRef = null; announced = null; clearPeople();
+        if (wantMatch) { X.status = "reconnecting"; retryAt = Date.now() + backoff; backoff = Math.min(60000, backoff * 2); }
+        else X.status = "off";
+      };
+      clearInterval(hbTimer);
+      hbTimer = setInterval(function() {
+        if (!ws || ws.readyState !== 1) return;
+        // (the last heartbeat unanswered: the link is dead)
+        if (hbPending) { try { ws.close(); } catch (e) {} return; }
+        hbPending = nref();
+        out({ topic: "phoenix", event: "heartbeat", payload: {}, ref: hbPending });
+      }, 25000);
+    }
+    function disconnect() { leave(); if (ws) { var w = ws; ws = null; try { w.close(); } catch (e) {} } clearInterval(hbTimer); hbTimer = null; X.status = "off"; }
+    setInterval(function() {
+      var gws = window.__synGameWS, w = window.__synWelcome, inMatch = typeof window.__synMyShipId === "number" && gws && gws.readyState === 1 && w && w.data;
+      if (!inMatch || !wanted()) {
+        if (wantMatch || ws) { wantMatch = null; wantTopic = null; X.match = X.channel = null; disconnect(); }
+        return;
+      }
+      var sys = w.data.systemid != null ? w.data.systemid : String(location.hash || "").replace(/^#/, "").split("@")[0];
+      var match = sys + "@" + hostOf(w.url || gws.url);
+      if (match !== wantMatch && hashing !== match) {
+        // (a new match: leave the old channel, work out the new one's name)
+        hashing = match;
+        sha256hex(cfg().xkey + "|" + match).then(function(h) {
+          if (hashing !== match) return;
+          hashing = null;
+          if (topic) leave();
+          wantMatch = match; wantTopic = "realtime:crossover-" + h.slice(0, 40);
+          X.match = match; X.channel = "crossover-" + h.slice(0, 40);
+          if (ws && ws.readyState === 1) join();
+        }, function(e) { hashing = null; X.err = "sha256: " + e; });
+        return;
+      }
+      if (!wantMatch) return;
+      if (!ws) { if (Date.now() >= retryAt) connect(); return; }
+      if (ws.readyState === 1 && !topic && Date.now() >= joinRetryAt) join();
+      announce();
+    }, 500);
+    // their mark: a small star over each GENESIS ship on screen
+    var cv = null, cx = null, drawn = false;
+    function ensure() {
+      if (cv && cv.isConnected) return true;
+      if (!document.body) return false;
+      cv = document.createElement("canvas");
+      cv.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147481000;display:none";
+      document.body.appendChild(cv); cx = cv.getContext("2d");
+      return true;
+    }
+    function star(c, x, y, r) {
+      c.beginPath();
+      for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+      c.closePath();
+    }
+    function verified() {
+      var out2 = [];
+      for (var s in genesis) { var n = nickOf(+s); if (n != null && same(n, genesis[s])) out2.push(+s); }
+      return out2;
+    }
+    // (where the game draws each ship this frame, by id; as the ESP finds them)
+    var CTL = new WeakMap();
+    function drawnAt(g, id) {
+      var sc = g && g.IOOII, w = sc && sc.Ol110, list = w && Array.isArray(w.ships) ? w.ships : [];
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i], c = CTL.get(e);
+        if (c === undefined) { c = null; for (var k in e) { try { var v = e[k]; if (v && v.status && typeof v.status.x === "number" && v.status.id != null) { c = v; break; } } catch (x) {} } CTL.set(e, c); }
+        if (c && c.status.id === id && e.model && e.model.position && e.model.visible !== false) return e.model.position;
+      }
+      return null;
+    }
+    function wrapD(d) { var size = _aegisMapHalf * 2; if (!(size > 0)) return d; d = (d % size + size) % size; return d > size / 2 ? d - size : d; }
+    var drewAt = 0;
+    function draw(cam) {
+      var list = joined ? verified() : [];
+      if (!list.length || !cam) { if (drawn) { cv.style.display = "none"; drawn = false; } return; }
+      if (!ensure()) return;
+      var g = getGS(), my = g && getMyStatus(g);
+      if (!g || !my || typeof my.x !== "number") return;
+      var W = innerWidth, H = innerHeight, dpr = Math.min(2, devicePixelRatio || 1), now = Date.now();
+      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      if (!drawn) { cv.style.display = "block"; drawn = true; }
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
+      list.forEach(function(s) {
+        var p0 = drawnAt(g, s), x, y;
+        if (p0) { x = p0.x; y = p0.y; }
+        else {
+          var st = _synStat[s];
+          if (!st || !st.alive || now - st.ts > 1500) return;
+          var a = (now - st.ts) * .06; x = st.x + st.vx * a; y = st.y + st.vy * a;
+        }
+        // (the copy of the ship nearest you, across the map's wrap)
+        var p = worldToScreenPx(cam, my.x + wrapD(x - my.x), my.y + wrapD(y - my.y), g);
+        if (!p || p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) return;
+        var sy = p.y - 34;
+        cx.shadowColor = "hsl(48,100%,60%)"; cx.shadowBlur = 10;
+        star(cx, p.x, sy, 7); cx.fillStyle = "hsl(48,100%,62%)"; cx.fill();
+        cx.shadowBlur = 0; cx.lineWidth = 1.2; cx.strokeStyle = "rgba(0,0,0,.7)"; cx.stroke();
+      });
+    }
+    // with the game's frame: after its world render, with its camera
+    var CORE2 = window.__perfCore;
+    if (CORE2 && CORE2.afterRender) CORE2.afterRender(function(scene, cam, I) {
+      if (!I || !I.world || !cam || !cam.isPerspectiveCamera) return;
+      try { draw(cam); drewAt = performance.now(); } catch (e) {}
+    });
+    // (and on its own when the game's render isn't reaching the hook)
+    (function loop() {
+      requestAnimationFrame(loop);
+      if (performance.now() - drewAt < 250) return;
+      try { draw(getActiveCamera()); } catch (e) {}
+    })();
+    window.__studioCrossover = {
+      isGenesis: function(id) { return joined && genesis[id] != null && same(nickOf(+id), genesis[id]); },
+      stats: function() { return { status: X.status, match: X.match, channel: X.channel, joined: joined, announced: announced, genesis: JSON.parse(JSON.stringify(genesis)), verified: verified(), key: PKEY, error: X.err }; }
+    };
   })();
   window.__SB_GAME__ = null;
   setInterval(function() {
@@ -7272,6 +7487,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         r("fastctl", "Faster controls: steering sent up to 30×/s, not 10 (experimental)") +
         r("teamlock", "Team lock bypass (join closed teams)") +
         (window.__TAURI__ ? r("record", "Record matches (to Videos\\Starblast)") : "") +
+        sec("GENESIS crossover") +
+        r("crossover", "See GENESIS players (gold star), they see you (blue stars)") +
+        '<div class="option">Crossover key<input type="password" autocomplete="off" spellcheck="false" placeholder="from Adonys" value="' + (LS("STUDIO_crossover_key") ? "••••••••" : "") + '" data-ext-xkey style="flex:0 0 46%"></div>' +
         sec("Radar") +
         r("radarzoom", "Full map radar") +
         r("radarnames", "Player names (with full map radar)") +
@@ -7297,6 +7515,18 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         featSet(k, !!t.checked);
       });
+      var xk = P.querySelector("[data-ext-xkey]");
+      if (xk) {
+        xk.addEventListener("focus", function() { if (xk.value === "••••••••") xk.value = ""; });
+        xk.addEventListener("change", function() {
+          var v = xk.value.trim();
+          if (v === "••••••••") return;
+          try { if (v) localStorage.setItem("STUDIO_crossover_key", v); else localStorage.removeItem("STUDIO_crossover_key"); } catch (x) {}
+          xk.value = v ? "••••••••" : "";
+        });
+        // (typing in it isn't the game's keys)
+        ["keydown", "keyup", "keypress"].forEach(function(ev) { xk.addEventListener(ev, function(e) { e.stopPropagation(); }); });
+      }
       var em = P.querySelector("[data-ext-espmode]"), ed = P.querySelector("[data-ext-espdist]"), edv = P.querySelector("[data-ext-espdist-v]");
       if (em) em.addEventListener("click", function(e) {
         e.preventDefault();
