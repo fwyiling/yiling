@@ -9,6 +9,7 @@
   "permissions": [
     "core:default",
     "allow-studio-fullscreen",
-    "allow-studio-record"
+    "allow-studio-record",
+    "allow-studio-devtools"
   ]
 }

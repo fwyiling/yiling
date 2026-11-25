@@ -13,3 +13,10 @@ commands.allow = [
     "rec_chunk",
     "rec_close"
 ]
+
+[[permission]]
+identifier = "allow-studio-devtools"
+description = "Allows the studio_devtools command (F12: the developer tools, to check the client's state)."
+commands.allow = [
+    "studio_devtools"
+]

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r124 (app)
 // @namespace    syndicate
-// @version      2.5.15
+// @version      2.5.16
 // @description  The Studio client with the game on three.js r124, for the app (runs before the page; the page's own three.js is not run).
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -850,7 +850,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.15", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.16", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -982,6 +982,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         // (in the app: the window fills the screen with no frame)
         var T = window.__TAURI__, inv = T && (T.core && T.core.invoke || T.invoke);
         if (inv) { e.preventDefault(); e.stopPropagation(); inv("studio_fullscreen").catch(function() {}); }
+      } else if (e.key === "F12") {
+        // (in the app: the developer tools, which a browser would open itself)
+        var T2 = window.__TAURI__, inv2 = T2 && (T2.core && T2.core.invoke || T2.invoke);
+        if (inv2) { e.preventDefault(); e.stopPropagation(); inv2("studio_devtools").catch(function() {}); }
       }
     }, true);
   } catch (e) {}
@@ -1794,7 +1798,12 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
     window.__studioCrossover = {
       isGenesis: function(id) { return joined && genesis[id] != null && same(nickOf(+id), genesis[id]); },
       any: function() { return joined && verified().length > 0; },
-      stats: function() { return { status: X.status, match: X.match, channel: X.channel, joined: joined, announced: announced, genesis: JSON.parse(JSON.stringify(genesis)), verified: verified(), key: PKEY, error: X.err }; }
+      stats: function() {
+        var others = [];
+        for (var k in pres) { var ms = pres[k], m = ms && ms[ms.length - 1]; if (m) others.push({ mine: k === PKEY, c: m.c, s: m.s, n: m.n, gameName: typeof m.s === "number" ? nickOf(m.s) : null }); }
+        var me = window.__synMyShipId;
+        return { status: X.status, match: X.match, channel: X.channel, joined: joined, announced: announced, me: me, myServerName: me != null ? nickOf(me) : null, myTypedName: (function() { try { return getGS().player_name; } catch (e) { return null; } })(), presences: others, genesis: JSON.parse(JSON.stringify(genesis)), verified: verified(), key: PKEY, error: X.err };
+      }
     };
   })();
   window.__SB_GAME__ = null;
@@ -7470,6 +7479,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         (window.__TAURI__ ? r("record", "Record matches (to Videos\\Starblast)") : "") +
         sec("GENESIS crossover") +
         r("crossover", "See GENESIS players (gold star), they see you (blue stars)") +
+        '<div class="option" style="display:block;font:11px/1.45 monospace;white-space:pre-wrap;word-break:break-all;opacity:.9" data-ext-xstat>…</div>' +
         '<div class="option">Crossover key<input type="password" autocomplete="off" spellcheck="false" placeholder="built in" value="' + (LS("STUDIO_crossover_key") ? "••••••••" : "") + '" data-ext-xkey style="flex:0 0 46%"></div>' +
         sec("Radar") +
         r("radarzoom", "Full map radar") +
@@ -7496,6 +7506,18 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         featSet(k, !!t.checked);
       });
+      var xs = P.querySelector("[data-ext-xstat]");
+      if (xs) (function upd() {
+        if (!xs.isConnected) return;
+        var X = window.__studioCrossover, s = X && X.stats();
+        if (s) xs.textContent = "status: " + s.status + (s.error ? "  (" + s.error + ")" : "") +
+          "\nmatch: " + (s.match || "-") + "\nchannel: " + (s.channel || "-") +
+          "\nme: ship " + s.me + "  server name: " + JSON.stringify(s.myServerName) + "  typed: " + JSON.stringify(s.myTypedName) +
+          "\nannounced: " + (s.announced || "nothing yet") +
+          "\non the channel (" + s.presences.length + "): " + (s.presences.length ? s.presences.map(function(p) { return (p.mine ? "[me] " : "") + p.c + " #" + p.s + " " + JSON.stringify(p.n) + (p.mine ? "" : " / game: " + JSON.stringify(p.gameName)); }).join("; ") : "nobody") +
+          "\nGENESIS marked: " + (s.verified.length ? s.verified.join(", ") : "none");
+        setTimeout(upd, 500);
+      })();
       var xk = P.querySelector("[data-ext-xkey]");
       if (xk) {
         xk.addEventListener("focus", function() { if (xk.value === "••••••••") xk.value = ""; });

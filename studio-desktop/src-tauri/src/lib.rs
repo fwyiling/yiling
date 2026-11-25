@@ -110,11 +110,22 @@ fn rec_close(rec: tauri::State<Rec>) -> Result<Option<String>, String> {
     }))
 }
 
+// F12 (sent by the client): the developer tools, for checking the client's
+// state (the console) in the app as in a browser.
+#[tauri::command]
+fn studio_devtools(window: tauri::WebviewWindow) {
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Rec(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![studio_fullscreen, rec_open, rec_chunk, rec_close])
+        .invoke_handler(tauri::generate_handler![studio_fullscreen, studio_devtools, rec_open, rec_chunk, rec_close])
         .setup(|app| {
             WebviewWindowBuilder::new(
                 app,
