@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syndicate Studio on three.js r187
 // @namespace    syndicate
-// @version      2.5.17
+// @version      2.5.18
 // @description  The Studio client with the game on three.js r187 (WebGL2) in place of r85.
 // @match        https://starblast.io/*
 // @run-at       document-start
@@ -2888,7 +2888,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
   };
   var FXV = CORE.on;
   for (var fk in FX) { var fv = LS("STUDIO_fx_" + fk); FXV[fk] = !CORE.off && (fv == null ? FX[fk].def : fv) === "1"; }
-  window.__studio = { version: "2.5.17", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
+  window.__studio = { version: "2.5.18", off: CORE.off, verify: CORE.verify, stats: CORE.stats, gov: GV, fx: CORE.fx, fxOn: FXV };
 
   // Ship outlines: a copy of each ship part a little larger, back faces only,
   // in the part's own glow colour (the ship's hue), behind it; asteroids and
@@ -5151,7 +5151,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
               var hl = teamColor(this), T = window.THREE;
               if (hl != null && T && T.MeshPhongMaterial) { this.material = new T.MeshPhongMaterial({ color: hl, emissive: darken(hl), specular: 0x111111, shininess: 10 }); return; }
               var r = n !== "buildFullColorMaterial" && featOn("highcontrast") ? full.apply(this, arguments) : orig.apply(this, arguments);
-              var m = this.material, H = window.OIl1O;
+              var m = this.material, H = window.OlOIO;
               if (featOn("saturate") && m && m.emissive && m.emissive.setHex && typeof this.hue === "number" && H && typeof H.hsvToRgbHex === "function") m.emissive.setHex(H.hsvToRgbHex(this.hue, 1, 1));
               return r;
             } finally { this.__stMat = 0; }
@@ -5166,7 +5166,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       function norm(s) { return String(s || "").replace(/(…|\.\.\.)\s*$/, "").replace(/\s+/g, " ").trim().toLowerCase(); }
       function shipIcon(code) {
         if (!iconOwner) {
-          if (window.IOII0 && typeof window.IOII0.getShipIcon === "function") iconOwner = window.IOII0;
+          if (window.lIl1O && typeof window.lIl1O.getShipIcon === "function") iconOwner = window.lIl1O;
           else if (Date.now() - iconAt > 3000) {
             iconAt = Date.now();
             for (var k in window) {
@@ -5393,13 +5393,13 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }
       // the ships the game is drawing this frame, by id
       function drawnShips() {
-        var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110, out = {}, list = w && Array.isArray(w.ships) ? w.ships : [];
+        var g = getGS(), sc = g && g.O0OIl, w = sc && sc.I00Ol, out = {}, list = w && Array.isArray(w.ships) ? w.ships : [];
         for (var i = 0; i < list.length; i++) {
           var e = list[i], c = e && ctlOf(e), m = e && e.model;
           if (!c || !m || !m.position || c.status.alive === false || m.visible === false) continue;
           out[c.status.id] = { x: m.position.x, y: m.position.y, m: m };
         }
-        return { list: out, me: sc && sc.ship && sc.ship.OOO1l && sc.ship.OOO1l.position };
+        return { list: out, me: sc && sc.ship && sc.ship.l1l10 && sc.ship.l1l10.position };
       }
       // Far ships: the radar gives each one's spot about once a second, in
       // coarse steps. Each is flown on between samples along the trend of
@@ -5686,7 +5686,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         P.createMainMenu = function() {
           var r = create.apply(this, arguments);
           try {
-            var G = this.OIO0I, MB = window.MenuButton;
+            var G = this.l1001, MB = window.MenuButton;
             if (MB && G && !G.is_mobile_app && Array.isArray(this.buttons) && !this.buttons.some(function(b) { return b && (b.id === "quit_to_menu" || b.id === "quit"); })) {
               this.leave = new MB(G, this, "LEAVE GAME", "quit_to_menu");
               this.addButton(this.leave);
@@ -5780,7 +5780,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           try { r = draw.apply(this, arguments); }
           finally { if (c) try { delete c.fillRect; delete c.fillText; } catch (e) {} }
           try {
-            var m = this.ll100;
+            var m = this.ll011;
             // the game sets the tag's size as it draws it: kept as the base
             if (m) this.__sbBase = [m.scale.x, m.scale.y];
             if (c && m && info.l != null) {
@@ -5803,7 +5803,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         };
         P[k.upd] = function(g, name, st, ins) {
           try {
-            var mine = st && (st.id === window.__synMyShipId || g && g.IOOII && g.IOOII.O1OI0 && g.IOOII.O1OI0.status === st), md = g && g.mode, info = null;
+            var mine = st && (st.id === window.__synMyShipId || g && g.O0OIl && g.O0OIl.OIl0l && g.O0OIl.OIl0l.status === st), md = g && g.mode, info = null;
             if (featOn("tagextra") && st && ins && !mine && !(md && md.anonymous_ships)) {
               var energy = ins.generator_capacity > 0 && typeof st.generator === "number" ? Math.min(100, Math.round(100 * st.generator / ins.generator_capacity)) : null;
               // lives left, as the game counts its own (lives - 1); none where
@@ -5822,7 +5822,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
           } catch (e) {}
           var r = upd.apply(this, arguments);
           try {
-            var m = this.ll100;
+            var m = this.ll011;
             if (m && this.__sbBase) {
               var mul = featOn("tagzoomscale") ? Math.max(1, window.__aegisFovFactor || 1) : 1;
               if (m.scale.x !== this.__sbBase[0] * mul || m.scale.y !== this.__sbBase[1] * mul) m.scale.set(this.__sbBase[0] * mul, this.__sbBase[1] * mul, 1);
@@ -5839,7 +5839,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       var el = null, base = null;
       setInterval(function() {
         try {
-          var g = getGS(), md = g && g.mode, info = md && md.game_info, w = g && g.IOOII && g.IOOII.Ol110;
+          var g = getGS(), md = g && g.mode, info = md && md.game_info, w = g && g.O0OIl && g.O0OIl.I00Ol;
           if (!featOn("survtimer") || !inGame() || !md || md.id !== "survival" || !info) { if (el) el.style.display = "none"; base = null; return; }
           if (!base || base.info !== info) {
             if (typeof info.servertime !== "number") return;
@@ -5998,10 +5998,10 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (now - SPEC.at > 300) {
           SPEC.at = now; SPEC.map = {};
           try {
-            var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110;
+            var g = getGS(), sc = g && g.O0OIl, w = sc && sc.I00Ol;
             var add = function(c) { if (c && c.status && c.status.id != null) { var sp = duSpec(c, g); if (sp) SPEC.map[c.status.id] = sp; } };
             if (w && Array.isArray(w.ships)) for (var i = 0; i < w.ships.length; i++) add(duCtl(w.ships[i]));
-            add(g && g.O1OI0); add(sc && sc.O1OI0);
+            add(g && g.OIl0l); add(sc && sc.OIl0l);
           } catch (e) {}
         }
         return id != null ? SPEC.map[id] || null : null;
@@ -6043,7 +6043,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }
       function step(m, q, dt) {
         if (m === 4) {
-          // (ShipPhysics.IlIOl: knocked back, it neither turns nor steers;
+          // (ShipPhysics.OIlII: knocked back, it neither turns nor steers;
           // gliding (RCS off) with no thrust it keeps its speed, slowed only
           // above top speed; strafing thrusts across the nose; coasting
           // brakes by inertia ^ friction_ratio)
@@ -8327,14 +8327,14 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       window.__synCombatBindsExtra = [ { id: "duelpilot", label: "Duel Pilot on/off (Speedster duels)" } ];
       // ---- the game's ship types: each variant's real numbers ----
       function duWorld() {
-        var g = getGS(), sc = g && g.IOOII, w = sc && sc.Ol110, me = sc && (sc.O1OI0 || sc.ship);
+        var g = getGS(), sc = g && g.O0OIl, w = sc && sc.I00Ol, me = sc && (sc.OIl0l || sc.ship);
         if (!w || !me || !Array.isArray(w.ships)) return null;
-        return { g: g, sc: sc, w: w, me: me, tick: typeof w.l11lI === "number" ? w.l11lI : null };
+        return { g: g, sc: sc, w: w, me: me, tick: typeof w.I01Il === "number" ? w.I01Il : null };
       }
       var duCtlOf = new WeakMap();
       function duCtl(e) {
         if (!e) return null;
-        if (e.OOl01 && e.OOl01.status) return e.OOl01;
+        if (e.IOIOl && e.IOIOl.status) return e.IOIOl;
         var c = duCtlOf.get(e);
         if (c === undefined) { c = Object.values(e).find(function(o) { return o && o.status && typeof o.status.x === "number" && o.status.id != null; }) || null; duCtlOf.set(e, c); }
         return c;
@@ -8353,7 +8353,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         var sh = t.specs && t.specs.ship || {}, mo = g && g.mode && g.mode.options || {}, L = null;
         (ins.lasers || []).forEach(function(l) { if (l && l.type && (!L || l.damage * (l.type.number || 1) > L.damage * (L.type.number || 1))) L = l; });
         if (!L) return null;
-        return { name: String(t.name || "#" + t.code), code: t.code, mass: +sh.mass || 100, top: ins.speed * (+mo.speed_mod || 1), inr: ins.OlIll, turn: ins.Il001, fric: +mo.friction_ratio || 1,
+        return { name: String(t.name || "#" + t.code), code: t.code, mass: +sh.mass || 100, top: ins.speed * (+mo.speed_mod || 1), inr: ins.I0II1, turn: ins.I0I1O, fric: +mo.friction_ratio || 1,
           genMax: ins.generator_capacity, regen: ins.generator_reload, shieldMax: ins.shield_capacity, cost: L.damage * (L.type.number || 1), mainDmg: L.damage, S: L.speed, rate: +L.type.rate || 1,
           rad: +t.radius || RAD[t.code] || 3, gunFwd: Math.max(0, -parseFloat(L.type.y) || 0) };
       }
@@ -8479,13 +8479,13 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       }
       // the gems on the field (the game's own), where they will be when our word lands
       function duGems(W, H) {
-        var cm = W.sc && W.sc.I0OIO, list = cm && cm.I0OIO, out = [], tick = W.tick;
+        var cm = W.sc && W.sc.Ol101, list = cm && cm.Ol101, out = [], tick = W.tick;
         if (!Array.isArray(list)) return out;
         list.forEach(function(c) {
           if (!c || typeof c.x !== "number" || c.eater || c.eat_time > 0) return;
           var k = 1, age = 9;
-          if (tick != null && typeof c.l00Il === "number") { age = (tick - c.l00Il) / 60 + H; k = age > 0 ? 1 - Math.exp(-age) : 0; }
-          out.push({ x: c.x + (c.Ol11O || 0) * k, y: c.y + (c.OO001 || 0) * k, v: +c.points || 1, age: age });
+          if (tick != null && typeof c.OOO10 === "number") { age = (tick - c.OOO10) / 60 + H; k = age > 0 ? 1 - Math.exp(-age) : 0; }
+          out.push({ x: c.x + (c.O0lI1 || 0) * k, y: c.y + (c.OIlO0 || 0) * k, v: +c.points || 1, age: age });
         });
         return out;
       }
@@ -9146,7 +9146,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         try {
           var scr = g.display && g.display.screen;
           if (!scr) return null;
-          var hud = scr.IOOOI && typeof scr.IOOOI.showWeaponStore === "function" ? scr.IOOOI : null;
+          var hud = scr.O0O10 && typeof scr.O0O10.showWeaponStore === "function" ? scr.O0O10 : null;
           if (!hud) for (var k in scr) {
             try {
               var v = scr[k];
@@ -9156,7 +9156,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
               }
             } catch (e) {}
           }
-          return hud && hud.IOOlI && hud.IOOlI.background;
+          return hud && hud.IOI1I && hud.IOI1I.background;
         } catch (e) {
           return null;
         }
@@ -9193,7 +9193,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         if (!code) return null;
         if (iconUrls[code] !== undefined) return iconUrls[code];
         var url = null;
-        try { var cv = window.IOII0 && window.IOII0.getShipIcon && window.IOII0.getShipIcon(code); url = cv && cv.toDataURL ? cv.toDataURL() : null; } catch (e) {}
+        try { var cv = window.lIl1O && window.lIl1O.getShipIcon && window.lIl1O.getShipIcon(code); url = cv && cv.toDataURL ? cv.toDataURL() : null; } catch (e) {}
         if (url) iconUrls[code] = url;
         return url;
       }
@@ -9209,7 +9209,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         try {
           var scr = g.display && g.display.screen;
           if (!scr) return null;
-          var hud = scr.IOOOI && typeof scr.IOOOI.showWeaponStore === "function" ? scr.IOOOI : null;
+          var hud = scr.O0O10 && typeof scr.O0O10.showWeaponStore === "function" ? scr.O0O10 : null;
           if (!hud) for (var k in scr) {
             try {
               var v = scr[k];
@@ -9219,7 +9219,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
               }
             } catch (e) {}
           }
-          return hud && hud.IOOlI;
+          return hud && hud.IOI1I;
         } catch (e) {
           return null;
         }
@@ -9244,17 +9244,17 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // travels, gliding smoothly to each new radar position the way the
       // game's dots do, its name above it.
       function hookDots(panel) {
-        var R = panel && (panel.lI1Ol || null);
-        if (!R) for (var k in panel) { var v = panel[k]; if (v && v.lII0l && v.type && typeof v.IOIll === "function") { R = v; break; } }
+        var R = panel && (panel.I10O0 || null);
+        if (!R) for (var k in panel) { var v = panel[k]; if (v && v.l1100 && v.type && typeof v.O11Ol === "function") { R = v; break; } }
         if (!R || R.__synDots) return;
-        var orig = R.IOIll;
-        R.IOIll = function() {
+        var orig = R.O11Ol;
+        R.O11Ol = function() {
           var out = orig.apply(this, arguments);
           try {
-            if (featOn("radarzoom") && featOn("radarnames") && featOn("radaricons") && this.type && this.lII0l) {
+            if (featOn("radarzoom") && featOn("radarnames") && featOn("radaricons") && this.type && this.l1100) {
               var n = this.max_pindex || this.size;
-              for (var g = 1; g < n; g++) { var ty = this.type[g]; if (ty >= 1 && ty <= 3) this.lII0l[g] = 0; }
-              var at = this.geometry && this.geometry.getAttribute("lII0l"); if (at) at.needsUpdate = true;
+              for (var g = 1; g < n; g++) { var ty = this.type[g]; if (ty >= 1 && ty <= 3) this.l1100[g] = 0; }
+              var at = this.geometry && this.geometry.getAttribute("l1100"); if (at) at.needsUpdate = true;
             }
           } catch (e) {}
           return out;
@@ -9275,9 +9275,9 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
       // not as expected; the names then follow our own copy of the positions.
       var TIER_COL = [ "", "#c9d1d9", "#7ee787", "#56d4f5", "#7aa2ff", "#c08bff", "#ffa94d", "#ff5d73" ];
       function dotContacts(g, panel, zoom) {
-        var P = panel && panel.lI1Ol, U = P && P.material && P.material.uniforms, me = U && U.mypos && U.mypos.value, tu = U && U.l01lO;
+        var P = panel && panel.I10O0, U = P && P.material && P.material.uniforms, me = U && U.mypos && U.mypos.value, tu = U && U.O0OlO;
         if (!P || !P.posmap || !(P.iteration >= 0) || !me || !tu || !(isFinite(me.x) && isFinite(me.y) && isFinite(tu.value))) return null;
-        var V = P.vertices, O = P.oldpos, T = P.type, TM = P.time, Z = P.lII0l;
+        var V = P.vertices, O = P.oldpos, T = P.type, TM = P.time, Z = P.l1100;
         if (!V || !O || !T || !TM || !Z) return null;
         var n = Math.min(512, T.length, TM.length, Z.length, V.length / 3, O.length / 2), byPos = {}, i, k;
         for (i = 1; i < n; i++) {
@@ -9288,7 +9288,7 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
         }
         var it = P.iteration - (g.mode && typeof g.mode.updateRadar === "function" ? 0 : 1), cnt = {}, id, r;
         for (id = 0; id < 256; id++) { r = P.posmap[id]; if (r && r.iteration === it) { k = r.x + "," + r.y; cnt[k] = (cnt[k] || 0) + 1; } }
-        var out = [], sc = U.I1011 && U.I1011.value || 1;
+        var out = [], sc = U.O10OI && U.O10OI.value || 1;
         function wrap(v) { return ((v + 1) % 2 + 2) % 2 - 1; }
         for (id = 0; id < 256; id++) {
           r = P.posmap[id];
@@ -9348,15 +9348,15 @@ window.__perfCoreCfg = { keys: { off: "STUDIO_off", verify: "STUDIO_verify", nov
             var g = getGS();
             if (!g || !g.mode) return;
             var panel = findRadarPanel(g);
-            if (!panel || !(panel.l0llO > 0) || !(panel.IllIO > 0)) return;
+            if (!panel || !(panel.Il0II > 0) || !(panel.O0OIO > 0)) return;
             hookDots(panel);
             var xf = getCanvasXform(g);
             if (!xf) {
               if (!_diagLogged) { _diagLogged = true; console.log("[Syndicate] Full Map Radar names: canvas transform unavailable — canvas found:" + !!document.querySelector("#canvaswrapper canvas") + " display.width:" + (g.display && g.display.width)); }
               return;
             }
-            var S = Math.min(panel.l0llO, panel.IllIO);
-            C.g = g; C.panel = panel; C.xf = xf; C.S = S; C.cx = panel.px + panel.l0llO - S / 2; C.cy = panel.lIIlI + panel.IllIO - S / 2 - .15 * S;
+            var S = Math.min(panel.Il0II, panel.O0OIO);
+            C.g = g; C.panel = panel; C.xf = xf; C.S = S; C.cx = panel.px + panel.Il0II - S / 2; C.cy = panel.O0III + panel.O0OIO - S / 2 - .15 * S;
             C.eff = window.__AEGIS_RADAR_UNIFORM__ && window.__AEGIS_RADAR_UNIFORM__.value || 1;
             C.mapHalf = _aegisMapHalf > 0 ? _aegisMapHalf : 400;
             var wm = window.__synWelcome && window.__synWelcome.data && window.__synWelcome.data.mode;

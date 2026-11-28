@@ -5,11 +5,16 @@ for the GPU, a governor that stops FPS drops and optional lighter effects, and
 carries features ported from the Syndicate client (each on its own switch in
 the `\` panel). It ships two ways: a userscript (Tampermonkey) and a Windows
 app (Tauri 2) that loads starblast.io with the client built in, its icon the
-starblast.io logo. Current version: 2.5.17 (the r124 app: 1.4.10 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
+starblast.io logo. Current version: 2.5.18 (the r124 app: 1.4.11 (the Mac .dmg stays at 1.4.1), also as a Mac .dmg built once by `.github/workflows/build-studio-mac.yml` (universal, unsigned; runs when that file changes or by hand); the r187 app: 1.0.2, no longer built).
 
 This repository (github.com/fwyiling/yiling, branch
 claude/laughing-noether-4c3asv) keeps the layout of the original source: the
 app and the tests find the client by relative path.
+
+
+## When Starblast re-obfuscates its code
+
+The game's code is sometimes re-released with the same code but its IlO01-style names reshuffled (2026-11-28: 457 names, e.g. the scene `IOOII` became `O0OIl`; the client used 27 of them). The client then breaks wherever it reads a game property by name. Fix (2.5.18): save https://starblast.io/ (the page holds the game) and run `node tools/remap-names.js index.js <saved page> clients/studio-client.user.js`. It aligns the old and new code identifier by identifier, refuses if anything but names (and numbers, e.g. the weekly event times `asia_ts`) changed, and renames the client in one pass. Then copy the saved page over `index.js` (the mock serves it), rebuild, and run the mock tests. Test scripts that read game names need the same renames.
 
 ## Files
 
